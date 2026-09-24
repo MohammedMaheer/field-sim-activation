@@ -1,161 +1,87 @@
 import 'package:flutter/material.dart';
 
-const journeyStages = [
-  [
-    'Emirates ID & OCR',
-    'Complete identity verification in Etisalat. Enter or scan the Emirates ID and review its extracted identity fields and required checks.',
-  ],
-  [
-    'Customer information',
-    'Complete customer information in Etisalat and check that it matches the identity document.',
-  ],
-  [
-    'Plan information',
-    'Confirm the chosen plan, SIM or eSIM, mobile number and applicable terms in the source system.',
-  ],
-  [
-    'Order & customer details',
-    'Complete the order, remaining customer information and required consent in Etisalat. Keep the transaction or receipt screen ready.',
-  ],
-  [
-    'Capture, OCR & handoff',
-    'Capture or upload the completed screen below. Review the extracted rows, validate them and send the image and Excel data for backend review.',
-  ],
-  [
-    'Verification & live status',
-    'The backend team checks the original image and rows. Open capture history to follow the synchronized decision.',
-  ],
-];
-
-class KycJourneyGuide extends StatefulWidget {
-  final VoidCallback onCapture;
-  final VoidCallback? onHistory;
-  const KycJourneyGuide({super.key, required this.onCapture, this.onHistory});
-  @override
-  State<KycJourneyGuide> createState() => _JourneyState();
+int captureStage(String? status) {
+  if (['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(status)) return 1;
+  if (['SUBMITTED', 'VERIFIED'].contains(status)) return 2;
+  return 0;
 }
 
-class _JourneyState extends State<KycJourneyGuide> {
-  int step = 0;
+class KycJourneyGuide extends StatelessWidget {
+  final String? status;
+  const KycJourneyGuide({super.key, this.status});
   @override
-  Widget build(BuildContext context) => Card(
-    color: const Color(0xFFF3EDFC),
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'YOUR VERIFICATION JOURNEY',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-              color: Color(0xFF8352B9),
+  Widget build(BuildContext context) {
+    final step = captureStage(status);
+    const titles = ['Capture transaction', 'Review details', 'Submit & track'];
+    final messages = [
+      'Take or upload the completed transaction screenshot. OCR extracts its details on the server.',
+      status == 'REJECTED'
+          ? 'Review the backend feedback, correct the details and validate before resubmitting.'
+          : 'Check the extracted details against the original screenshot, make corrections and validate the rows.',
+      status == 'VERIFIED'
+          ? 'Backend verification is complete. The result is synchronized with your transaction history.'
+          : 'The original screenshot and validated rows are submitted. Track the backend team’s verification here.',
+    ];
+    return Card(
+      color: const Color(0xFFF3EDFC),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'YOUR TRANSACTION · STEP ${step + 1} OF 3',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF6940A3),
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: List.generate(
-              6,
-              (i) => Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(right: 5),
-                  child: Semantics(
-                    label: 'Stage ${i + 1}: ${journeyStages[i][0]}',
-                    child: InkWell(
-                      onTap: () => setState(() => step = i),
-                      borderRadius: BorderRadius.circular(9),
-                      child: Container(
-                        height: 42,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: i == step
-                              ? const Color(0xFF8050BD)
-                              : Colors.white,
-                          borderRadius: BorderRadius.circular(9),
-                        ),
+            const SizedBox(height: 14),
+            ...List.generate(
+              3,
+              (i) => Semantics(
+                selected: i == step,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: i == step ? const Color(0xFFE5D8FA) : Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        '${i + 1}',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
                         child: Text(
-                          '${i + 1}',
-                          style: TextStyle(
-                            color: i == step
-                                ? Colors.white
-                                : const Color(0xFF9472B5),
-                            fontWeight: FontWeight.w800,
-                          ),
+                          titles[i],
+                          style: const TextStyle(fontWeight: FontWeight.w700),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 17),
-          Text(
-            journeyStages[step][0],
-            style: const TextStyle(
-              fontFamily: 'Manrope',
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 7),
-          Text(
-            step < 4
-                ? 'Complete in Etisalat · ${step + 1} of 6'
-                : 'Continue in Relay · ${step + 1} of 6',
-            style: const TextStyle(
-              color: Color(0xFF8050BD),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 9),
-          Text(
-            journeyStages[step][1],
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.5,
-              color: Color(0xFF62718A),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              if (step > 0) ...[
-                IconButton(
-                  tooltip: 'Previous stage',
-                  onPressed: () => setState(() => step--),
-                  icon: const Icon(Icons.arrow_back),
-                ),
-                const SizedBox(width: 8),
-              ],
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: step < 4
-                      ? () => setState(() => step++)
-                      : step == 5
-                      ? (widget.onHistory ?? widget.onCapture)
-                      : widget.onCapture,
-                  icon: Icon(
-                    step < 4
-                        ? Icons.arrow_forward
-                        : Icons.document_scanner_outlined,
-                  ),
-                  label: Text(
-                    step < 4
-                        ? 'Next stage'
-                        : step == 5
-                        ? 'View history'
-                        : 'Go to capture',
-                  ),
+            const SizedBox(height: 8),
+            Text(messages[step], style: const TextStyle(height: 1.5)),
+            if (status == null) ...[
+              const SizedBox(height: 10),
+              const Text(
+                'Before capture: complete identity, customer, plan and order details in Etisalat.',
+                style: TextStyle(
+                  fontSize: 13,
+                  height: 1.5,
+                  color: Color(0xFF59677C),
                 ),
               ),
             ],
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }

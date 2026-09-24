@@ -15,9 +15,9 @@ Read AGENTS.md, README.md, client-version/README.md, docs/SCOPE.md, docs/KYC-TRA
 
 Work only on the proposal edition under client-version/: React/TypeScript/Vite web, Flutter mobile and a shared FastAPI/PostgreSQL backend. Update web and mobile together when changing a shared feature. Teams belong to branches and all filters must respect backend authorization. Location, territories and geofencing are excluded. Preserve the current colourful navy/burgundy/violet/teal design, readable DM Sans/Manrope typography and dashboard charts. Use synthetic demo data.
 
-The six-stage workflow is Emirates ID/OCR, customer information, plan information, order/customer details, screenshot capture/OCR/handoff, then backend verification/live status. The first four stages happen externally in Etisalat. Relay captures or uploads screenshots, runs English/Arabic Tesseract on the VPS, supports row correction/validation, generates Excel, preserves the original image and records authorized human verification. Do not claim biometric or carrier integration.
+The UI has three real stages: capture transaction, review details, and submit/track. Identity/OCR, customer, plan and order entry remain external Etisalat prerequisites. Relay captures or uploads screenshots, runs English/Arabic Tesseract on the VPS, supports row correction/validation, generates Excel, preserves the original image and records authorized human verification. Do not claim biometric or carrier integration.
 
-Latest documented release is Android build 10. At that release, 36 backend tests, 15 hosted browser tests and 4 Flutter widget tests passed. Recheck the latest release notes and actual code rather than treating these as current proof. GitHub Actions was unable to start because of an account billing lock; verify its current status.
+Latest documented release is Android build 11. At that release, 36 backend tests, 15 hosted browser tests and 4 Flutter widget tests passed. Recheck the latest release notes and actual code rather than treating these as current proof. GitHub Actions was unable to start because of an account billing lock; verify its current status.
 
 Set up missing dependencies from the README, using private local configuration. Do not assume the other computer's paths, credentials, SSH access, Android device or SDKs exist here. Ask only for genuinely missing access needed for the task, and continue independent local work meanwhile. Do not reset hosted demo data or run seed scripts against production.
 
@@ -26,7 +26,7 @@ Use GitHub to coordinate both computers. Before work, fetch and inspect differen
 For each completed change, run relevant backend tests and Ruff, web build and relevant Playwright tests, Flutter analysis/tests and a build when mobile changes. Run the UI and visually inspect desktop and mobile layouts. Distinguish hosted browser testing from physical-phone testing. Commit and push completed source changes, then report branch, commit, checks, remaining limitations and the next step. Before a computer handoff, push any unfinished work to its feature branch as a clearly labelled checkpoint and document what remains.
 
 Hosted client web: https://relay-client.187-127-162-233.sslip.io/
-APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=10
+APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=11
 API base: https://relay-client.187-127-162-233.sslip.io/api
 VPS, when deployment is requested: root@187.127.162.233, /opt/relay-client, Compose project relay-client, API loopback port 8119. Back up before releases and inspect the current migration state; do not blindly rerun one-off migration scripts. The original full edition at /opt/relay-demo, port 8118, and every other VPS app must remain untouched.
 

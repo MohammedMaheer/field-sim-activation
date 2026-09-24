@@ -8,6 +8,7 @@ test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',
  await page.getByLabel('Upload screenshot',{exact:true}).setInputFiles(path.resolve('tests/fixtures/transaction-sample.png'));
  await page.getByRole('button',{name:'Upload & run VPS OCR',exact:true}).click();
  await expect(page.locator('.capture-detail .badge').first()).toHaveText('extracted',{timeout:65000});
+ await expect(page.locator('.transaction-stages [aria-current="step"]')).toContainText('Review details');
  await expect(page.locator('.ocr-lines')).toContainText('Jordan Demo');
  if(!await page.getByLabel('Transaction reference',{exact:true}).count()) await page.getByRole('button',{name:'Add OCR line 2',exact:true}).click();
  await page.getByLabel('Transaction reference',{exact:true}).first().fill('DEMO-TXN-001');
@@ -18,6 +19,7 @@ test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',
  const dl=page.waitForEvent('download');await page.getByRole('button',{name:'Generate Excel',exact:true}).click();expect((await dl).suggestedFilename()).toMatch(/\.xlsx$/);
  await page.getByRole('button',{name:'Submit to backend team',exact:true}).click();
  await expect(page.getByRole('heading',{name:'Awaiting backend review',exact:true})).toBeVisible();
+ await expect(page.locator('.transaction-stages [aria-current="step"]')).toContainText('Submit & track');
  const auth=await request.post('/api/auth/login',{data:{email:'compliance@relay.demo',password:process.env.DEMO_PASSWORD,native:true}});expect(auth.ok()).toBeTruthy();const headers={Authorization:'Bearer '+(await auth.json()).access_token};
  const list=await (await request.get('/api/kyc-captures',{headers})).json();const capture=list.find((r:any)=>r.source_reference===reference);expect(capture).toBeTruthy();
  const reviewed=await request.post('/api/kyc-captures/'+capture.id+'/review',{headers,data:{version:capture.version,outcome:'VERIFIED',reason:'Screenshot matches reviewed transaction row'}});expect(reviewed.ok()).toBeTruthy();

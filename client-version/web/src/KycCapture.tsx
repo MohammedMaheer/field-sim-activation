@@ -105,17 +105,6 @@ export default function KycCapture() {
   const editable =
     canWrite &&
     ["EXTRACTED", "VALIDATED", "REJECTED"].includes(capture?.status);
-  const stage = !capture
-    ? 0
-    : capture.status === "QUEUED" || capture.status === "OCR_FAILED"
-      ? 1
-      : capture.status === "EXTRACTED"
-        ? 2
-        : capture.status === "VALIDATED"
-          ? 3
-          : capture.status === "SUBMITTED"
-            ? 4
-            : 5;
   function change(index: number, key: string, value: any) {
     setDirty(true);
     setRows(rows.map((r, i) => (i === index ? { ...r, [key]: value } : r)));
@@ -144,25 +133,7 @@ export default function KycCapture() {
           Refresh
         </button>
       </div>
-      <KycJourney />
-      <div className="capture-steps" aria-label="KYC workflow">
-        {[
-          "Capture screenshot",
-          "VPS OCR",
-          "Review rows",
-          "Excel & submit",
-          "Backend review",
-          "Portal status",
-        ].map((s, i) => (
-          <div
-            key={s}
-            className={i === stage ? "current" : i < stage ? "complete" : ""}
-          >
-            <span>{i + 1}</span>
-            {s}
-          </div>
-        ))}
-      </div>
+      <KycJourney status={capture?.status} />
       {error && (
         <div role="alert" className="capture-error">
           {error}

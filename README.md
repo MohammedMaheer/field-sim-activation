@@ -27,7 +27,7 @@ cd field-sim-activation/client-version
 | `client-version/mobile` | Flutter field app, encrypted offline drafts, camera/upload, tasks and stock |
 | `client-version/deploy` | Isolated Docker and VPS release configuration |
 
-The six-stage proposal workflow follows identity → allocation → completion. The first four stages happen in Etisalat; Relay captures the completed screenshot, extracts its rows on the server, generates Excel and records a human backend verification decision. It does not simulate real identity checks or carrier approval. Location and geofencing are excluded.
+The capture UI uses three stages: capture transaction → review details → submit and track. The first four stages happen in Etisalat; Relay captures the completed screenshot, extracts its rows on the server, generates Excel and records a human backend verification decision. It does not simulate real identity checks or carrier approval. Location and geofencing are excluded.
 
 The demo web panel is [Relay Client](https://relay-client.187-127-162-233.sslip.io/). [Android demo download](https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk).
 

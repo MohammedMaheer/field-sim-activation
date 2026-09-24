@@ -1,6 +1,21 @@
 # Relay Client release history
 
-## Current release: branch dashboard and APK build 10, 24 September 2026
+## Current release: three-stage capture, APK build 11, 24 September 2026
+
+Combined the reference demo's three-stage presentation with the proposal's functional screenshot flow: **Capture transaction → Review details → Submit & track**. Removed the separate six-stage instructional navigator and duplicate progress bar. Progress follows persisted capture status; failed extraction remains in capture, rejection returns to review, and only a saved backend decision is shown as verified. External Etisalat prerequisites are summarized once; no selfie, signature, plan-selection or telecom-activation forms were added.
+
+Web and Flutter share the stages and wording. Existing encrypted capture, VPS OCR, editable rows, validation, Excel, submission and backend review remain intact. No backend schema or API changes were needed.
+
+Validation: web production build passed; all 15 hosted Playwright scenarios passed, including real VPS OCR, three-stage transitions, Excel and reviewer completion. Flutter analysis and four widget tests passed, covering every capture status including rejection/OCR failure at narrow width. APK build 11 installed successfully on the connected phone; its capture screen was visually inspected. Desktop and phone-width web capture screens were also inspected. The end-to-end upload test ran in the hosted browser; a new phone camera submission was not performed in this pass.
+
+Client web/database backups: `/opt/relay-client/backups/capture-build11/`. No migration was run. Rollback web by restoring `web-before.tar.gz` into `/opt/relay-client`; the prior APK is `build10.apk`. Full edition and other services were not modified.
+
+APK SHA-256, matching local and hosted files: `25f53609796ef89e9c9dc603e6be0e9ed4e3f58e246f1a438141dd6c0e43a3f1`.
+
+Download: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=11
+
+
+## Earlier release: branch dashboard and APK build 10, 24 September 2026
 
 The proposal edition now uses explicit branches, branch-scoped teams, and a shared colourful design system with self-hosted DM Sans and Manrope typography. Web charts show capture/sales activity, verification status, branch performance and plan mix. Mobile shows matching metric cards, a weekly chart and verification progress.
 

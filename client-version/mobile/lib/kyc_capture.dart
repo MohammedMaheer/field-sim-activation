@@ -291,16 +291,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          KycJourneyGuide(
-            onHistory: () => Scrollable.ensureVisible(
-              historyKey.currentContext!,
-              duration: const Duration(milliseconds: 300),
-            ),
-            onCapture: () => Scrollable.ensureVisible(
-              formKey.currentContext!,
-              duration: const Duration(milliseconds: 300),
-            ),
-          ),
+          KycJourneyGuide(status: capture?['status']),
           gap(),
           if (error != null)
             Card(

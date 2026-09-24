@@ -941,3 +941,12 @@ textarea {
     transform: none;
   }
 }
+
+.transaction-stages {list-style:none;padding:0;margin:18px 0;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;}
+.transaction-stages li {display:flex;align-items:center;gap:10px;padding:14px;border:1px solid #e5e1ed;border-radius:12px;color:#586479;background:#fff;font-weight:650;}
+.transaction-stages li span {display:grid;place-items:center;min-width:28px;height:28px;border-radius:9px;background:#f1edf7;}
+.transaction-stages li.active {background:#eee6fc;border-color:#b798ed;color:#693eaa;}
+.transaction-stages li.complete {background:#e5f5ef;color:#087d70;}
+.transaction-step-detail {font-size:15px;line-height:1.6;color:#40516b;}
+.transaction-source-note {font-size:14px;color:#59677c;margin:10px 0 0;line-height:1.6;}
+@media(max-width:600px){.transaction-stages{grid-template-columns:1fr;gap:8px}.transaction-stages li{padding:10px 12px;}}

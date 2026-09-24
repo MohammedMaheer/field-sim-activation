@@ -5,33 +5,43 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/main.dart';
 
 void main() {
-  testWidgets('guide preserves source stages before real screenshot capture', (
+  testWidgets('capture progress follows real status including rejection', (
     tester,
   ) async {
-    var capture = false;
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: KycJourneyGuide(onCapture: () => capture = true),
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    for (final entry in <String?, int>{
+      null: 0,
+      'QUEUED': 0,
+      'OCR_FAILED': 0,
+      'EXTRACTED': 1,
+      'VALIDATED': 1,
+      'REJECTED': 1,
+      'SUBMITTED': 2,
+      'VERIFIED': 2,
+    }.entries) {
+      expect(captureStage(entry.key), entry.value);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: KycJourneyGuide(status: entry.key),
+            ),
           ),
         ),
-      ),
-    );
-    for (final title in [
-      'Emirates ID & OCR',
-      'Customer information',
-      'Plan information',
-      'Order & customer details',
-    ]) {
-      expect(find.text(title), findsOneWidget);
-      await tester.tap(find.text('Next stage'));
-      await tester.pump();
+      );
+      expect(
+        find.text('YOUR TRANSACTION · STEP ${entry.value + 1} OF 3'),
+        findsOneWidget,
+      );
+      expect(find.text('Capture transaction'), findsOneWidget);
+      expect(find.text('Review details'), findsOneWidget);
+      expect(find.text('Submit & track'), findsOneWidget);
+      expect(find.text('Next stage'), findsNothing);
+      expect(tester.takeException(), isNull);
     }
-    expect(find.text('Capture, OCR & handoff'), findsOneWidget);
-    await tester.tap(find.text('Go to capture'));
-    expect(capture, isTrue);
-    expect(tester.takeException(), isNull);
   });
   testWidgets('charts handle empty activity at narrow width and large text', (
     tester,

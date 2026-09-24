@@ -35,32 +35,13 @@ test("branch selection scopes charts and team rosters; retired location routes s
   ).toBeVisible();
 });
 
-test("guided verification follows the proposal stages and opens capture", async ({
-  page,
-}) => {
+test("capture has three real stages without extra activation forms", async ({page}) => {
   await authenticate(page);
   await page.goto("/kyc-capture");
-  const guide = page.getByRole("region", { name: "Guided KYC stages" });
-  const titles = [
-    "Emirates ID & OCR",
-    "Customer information",
-    "Plan information",
-    "Order & customer details",
-    "Capture, OCR & handoff",
-    "Verification & live status",
-  ];
-  for (let i = 0; i < 4; i++) {
-    await expect(guide.locator('[aria-current="step"]')).toContainText(
-      titles[i],
-    );
-    await expect(guide).toContainText("Complete in Etisalat");
-    await guide.getByRole("button", { name: "Next stage" }).click();
-  }
-  await expect(guide.locator('[aria-current="step"]')).toContainText(titles[4]);
-  await guide
-    .getByRole("button", { name: "Go to capture", exact: true })
-    .click();
-  await expect(
-    page.getByLabel("Source transaction reference", { exact: true }),
-  ).toBeInViewport();
+  const guide = page.getByRole("region", { name: "Transaction capture progress" });
+  await expect(guide.locator("li")).toHaveCount(3);
+  await expect(guide.locator('[aria-current="step"]')).toHaveText("1Capture transaction");
+  await expect(guide).toContainText("complete identity, customer, plan and order details in Etisalat");
+  await expect(guide.getByRole("button")).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Next stage"})).toHaveCount(0);
 });
