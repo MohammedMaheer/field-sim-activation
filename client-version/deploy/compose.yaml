@@ -1,0 +1,55 @@
+name: relay-client
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: relay
+      POSTGRES_USER: relay
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?required}
+    volumes:
+      - relay_data:/var/lib/postgresql/data
+    networks: [relay_private]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 100
+    command: [postgres, -c, shared_buffers=64MB, -c, max_connections=30]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U relay -d relay]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://relay:${POSTGRES_PASSWORD}@db:5432/relay
+    ports: ["127.0.0.1:8119:8000"]
+    depends_on:
+      db: {condition: service_healthy}
+    networks: [relay_private]
+    mem_limit: 384m
+    cpus: 0.75
+    pids_limit: 100
+    read_only: true
+    tmpfs: ["/tmp:size=32m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health',timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
+networks:
+  relay_private:
+volumes:
+  relay_data:

@@ -1,0 +1,9 @@
+**
+!backend/
+!backend/**
+!deploy/
+!deploy/Dockerfile
+backend/**/__pycache__/
+backend/*.db
+backend/.pii-key
+backend/tests/
