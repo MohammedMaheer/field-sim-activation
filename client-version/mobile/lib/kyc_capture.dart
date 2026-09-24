@@ -302,6 +302,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
           Card(
             key: formKey,
+            color: const Color(0xFFF0EAFA),
             child: Padding(
               padding: const EdgeInsets.all(18),
               child: Column(
@@ -428,6 +429,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           gap(),
           Card(
             key: historyKey,
+            color: const Color(0xFFE7F5F1),
             child: ExpansionTile(
               key: ValueKey('history-${capture?['id'] ?? 'new'}'),
               initiallyExpanded: false,

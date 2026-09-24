@@ -950,3 +950,34 @@ textarea {
 .transaction-step-detail {font-size:15px;line-height:1.6;color:#40516b;}
 .transaction-source-note {font-size:14px;color:#59677c;margin:10px 0 0;line-height:1.6;}
 @media(max-width:600px){.transaction-stages{grid-template-columns:1fr;gap:8px}.transaction-stages li{padding:10px 12px;}}
+
+/* Restrained shared surface palette: colour frames the content, inputs stay white. */
+:root { --surface-violet:#f0eafa; --surface-teal:#e7f5f1; --surface-blue:#eaf1fb; --surface-warm:#fff3e1; }
+.main-shell { background:#eef1f8; }
+.topbar { background:#faf8ff; border-bottom-color:#e0d9ed; }
+.page-header { padding:18px 20px; border-radius:16px; background:linear-gradient(110deg,#e9e4f5 0%,#e9f3f4 100%); border:1px solid #dedfeb; }
+.panel { background:#fdfcff; border-color:#dedfeb; }
+.panel-head { background:var(--surface-blue); border-radius:17px 17px 0 0; border-bottom:1px solid #dbe4f0; }
+.panel-head h2 { color:#293e60; }
+.capture-layout > div:first-child > .panel:first-child .panel-head { background:var(--surface-violet); }
+.capture-layout > div:first-child > .panel:nth-child(2) .panel-head { background:var(--surface-teal); }
+.capture-picker { background:#eee8f8; border-color:#b6a1cd; color:#563779; }
+.capture-picker > span { color:#625574; }
+.capture-file { background:#fff; border-color:#c4b5d7; }
+.capture-empty { background:#edf7f4; border-radius:14px; margin:16px; }
+.capture-empty > svg { color:#078775; }
+.capture-list > button { background:#f3f7fb; border-color:#dde5f1; }
+.capture-list > button:hover { background:#e9f3ef; }
+.journey-guide { background:#eae3f6; border-color:#d4c5e8; }
+.transaction-stages li { background:#f8f6fd; }
+.transaction-stages li.active { background:#dacaf0; border-color:#ae8bd3; color:#4f2b7a; }
+.transaction-source-note { color:#535e73; }
+.report-card { background:#f8f5ff; border-top:3px solid #ab88cf; }
+.report-card:nth-child(3n+2) { background:#eff8f5; border-top-color:#63b3a4; }
+.report-card:nth-child(3n) { background:#fff7ec; border-top-color:#d3a254; }
+.proposal-summary > div:first-child { background:var(--surface-violet); }
+.proposal-summary > div:nth-child(2) { background:var(--surface-teal); }
+.proposal-summary > div:nth-child(3) { background:var(--surface-warm); }
+thead th { background:#eaf0f8; color:#42516e; }
+tbody tr:nth-child(even) { background:#f7f8fc; }
+@media(max-width:600px){.page-header{padding:16px}.capture-empty{margin:12px}}

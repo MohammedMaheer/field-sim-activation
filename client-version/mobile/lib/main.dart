@@ -72,19 +72,19 @@ class RelayApp extends StatelessWidget {
         primary: burgundy,
         surface: Colors.white,
       ),
-      scaffoldBackgroundColor: const Color(0xFFF4F6FC),
+      scaffoldBackgroundColor: const Color(0xFFEEF1F8),
       appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFF4F7FA),
+        backgroundColor: Color(0xFFEAE4F5),
         foregroundColor: ink,
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: Colors.white,
+        color: const Color(0xFFFAF8FD),
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFDFE5EC)),
+          side: const BorderSide(color: Color(0xFFDCDDEC)),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(

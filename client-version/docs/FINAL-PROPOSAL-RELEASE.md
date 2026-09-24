@@ -1,6 +1,19 @@
 # Relay Client release history
 
-## Current release: three-stage capture, APK build 11, 24 September 2026
+## Current release: balanced colour refresh, APK build 12, 24 September 2026
+
+Added a restrained shared surface palette: lavender capture areas, teal history/review accents, blue panel headers and warm report/summary accents. Page headers and app bars use soft tinted surfaces; input fields remain white and existing status colours are retained. The transaction workflow and backend are unchanged.
+
+Web build passed. Seven hosted browser checks passed, covering all-route responsive screenshot/overflow checks, branches, capture progress, popup actions and keyboard focus. Flutter analysis and all four widget tests passed. Build 12 installed on the connected phone; its capture screen was visually inspected alongside desktop capture/reports and phone-width web screenshots. This visual-only pass did not repeat the complete OCR or physical camera-submission test.
+
+Backups: `/opt/relay-client/backups/colour-build12/` contains the database snapshot, previous web bundle and build 11 APK. No migration or backend restart was needed. Other VPS apps and the full Relay edition were not changed.
+
+APK local/hosted SHA-256: `9758aa0435fef32a54f3147b1977dfebec1f3fd6124aa46d04effa5af325a85e`.
+
+Download: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=12
+
+
+## Earlier release: three-stage capture, APK build 11, 24 September 2026
 
 Combined the reference demo's three-stage presentation with the proposal's functional screenshot flow: **Capture transaction → Review details → Submit & track**. Removed the separate six-stage instructional navigator and duplicate progress bar. Progress follows persisted capture status; failed extraction remains in capture, rejection returns to review, and only a saved backend decision is shown as verified. External Etisalat prerequisites are summarized once; no selfie, signature, plan-selection or telecom-activation forms were added.
 

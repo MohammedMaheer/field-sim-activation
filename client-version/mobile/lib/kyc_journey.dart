@@ -23,7 +23,7 @@ class KycJourneyGuide extends StatelessWidget {
           : 'The original screenshot and validated rows are submitted. Track the backend team’s verification here.',
     ];
     return Card(
-      color: const Color(0xFFF3EDFC),
+      color: const Color(0xFFEAE3F6),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
@@ -45,7 +45,7 @@ class KycJourneyGuide extends StatelessWidget {
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: i == step ? const Color(0xFFE5D8FA) : Colors.white,
+                    color: i == step ? const Color(0xFFDACAF0) : Colors.white,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
