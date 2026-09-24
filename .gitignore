@@ -64,3 +64,4 @@ output/private/
 /docs/*
 !/docs/SCOPE.md
 !/docs/KYC-TRANSACTION-FLOW.md
+!/docs/CONTINUE-IN-CODEX.md

@@ -6,6 +6,8 @@ The client proposal edition: a connected web portal, Flutter field app and share
 
 ## Continue on another computer
 
+Use the [copy-ready Codex handoff prompt and two-computer workflow](docs/CONTINUE-IN-CODEX.md).
+
 1. Clone this repository and open `client-version/`.
 2. Follow its README to configure a local database/API, web app and Flutter SDK.
 3. Copy `client-version/.env.example` to a private environment file and generate your own secrets. Hosted credentials are supplied separately; they are never stored in this repository.
