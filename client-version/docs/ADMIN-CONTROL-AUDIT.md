@@ -34,3 +34,12 @@ Backend suite: 39 tests passed, including all eight seeded role scopes, authenti
 This is a demo with synthetic data. Actual Etisalat/biometric approval, telecom activation, notification delivery, payroll and unrestricted account/role provisioning are outside the approved implementation. The admin cannot bypass independent KYC review or mutate audit history. A passing functional suite does not prove absence of all bugs, independent penetration-test results, or 150-user load capacity. No such certification is claimed.
 
 The changes are API-compatible with mobile build 12; no mobile workflow or field names changed in this audit. No database migration was required. Only the client deployment is updated, with database, source and web backups before release.
+
+
+## Usability and field-network setup update — 25 September 2026
+
+Administrators can now open **Agents → Add agent** or **Branch teams → Set up branches & teams**. One focused drawer connects branch creation, team-leader sign-in, outlet creation and agent sign-in. Teams retain the existing one-leader-per-branch membership model; no separate, conflicting roster is introduced. Empty new branches and teams remain visible to administrators. New accounts authenticate through the same web/mobile API, with branch-compatible membership, duplicate checks, bounded inputs and immutable creation audits that exclude passwords.
+
+Dashboard team previews and recent records are bounded, related panels sit together, branch-chart labels remain readable, and record lists no longer repeat the page heading. Team rosters link directly to agent details. Closing a record clears its deep link, preventing a refresh from reopening it. Capture upload and history share the available width; selected captures collapse the upload form without deleting a selected upload. The mobile profile displays its branch once.
+
+No schema migration is necessary: provisioning uses the existing branch, user, role, outlet and agent entities. Existing mobile clients remain compatible. APK build 13 contains the profile correction. Test-created organization records are confined to an isolated local QA database, not the hosted demo.

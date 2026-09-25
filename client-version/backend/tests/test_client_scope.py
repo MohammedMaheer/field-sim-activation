@@ -517,16 +517,30 @@ def test_capture_label_mapping_does_not_invent_fields():
 
 def test_admin_management_validation_conflicts_and_permissions(client):
     login(client)
-    a = next(row for row in client.get("/api/resources/agents").json() if row["employee_id"] == "RLY-1041")
+    a = next(
+        row
+        for row in client.get("/api/resources/agents").json()
+        if row["employee_id"] == "RLY-1041"
+    )
     path = f"/api/agents/{a['id']}/management"
     options = client.get(path).json()
-    body = {"target": a["target"] + 1, "outlet_id": a["outlet_id"], "leader_id": a["leader_id"],
-            "expected_target": a["target"], "expected_outlet_id": a["outlet_id"], "expected_leader_id": a["leader_id"],
-            "reason": "Admin control audit test"}
+    body = {
+        "target": a["target"] + 1,
+        "outlet_id": a["outlet_id"],
+        "leader_id": a["leader_id"],
+        "expected_target": a["target"],
+        "expected_outlet_id": a["outlet_id"],
+        "expected_leader_id": a["leader_id"],
+        "reason": "Admin control audit test",
+    }
     assert client.patch(path, json={**body, "target": 0}).status_code == 422
     wrong = next(leader for leader in options["leaders"] if leader["branch_id"] != a["branch_id"])
     assert client.patch(path, json={**body, "leader_id": wrong["id"]}).status_code == 422
-    other = next(o for o in options["outlets"] if o["id"] != a["outlet_id"] and o["branch_id"] == a["branch_id"])
+    other = next(
+        o
+        for o in options["outlets"]
+        if o["id"] != a["outlet_id"] and o["branch_id"] == a["branch_id"]
+    )
     assert client.patch(path, json={**body, "outlet_id": other["id"]}).status_code == 409
     result = client.patch(path, json=body)
     assert result.status_code == 200, result.text
@@ -534,8 +548,15 @@ def test_admin_management_validation_conflicts_and_permissions(client):
     roster = client.get("/api/resources/agents").json()
     assert [r["employee_id"] for r in roster] == sorted(r["employee_id"] for r in roster)
     assert client.patch(path, json=body).status_code == 409
-    assert any(x["action"] == "Agent Assignment Changed" for x in client.get("/api/resources/audit").json())
-    assert client.patch(path, json={**body, "expected_target": body["target"], "target": a["target"]}).status_code == 200
+    assert any(
+        x["action"] == "Agent Assignment Changed" for x in client.get("/api/resources/audit").json()
+    )
+    assert (
+        client.patch(
+            path, json={**body, "expected_target": body["target"], "target": a["target"]}
+        ).status_code
+        == 200
+    )
     for account in ["agent1", "leader", "ops", "compliance"]:
         login(client, account)
         assert client.get(path).status_code == 403
@@ -552,7 +573,9 @@ def test_capture_filters_validate_and_preserve_scope(client):
     assert first == all_rows[:1] and second == all_rows[1:2]
     if all_rows:
         row = all_rows[0]
-        match = client.get("/api/kyc-captures", params={"search": row["source_reference"], "status": row["status"]}).json()
+        match = client.get(
+            "/api/kyc-captures", params={"search": row["source_reference"], "status": row["status"]}
+        ).json()
         assert row in match
     assert client.get("/api/kyc-captures?search=NO-SUCH-CAPTURE-987654321").json() == []
     login(client, "agent2")
@@ -566,6 +589,7 @@ def test_capture_history_reaches_beyond_fifty_without_leaking_other_agents(clien
     from sqlalchemy import delete
     from app.db import KycCapture
     from app.security import cipher
+
     login(client)
     agents = client.get("/api/resources/agents").json()
     own = next(a for a in agents if a["employee_id"] == "RLY-1041")
@@ -573,17 +597,25 @@ def test_capture_history_reaches_beyond_fifty_without_leaking_other_agents(clien
     ids = []
     with DB() as db:
         for i in range(62):
-            row = KycCapture(agent_id=own["id"] if i < 61 else other["id"], creator_id=own["user_id"],
-                operation_id=str(uuid.uuid4()), source_reference=f"AUDIT-PAGE-{i:02}", status="SUBMITTED",
-                image_type="image/png", image_hash=str(i).zfill(64),
-                image_encrypted=cipher.encrypt(b"synthetic").decode())
+            row = KycCapture(
+                agent_id=own["id"] if i < 61 else other["id"],
+                creator_id=own["user_id"],
+                operation_id=str(uuid.uuid4()),
+                source_reference=f"AUDIT-PAGE-{i:02}",
+                status="SUBMITTED",
+                image_type="image/png",
+                image_hash=str(i).zfill(64),
+                image_encrypted=cipher.encrypt(b"synthetic").decode(),
+            )
             db.add(row)
             db.flush()
             ids.append(row.id)
         db.commit()
     try:
-        pages = [client.get(f"/api/kyc-captures?search=AUDIT-PAGE&limit=20&offset={offset}").json()
-                 for offset in (0, 20, 40, 60)]
+        pages = [
+            client.get(f"/api/kyc-captures?search=AUDIT-PAGE&limit=20&offset={offset}").json()
+            for offset in (0, 20, 40, 60)
+        ]
         assert [len(page) for page in pages] == [20, 20, 20, 2]
         assert len({r["id"] for page in pages for r in page}) == 62
         login(client, "agent1")
@@ -593,3 +625,78 @@ def test_capture_history_reaches_beyond_fifty_without_leaking_other_agents(clien
         with DB() as db:
             db.execute(delete(KycCapture).where(KycCapture.id.in_(ids)))
             db.commit()
+
+
+def test_organization_setup_is_atomic_scoped_and_audited(client):
+    login(client, "agent1")
+    assert client.get("/api/organization").status_code == 403
+    assert client.post("/api/organization/branches", json={"name": "Forbidden"}).status_code == 403
+    login(client)
+    branch = client.post("/api/organization/branches", json={"name": "Synthetic setup branch"})
+    assert branch.status_code == 201, branch.text
+    branch_id = branch.json()["id"]
+    assert (
+        client.post(
+            "/api/organization/branches", json={"name": "SYNTHETIC SETUP BRANCH"}
+        ).status_code
+        == 409
+    )
+    assert any(b["id"] == branch_id for b in client.get("/api/resources/branches").json())
+    team = client.post(
+        "/api/organization/teams",
+        json={
+            "name": "Setup Leader",
+            "branch_id": branch_id,
+            "email": "setup.leader@relay.demo",
+            "password": "test-client-password",
+        },
+    )
+    assert team.status_code == 201, team.text
+    leader_id = team.json()["id"]
+    assert any(
+        t["leader_id"] == leader_id and t["agents"] == 0
+        for t in client.get("/api/resources/team-leaders").json()
+    )
+    outlet = client.post(
+        "/api/organization/outlets", json={"name": "Setup outlet", "branch_id": branch_id}
+    )
+    assert outlet.status_code == 201
+    payload = {
+        "name": "Setup Agent",
+        "branch_id": branch_id,
+        "leader_id": leader_id,
+        "outlet_id": outlet.json()["id"],
+        "employee_id": "SETUP-01",
+        "email": "setup.agent@relay.demo",
+        "password": "test-client-password",
+        "target": 25,
+    }
+    other = next(
+        o for o in client.get("/api/organization").json()["outlets"] if o["branch_id"] != branch_id
+    )
+    assert (
+        client.post(
+            "/api/organization/agents", json={**payload, "outlet_id": other["id"]}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post("/api/organization/agents", json={**payload, "password": "short"}).status_code
+        == 422
+    )
+    created = client.post("/api/organization/agents", json=payload)
+    assert created.status_code == 201, created.text
+    assert client.post("/api/organization/agents", json=payload).status_code == 409
+    with DB() as db:
+        event = db.scalar(select(Audit).where(Audit.entity == created.json()["id"]))
+        assert event is not None
+        assert "password" not in str(event.new_value)
+    login(client, "setup.agent")
+    agents = client.get("/api/resources/agents").json()
+    assert len(agents) == 1 and agents[0]["id"] == created.json()["id"]
+    login(client, "setup.leader")
+    assert len(client.get("/api/resources/agents").json()) == 1
+    login(client, "leader")
+    assert not any(
+        a["id"] == created.json()["id"] for a in client.get("/api/resources/agents").json()
+    )

@@ -4,7 +4,7 @@ The source of scope is the final `Field_Sales_Proposal_KYC_Incentives_150Users_A
 
 ## Included
 
-- Web management: live field activity, branch teams and outlets, agent productivity, audited administrator target/assignment controls, sales targets, customer and historical order records, SIM inventory and allocation, KYC transaction tracking, compliance review, immutable audit history, CSV/PDF reports.
+- Web management: live field activity, branch teams and outlets, agent productivity, audited administrator creation of branches, team-leader accounts, outlets and agent accounts, plus target/assignment controls, sales targets, customer and historical order records, SIM inventory and allocation, KYC transaction tracking, compliance review, immutable audit history, CSV/PDF reports.
 - Incentives: authorized manual entry, validated CSV/XLSX import, history and CSV export. Payroll execution is excluded.
 - Flutter field app: dashboard/targets, shift and branch/team assignment, tasks, customer search, stock balances and own-SIM return/damage reporting, daily report, support, sync and KYC capture/review/status.
 - KYC stages: (1) Emirates ID and source OCR, (2) customer information, (3) plan information, (4) order and customer details, (5) completed screenshot capture, server OCR, editable rows, Excel and image handoff, (6) authorized backend verification and live status.

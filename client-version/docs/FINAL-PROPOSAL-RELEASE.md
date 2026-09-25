@@ -1,3 +1,16 @@
+## Admin usability and setup release — 25 September 2026, build 13
+
+- Added audited administrator branch, team-leader, outlet and agent creation within the existing Agents and Branch teams screens. Teams use the established leader/branch membership. Newly created agents can sign in to the shared mobile backend.
+- Shortened dashboard previews, improved branch charts, aligned setup fields, removed duplicate headings, linked team rosters to agent details and fixed detail-close URLs. Capture upload/history use both desktop columns; review hides the upload form and retains access to new capture. The mobile profile no longer repeats Branch.
+- Verification: 40 backend tests and Ruff passed; web production build passed; 18 hosted browser tests passed, including live VPS OCR, Excel, reports, scope, navigation, popups and responsive views. The complete account-provisioning browser test passed on an isolated local database and is intentionally skipped on the hosted demo. Flutter analysis and all four widget tests passed.
+- APK build 13 installed successfully on the connected Android phone. Home and corrected Profile were visually inspected against the hosted backend. This release did not repeat physical-camera capture testing.
+- Backup: `/opt/relay-client/backups/usability-20260925T095606Z` includes database, app/web assets and prior APK. Previous API image: `relay-client-api:before-usability-20260925T095606Z`. Migration remains 005; no schema change. Rollback restores the archived app/web assets and previous API image; new users remain compatible with the prior schema. The earlier full edition containers retained their identities and remain healthy.
+- APK SHA-256, matching VPS: `44e2c0e19e917d6c60a38a5246048bd2343d2b231f3ce3b5e2e0b7a90d8e89be`.
+- Web: https://relay-client.187-127-162-233.sslip.io/
+- APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=13
+
+The product remains a synthetic-data demo of the approved proposal. These checks are not a guarantee of zero defects, an independent security audit or a 150-user load certification.
+
 # Relay Client release history
 
 ## Current web/API release: admin control audit, 25 September 2026

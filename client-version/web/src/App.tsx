@@ -1,3 +1,4 @@
+import OrganizationSetup from "./OrganizationSetup";
 import AgentManagement from "./AgentManagement";
 import KycCapture from "./KycCapture";
 import { FieldTasks, Incentives, Support } from "./ProposalOperations";
@@ -242,8 +243,8 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
             <div>
               <b>A safe space to explore</b>
               <p>
-                Synthetic UAE field data. Identity verification uses simulated
-                demo providers.
+                Synthetic UAE field data. Transaction screenshots are processed
+                securely on the server.
               </p>
             </div>
           </div>
@@ -691,7 +692,15 @@ function AgentDrawer({
           </button>
         ))}
       </div>
-      {tab === "Manage" ? <AgentManagement agentId={a.id} onSaved={() => {notify("Agent updated and audited"); onClose();}} /> : tab === "Overview" ? (
+      {tab === "Manage" ? (
+        <AgentManagement
+          agentId={a.id}
+          onSaved={() => {
+            notify("Agent updated and audited");
+            onClose();
+          }}
+        />
+      ) : tab === "Overview" ? (
         <>
           <DetailList
             data={{
@@ -952,6 +961,7 @@ const configs: Record<
 };
 
 function ResourcePage({ resource }: { resource: string }) {
+  const [setup, setSetup] = useState<"branches" | "agents" | null>(null);
   const [branch, setBranch] = useState("");
   const {
     data = [],
@@ -966,12 +976,19 @@ function ResourcePage({ resource }: { resource: string }) {
   const config = configs[resource];
   useEffect(() => {
     const id = new URLSearchParams(location.search).get("selected");
-    if (id && data.length) setSelected(data.find((r) => r.id === id) || null);
+    setSelected(id ? data.find((r) => r.id === id) || null : null);
   }, [data, location.search]);
+  const closeDetails = () => {
+    setSelected(null);
+    navigate(location.pathname, { replace: true });
+  };
   if (isPending) return <Loading />;
   if (error) return <ErrorState error={error} retry={refetch} />;
   return (
     <>
+      {setup && (
+        <OrganizationSetup initial={setup} onClose={() => setSetup(null)} />
+      )}
       <PageHeader
         eyebrow={
           resource === "compliance"
@@ -992,6 +1009,17 @@ function ResourcePage({ resource }: { resource: string }) {
             }}
           />
         )}
+        {user.role === "Administrator" &&
+          ["agents", "team-leaders"].includes(resource) && (
+            <button
+              className="primary"
+              onClick={() =>
+                setSetup(resource === "agents" ? "agents" : "branches")
+              }
+            >
+              {resource === "agents" ? "Add agent" : "Set up branches & teams"}
+            </button>
+          )}
         <button onClick={() => refetch()}>
           <RefreshCw size={15} />
           Refresh
@@ -1029,30 +1057,32 @@ function ResourcePage({ resource }: { resource: string }) {
         </div>
       )}
       <Panel
-        title={config.title}
+        title="Records"
         subtitle={`${data.length} records in your authorized scope`}
       >
-        <DataTable rows={data} columns={config.columns} onRow={setSelected} />
+        <DataTable
+          rows={data}
+          columns={config.columns}
+          onRow={(row) =>
+            navigate(
+              `${location.pathname}?selected=${encodeURIComponent(row.id)}`,
+            )
+          }
+        />
       </Panel>
       {selected &&
         (resource === "agents" ? (
-          <AgentDrawer agent={selected} onClose={() => setSelected(null)} />
+          <AgentDrawer agent={selected} onClose={closeDetails} />
         ) : ["orders", "activations"].includes(resource) ? (
-          <OrderDrawer id={selected.id} onClose={() => setSelected(null)} />
+          <OrderDrawer id={selected.id} onClose={closeDetails} />
         ) : resource === "inventory" ? (
-          <InventoryDrawer sim={selected} onClose={() => setSelected(null)} />
+          <InventoryDrawer sim={selected} onClose={closeDetails} />
         ) : resource === "compliance" ? (
-          <ComplianceDrawer
-            alert={selected}
-            onClose={() => setSelected(null)}
-          />
+          <ComplianceDrawer alert={selected} onClose={closeDetails} />
         ) : resource === "team-leaders" ? (
-          <TeamDrawer team={selected} onClose={() => setSelected(null)} />
+          <TeamDrawer team={selected} onClose={closeDetails} />
         ) : (
-          <Drawer
-            title={config.title + " details"}
-            onClose={() => setSelected(null)}
-          >
+          <Drawer title={config.title + " details"} onClose={closeDetails}>
             <DetailList data={selected} />
             {resource === "audit" && (
               <>
@@ -1078,17 +1108,38 @@ function ResourcePage({ resource }: { resource: string }) {
 }
 
 function TeamDrawer({ team, onClose }: { team: Row; onClose: () => void }) {
-  const { data = [] } = useResource("agents");
+  const navigate = useNavigate();
+  const { data = [], isPending, error, refetch } = useResource("agents");
   return (
     <Drawer title={team.name + " · Team performance"} onClose={onClose}>
-      <DetailList data={{branch:team.branch, agents:team.agents, active_agents:team.active, daily_target:team.target, activations_today:team.activations, sim_stock:team.stock, average_handling_minutes:team.aht, verification_pass_rate:team.ekyc_rate+"%"}} />
-      <DataTable
-        rows={data.filter(
-          (a) =>
-            a.leader_id === team.leader_id && a.branch_id === team.branch_id,
-        )}
-        columns={agentColumns}
+      <DetailList
+        data={{
+          branch: team.branch,
+          agents: team.agents,
+          active_agents: team.active,
+          daily_target: team.target,
+          activations_today: team.activations,
+          sim_stock: team.stock,
+          average_handling_minutes: team.aht,
+          verification_pass_rate: team.ekyc_rate + "%",
+        }}
       />
+      {isPending ? (
+        <Loading />
+      ) : error ? (
+        <ErrorState error={error} retry={refetch} />
+      ) : (
+        <DataTable
+          rows={data.filter(
+            (a) =>
+              a.leader_id === team.leader_id && a.branch_id === team.branch_id,
+          )}
+          columns={agentColumns}
+          onRow={(a) =>
+            navigate("/agents?selected=" + encodeURIComponent(a.id))
+          }
+        />
+      )}
     </Drawer>
   );
 }

@@ -4221,3 +4221,11 @@ body {
     margin: 0 16px 16px;
   }
 }
+/* Focused organization setup shares the same drawer and form rhythm. */
+.setup-intro {font-size:15px;line-height:1.6;color:var(--muted,#58647b);margin:0 0 18px}
+.setup-tabs {display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:6px;background:#ede8f4;border-radius:12px;margin-bottom:16px}
+.setup-tabs button {justify-content:center;background:transparent;border-color:transparent;min-height:44px}
+.setup-tabs button[aria-pressed="true"] {background:#fff;color:#811e49;box-shadow:0 2px 8px #44294b12}
+.setup-summary {padding:12px 16px;border-radius:10px;background:#eaf2fa;color:#315575;margin-bottom:16px;font-weight:600}
+.setup-success {padding:14px;background:#e5f5ed;border:1px solid #b5dfcd;border-radius:10px;color:#195a42;line-height:1.5}
+.agent-management-form small {font-size:12px;line-height:1.5;font-weight:400;color:#5a667b}

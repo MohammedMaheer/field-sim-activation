@@ -33,12 +33,16 @@ export default function KycCapture() {
     [review, setReview] = useState(""),
     [dirty, setDirty] = useState(false),
     [preview, setPreview] = useState("");
+  const [showUpload, setShowUpload] = useState(true);
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatus, setHistoryStatus] = useState("");
   const [historyPage, setHistoryPage] = useState(0);
   const list = useQuery({
     queryKey: ["kyc-captures", historySearch, historyStatus, historyPage],
-    queryFn: () => api(`/kyc-captures?limit=20&offset=${historyPage*20}&search=${encodeURIComponent(historySearch)}&status=${historyStatus}`),
+    queryFn: () =>
+      api(
+        `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${historyStatus}`,
+      ),
     refetchInterval: 8000,
   });
   const detail = useQuery({
@@ -93,6 +97,7 @@ export default function KycCapture() {
       });
       setDirty(false);
       setSelected(result.id);
+      setShowUpload(false);
       setFile(null);
       setSource("");
       setOperation(crypto.randomUUID());
@@ -102,6 +107,7 @@ export default function KycCapture() {
     if (dirty && !window.confirm("Discard unsaved row changes?")) return;
     setDirty(false);
     setSelected(id);
+    setShowUpload(false);
     setError("");
     setReview("");
   };
@@ -142,106 +148,171 @@ export default function KycCapture() {
           {error}
         </div>
       )}
-      <div className="capture-layout">
+      <div
+        className={`capture-layout ${selected ? "has-selection" : "capture-start"} ${!canWrite ? "capture-readonly" : ""}`}
+      >
         <div>
           {canWrite && (
-            <Panel
-              title="Capture a transaction"
-              subtitle="PNG or JPEG · up to 4 MB and 6 megapixels"
+            <button
+              className="capture-form-toggle"
+              aria-expanded={showUpload}
+              aria-controls="capture-form"
+              onClick={() => setShowUpload((v) => !v)}
             >
-              <form
-                id="capture-form"
-                className="capture-upload"
-                onSubmit={upload}
+              {showUpload ? "Hide upload form" : "New transaction capture"}
+            </button>
+          )}
+          {canWrite && (
+            <div hidden={!showUpload}>
+              <Panel
+                title="Capture a transaction"
+                subtitle="PNG or JPEG · up to 4 MB and 6 megapixels"
               >
-                <label>
-                  Assigned agent
-                  <select
-                    required
-                    value={agent || user.agent_id || agents.data?.[0]?.id || ""}
-                    onChange={(e) => setAgent(e.target.value)}
-                  >
-                    {agents.data?.map((a: Row) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Source transaction reference
-                  <input
-                    required
-                    minLength={2}
-                    maxLength={120}
-                    placeholder="Reference from the telecom screen"
-                    value={source}
-                    onChange={(e) => {
-                      setSource(e.target.value);
-                      setOperation(crypto.randomUUID());
-                    }}
-                  />
-                </label>
-                <div className="capture-picker">
-                  <ImageIcon size={28} />
-                  <b>{file?.name || "Choose a transaction screenshot"}</b>
-                  <span>
-                    Original image is encrypted and retained for review.
-                  </span>
-                  <div>
-                    <label className="capture-file">
-                      <Upload size={16} />
-                      Upload image
-                      <input
-                        aria-label="Upload screenshot"
-                        type="file"
-                        accept="image/png,image/jpeg"
-                        onChange={(e) => {
-                          setFile(e.target.files?.[0] || null);
-                          setOperation(crypto.randomUUID());
-                        }}
-                      />
-                    </label>
-                    <label className="capture-file">
-                      <Camera size={16} />
-                      Take photo
-                      <input
-                        aria-label="Take transaction photo"
-                        type="file"
-                        accept="image/png,image/jpeg"
-                        capture="environment"
-                        onChange={(e) => {
-                          setFile(e.target.files?.[0] || null);
-                          setOperation(crypto.randomUUID());
-                        }}
-                      />
-                    </label>
-                  </div>
-                </div>
-                {preview && (
-                  <img
-                    className="capture-preview"
-                    src={preview}
-                    alt="Selected transaction screenshot"
-                  />
-                )}
-                <button
-                  className="primary"
-                  disabled={busy || !file || !agents.data?.length}
+                <form
+                  id="capture-form"
+                  className="capture-upload"
+                  onSubmit={upload}
                 >
-                  {busy ? "Uploading…" : "Upload & run VPS OCR"}
-                </button>
-              </form>
-            </Panel>
+                  <label>
+                    Assigned agent
+                    <select
+                      required
+                      value={
+                        agent || user.agent_id || agents.data?.[0]?.id || ""
+                      }
+                      onChange={(e) => setAgent(e.target.value)}
+                    >
+                      {agents.data?.map((a: Row) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Source transaction reference
+                    <input
+                      required
+                      minLength={2}
+                      maxLength={120}
+                      placeholder="Reference from the telecom screen"
+                      value={source}
+                      onChange={(e) => {
+                        setSource(e.target.value);
+                        setOperation(crypto.randomUUID());
+                      }}
+                    />
+                  </label>
+                  <div className="capture-picker">
+                    <ImageIcon size={28} />
+                    <b>{file?.name || "Choose a transaction screenshot"}</b>
+                    <span>
+                      Original image is encrypted and retained for review.
+                    </span>
+                    <div>
+                      <label className="capture-file">
+                        <Upload size={16} />
+                        Upload image
+                        <input
+                          aria-label="Upload screenshot"
+                          type="file"
+                          accept="image/png,image/jpeg"
+                          onChange={(e) => {
+                            setFile(e.target.files?.[0] || null);
+                            setOperation(crypto.randomUUID());
+                          }}
+                        />
+                      </label>
+                      <label className="capture-file">
+                        <Camera size={16} />
+                        Take photo
+                        <input
+                          aria-label="Take transaction photo"
+                          type="file"
+                          accept="image/png,image/jpeg"
+                          capture="environment"
+                          onChange={(e) => {
+                            setFile(e.target.files?.[0] || null);
+                            setOperation(crypto.randomUUID());
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                  {preview && (
+                    <img
+                      className="capture-preview"
+                      src={preview}
+                      alt="Selected transaction screenshot"
+                    />
+                  )}
+                  <button
+                    className="primary"
+                    disabled={busy || !file || !agents.data?.length}
+                  >
+                    {busy ? "Uploading…" : "Upload & run VPS OCR"}
+                  </button>
+                </form>
+              </Panel>
+            </div>
           )}
           <Panel
             title="Capture history"
             subtitle="Search every capture in your authorized scope"
           >
             <div className="capture-upload">
-              <label>Search capture reference<input value={historySearch} maxLength={120} onChange={e=>{setHistorySearch(e.target.value);setHistoryPage(0);}} placeholder="Transaction reference"/></label>
-              <label>Verification status<select value={historyStatus} onChange={e=>{setHistoryStatus(e.target.value);setHistoryPage(0);}}><option value="">All statuses</option>{["QUEUED","OCR_FAILED","EXTRACTED","VALIDATED","SUBMITTED","VERIFIED","REJECTED"].map(s=><option key={s} value={s}>{s.replaceAll("_"," ")}</option>)}</select></label>
-              <div className="capture-toolbar"><button disabled={!historyPage||list.isFetching} onClick={()=>setHistoryPage(p=>p-1)}>Previous captures</button><span>Page {historyPage+1}</span><button disabled={list.isFetching||(list.data?.length||0)<20} onClick={()=>setHistoryPage(p=>p+1)}>Next captures</button></div>
+              <label>
+                Search capture reference
+                <input
+                  value={historySearch}
+                  maxLength={120}
+                  onChange={(e) => {
+                    setHistorySearch(e.target.value);
+                    setHistoryPage(0);
+                  }}
+                  placeholder="Transaction reference"
+                />
+              </label>
+              <label>
+                Verification status
+                <select
+                  value={historyStatus}
+                  onChange={(e) => {
+                    setHistoryStatus(e.target.value);
+                    setHistoryPage(0);
+                  }}
+                >
+                  <option value="">All statuses</option>
+                  {[
+                    "QUEUED",
+                    "OCR_FAILED",
+                    "EXTRACTED",
+                    "VALIDATED",
+                    "SUBMITTED",
+                    "VERIFIED",
+                    "REJECTED",
+                  ].map((s) => (
+                    <option key={s} value={s}>
+                      {s.replaceAll("_", " ")}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="capture-toolbar">
+                <button
+                  disabled={!historyPage || list.isFetching}
+                  onClick={() => setHistoryPage((p) => p - 1)}
+                >
+                  Previous captures
+                </button>
+                <span>Page {historyPage + 1}</span>
+                <button
+                  disabled={list.isFetching || (list.data?.length || 0) < 20}
+                  onClick={() => setHistoryPage((p) => p + 1)}
+                >
+                  Next captures
+                </button>
+              </div>
             </div>
             {list.isPending ? (
               <Loading />
@@ -266,7 +337,11 @@ export default function KycCapture() {
                     </button>
                   ))
                 ) : (
-                  <p>{historySearch || historyStatus || historyPage ? "No matching captures. Adjust the filters or return to the previous page." : "No captures yet. Upload a screenshot to begin."}</p>
+                  <p>
+                    {historySearch || historyStatus || historyPage
+                      ? "No matching captures. Adjust the filters or return to the previous page."
+                      : "No captures yet. Upload a screenshot to begin."}
+                  </p>
                 )}
               </div>
             )}

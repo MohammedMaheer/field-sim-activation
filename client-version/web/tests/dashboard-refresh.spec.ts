@@ -3,7 +3,7 @@ import { authenticate } from './session';
 
 test('live dashboard actions remain useful at desktop and phone widths', async ({ page }) => {
   await authenticate(page);
-  await expect(page.getByRole('region', { name: 'Live field summary' })).toContainText('Your next great day starts here.');
+  await expect(page.getByRole('region', { name: 'Live field summary' })).toContainText('Today’s field performance');
   await page.getByRole('button', { name: 'View open field tasks' }).click();
   await expect(page.getByRole('heading', { name: 'Tasks & review queue' })).toBeVisible();
   await page.goto('/');

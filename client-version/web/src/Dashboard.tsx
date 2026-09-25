@@ -231,7 +231,7 @@ export default function Dashboard() {
             <i />
             LIVE WORKSPACE
           </div>
-          <h2>Your next great day starts here.</h2>
+          <h2>Today’s field performance</h2>
           <p>
             {d.agents.length} agents · {d.teams.length} branch teams · one
             connected workflow.
@@ -395,28 +395,37 @@ export default function Dashboard() {
           >
             <ResponsiveContainer width="100%" height={240}>
               <BarChart
-                data={d.branches}
-                margin={{ top: 20, right: 15, bottom: 20, left: -20 }}
+                data={[...d.branches]
+                  .sort((a: Row, b: Row) => b.activations - a.activations)
+                  .slice(0, 5)}
+                layout="vertical"
+                margin={{ top: 12, right: 20, bottom: 12, left: 5 }}
               >
                 <CartesianGrid strokeDasharray="4 5" vertical={false} />
                 <XAxis
-                  dataKey="name"
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 11 }}
-                  interval={0}
-                />
-                <YAxis
+                  type="number"
                   axisLine={false}
                   tickLine={false}
                   allowDecimals={false}
                 />
+                <YAxis
+                  type="category"
+                  dataKey="name"
+                  width={105}
+                  axisLine={false}
+                  tickLine={false}
+                  tick={{ fontSize: 12 }}
+                  tickFormatter={(name: string) =>
+                    name.length > 15 ? name.slice(0, 14) + "…" : name
+                  }
+                />
+
                 <Tooltip />
                 <Bar
                   isAnimationActive={false}
                   dataKey="activations"
                   name="Completed sales"
-                  radius={[7, 7, 0, 0]}
+                  radius={[0, 7, 7, 0]}
                   maxBarSize={52}
                 >
                   {d.branches.map((b: Row, i: number) => (
@@ -506,93 +515,100 @@ export default function Dashboard() {
           </div>
         </Panel>
       </div>
-      <Panel
-        title="Your branch teams"
-        subtitle="Team leaders and their assigned agents"
-        action={
-          <button
-            className="text-button"
-            onClick={() => navigate("/team-leaders")}
-          >
-            View all teams
-            <ArrowUpRight size={16} />
-          </button>
-        }
-      >
-        <div className="branch-team-grid">
-          {d.teams.map((t: Row, i: number) => (
+      <div className="dashboard-bottom-grid">
+        <Panel
+          title="Team snapshot"
+          subtitle="Leading teams by today’s sales"
+          action={
             <button
-              className="branch-team-card"
-              key={t.id}
-              onClick={() =>
-                navigate("/team-leaders?selected=" + encodeURIComponent(t.id))
-              }
+              className="text-button"
+              onClick={() => navigate("/team-leaders")}
             >
-              <span
-                className="branch-label"
-                style={{ color: palette[i % palette.length] }}
-              >
-                {t.branch}
-              </span>
-              <div>
-                <Avatar name={t.name} />
-                <span>
-                  <b>{t.name}</b>
-                  <small>
-                    {t.agents} agents · {t.active} active
-                  </small>
-                </span>
-                <ArrowUpRight size={17} />
-              </div>
-              <Progress
-                value={Math.round(
-                  (t.activations / Math.max(1, t.target)) * 100,
-                )}
-              />
-              <p>
-                {t.activations} of {t.target} daily sales target
-                <span>{t.stock} SIMs</span>
-              </p>
-            </button>
-          ))}
-        </div>
-      </Panel>
-      <Panel
-        title="Recent sales records"
-        subtitle="A traceable history of completed and pending connections"
-        action={
-          <button
-            className="text-button"
-            onClick={() => navigate("/activations")}
-          >
-            All records
-            <ArrowUpRight size={16} />
-          </button>
-        }
-      >
-        <div className="dashboard-records">
-          {d.recent.map((r: Row) => (
-            <button
-              key={r.id}
-              onClick={() => navigate("/activations?selected=" + r.id)}
-            >
-              <span className="record-symbol">
-                <ScanLine size={19} />
-              </span>
-              <span>
-                <b>{r.customer}</b>
-                <small>{r.reference}</small>
-              </span>
-              <span className="record-plan">
-                {r.plan}
-                <small>{r.agent}</small>
-              </span>
-              <Badge value={r.status} />
+              View all teams
               <ArrowUpRight size={16} />
             </button>
-          ))}
-        </div>
-      </Panel>
+          }
+        >
+          <div className="branch-team-grid">
+            {[...d.teams]
+              .sort((a: Row, b: Row) => b.activations - a.activations)
+              .slice(0, 2)
+              .map((t: Row, i: number) => (
+                <button
+                  className="branch-team-card"
+                  key={t.id}
+                  onClick={() =>
+                    navigate(
+                      "/team-leaders?selected=" + encodeURIComponent(t.id),
+                    )
+                  }
+                >
+                  <span
+                    className="branch-label"
+                    style={{ color: palette[i % palette.length] }}
+                  >
+                    {t.branch}
+                  </span>
+                  <div>
+                    <Avatar name={t.name} />
+                    <span>
+                      <b>{t.name}</b>
+                      <small>
+                        {t.agents} agents · {t.active} active
+                      </small>
+                    </span>
+                    <ArrowUpRight size={17} />
+                  </div>
+                  <Progress
+                    value={Math.round(
+                      (t.activations / Math.max(1, t.target)) * 100,
+                    )}
+                  />
+                  <p>
+                    {t.activations} of {t.target} daily sales target
+                    <span>{t.stock} SIMs</span>
+                  </p>
+                </button>
+              ))}
+          </div>
+        </Panel>
+        <Panel
+          title="Recent sales records"
+          subtitle="A traceable history of completed and pending connections"
+          action={
+            <button
+              className="text-button"
+              onClick={() => navigate("/activations")}
+            >
+              All records
+              <ArrowUpRight size={16} />
+            </button>
+          }
+        >
+          <div className="dashboard-records">
+            {d.recent.slice(0, 3).map((r: Row) => (
+              <button
+                key={r.id}
+                onClick={() => navigate("/activations?selected=" + r.id)}
+              >
+                <span className="record-symbol">
+                  <ScanLine size={19} />
+                </span>
+                <span>
+                  <b>{r.customer}</b>
+                  <small>{r.reference}</small>
+                </span>
+                <span className="record-plan">
+                  {r.plan}
+                  <small>{r.agent}</small>
+                </span>
+                <Badge value={r.status} />
+                <ArrowUpRight size={16} />
+              </button>
+            ))}
+          </div>
+        </Panel>
+      </div>
     </div>
   );
 }

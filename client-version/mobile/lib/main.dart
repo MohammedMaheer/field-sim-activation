@@ -1580,7 +1580,6 @@ class ProfileScreen extends ConsumerWidget {
                   children: [
                     KeyValue('Employee ID', a['employee_id'] ?? '—'),
                     KeyValue('Branch', a['branch'] ?? '—'),
-                    KeyValue('Branch', a['branch'] ?? '—'),
                     KeyValue('Outlet', a['outlet'] ?? '—'),
                     KeyValue('Team leader', a['leader'] ?? '—'),
                     const KeyValue('Device', 'Relay Flutter'),
