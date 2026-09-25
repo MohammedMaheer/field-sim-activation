@@ -513,3 +513,83 @@ def test_capture_label_mapping_does_not_invent_fields():
     assert rows[0]["account"] == "0000123" and rows[0]["customer"] == "Jordan Demo"
     assert rows[1]["reference"] == "DEMO-02" and rows[1]["account"] == ""
     assert organize_lines([{"text": "Unrecognized layout"}]) == []
+
+
+def test_admin_management_validation_conflicts_and_permissions(client):
+    login(client)
+    a = next(row for row in client.get("/api/resources/agents").json() if row["employee_id"] == "RLY-1041")
+    path = f"/api/agents/{a['id']}/management"
+    options = client.get(path).json()
+    body = {"target": a["target"] + 1, "outlet_id": a["outlet_id"], "leader_id": a["leader_id"],
+            "expected_target": a["target"], "expected_outlet_id": a["outlet_id"], "expected_leader_id": a["leader_id"],
+            "reason": "Admin control audit test"}
+    assert client.patch(path, json={**body, "target": 0}).status_code == 422
+    wrong = next(leader for leader in options["leaders"] if leader["branch_id"] != a["branch_id"])
+    assert client.patch(path, json={**body, "leader_id": wrong["id"]}).status_code == 422
+    other = next(o for o in options["outlets"] if o["id"] != a["outlet_id"] and o["branch_id"] == a["branch_id"])
+    assert client.patch(path, json={**body, "outlet_id": other["id"]}).status_code == 409
+    result = client.patch(path, json=body)
+    assert result.status_code == 200, result.text
+    assert result.json()["target"] == body["target"]
+    roster = client.get("/api/resources/agents").json()
+    assert [r["employee_id"] for r in roster] == sorted(r["employee_id"] for r in roster)
+    assert client.patch(path, json=body).status_code == 409
+    assert any(x["action"] == "Agent Assignment Changed" for x in client.get("/api/resources/audit").json())
+    assert client.patch(path, json={**body, "expected_target": body["target"], "target": a["target"]}).status_code == 200
+    for account in ["agent1", "leader", "ops", "compliance"]:
+        login(client, account)
+        assert client.get(path).status_code == 403
+        assert client.patch(path, json=body).status_code == 403
+
+
+def test_capture_filters_validate_and_preserve_scope(client):
+    login(client)
+    assert client.get("/api/kyc-captures?status=INVALID").status_code == 422
+    assert client.get("/api/kyc-captures?offset=-1").status_code == 422
+    all_rows = client.get("/api/kyc-captures?limit=100").json()
+    first = client.get("/api/kyc-captures?limit=1").json()
+    second = client.get("/api/kyc-captures?limit=1&offset=1").json()
+    assert first == all_rows[:1] and second == all_rows[1:2]
+    if all_rows:
+        row = all_rows[0]
+        match = client.get("/api/kyc-captures", params={"search": row["source_reference"], "status": row["status"]}).json()
+        assert row in match
+    assert client.get("/api/kyc-captures?search=NO-SUCH-CAPTURE-987654321").json() == []
+    login(client, "agent2")
+    own = client.get("/api/resources/agents").json()[0]["id"]
+    rows = client.get("/api/kyc-captures?status=VERIFIED&limit=100").json()
+    assert all(r["agent_id"] == own for r in rows)
+
+
+def test_capture_history_reaches_beyond_fifty_without_leaking_other_agents(client):
+    import uuid
+    from sqlalchemy import delete
+    from app.db import KycCapture
+    from app.security import cipher
+    login(client)
+    agents = client.get("/api/resources/agents").json()
+    own = next(a for a in agents if a["employee_id"] == "RLY-1041")
+    other = next(a for a in agents if a["employee_id"] == "RLY-1042")
+    ids = []
+    with DB() as db:
+        for i in range(62):
+            row = KycCapture(agent_id=own["id"] if i < 61 else other["id"], creator_id=own["user_id"],
+                operation_id=str(uuid.uuid4()), source_reference=f"AUDIT-PAGE-{i:02}", status="SUBMITTED",
+                image_type="image/png", image_hash=str(i).zfill(64),
+                image_encrypted=cipher.encrypt(b"synthetic").decode())
+            db.add(row)
+            db.flush()
+            ids.append(row.id)
+        db.commit()
+    try:
+        pages = [client.get(f"/api/kyc-captures?search=AUDIT-PAGE&limit=20&offset={offset}").json()
+                 for offset in (0, 20, 40, 60)]
+        assert [len(page) for page in pages] == [20, 20, 20, 2]
+        assert len({r["id"] for page in pages for r in page}) == 62
+        login(client, "agent1")
+        rows = client.get("/api/kyc-captures?search=AUDIT-PAGE&limit=100").json()
+        assert len(rows) == 61 and all(r["agent_id"] == own["id"] for r in rows)
+    finally:
+        with DB() as db:
+            db.execute(delete(KycCapture).where(KycCapture.id.in_(ids)))
+            db.commit()

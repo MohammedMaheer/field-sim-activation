@@ -1,4 +1,4 @@
-"""Client edition API surface. No commercial workflow or administration endpoints."""
+"""Proposal API surface, including narrowly scoped agent administration."""
 
 from fastapi.routing import APIRoute
 from fastapi import Request
@@ -29,6 +29,7 @@ PATHS = {
     "/api/activations/{order_id}",
     "/api/agents/{agent_id}/shift",
     "/api/agents/{agent_id}/ping",
+    "/api/agents/{agent_id}/management",
     "/api/inventory/{sim_id}/move",
     "/api/compliance/{alert_id}",
     "/api/events",

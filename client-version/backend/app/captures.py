@@ -6,7 +6,7 @@ import io
 import json
 from datetime import datetime
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
@@ -151,15 +151,16 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
 
 
 @router.get("")
-def listing(user=Depends(principal), db=Depends(get_db), limit: int = 50, offset: int = 0):
+def listing(user=Depends(principal), db=Depends(get_db), limit: int = Query(50, ge=1, le=100),
+            offset: int = Query(0, ge=0), search: str = Query("", max_length=120),
+            status: Literal["", "QUEUED", "OCR_FAILED", "EXTRACTED", "VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"] = ""):
     access(db, user)
-    q = (
-        select(KycCapture)
-        .where(KycCapture.agent_id.in_(visible_agents(db, user)))
-        .order_by(KycCapture.created_at.desc())
-        .offset(max(0, offset))
-        .limit(max(1, min(limit, 100)))
-    )
+    q = select(KycCapture).where(KycCapture.agent_id.in_(visible_agents(db, user)))
+    if search.strip():
+        q = q.where(KycCapture.source_reference.icontains(search.strip(), autoescape=True))
+    if status:
+        q = q.where(KycCapture.status == status)
+    q = q.order_by(KycCapture.created_at.desc(), KycCapture.id.desc()).offset(offset).limit(limit)
     return [view(row, False) for row in db.scalars(q)]
 
 

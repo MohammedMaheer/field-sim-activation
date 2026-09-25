@@ -981,3 +981,8 @@ textarea {
 thead th { background:#eaf0f8; color:#42516e; }
 tbody tr:nth-child(even) { background:#f7f8fc; }
 @media(max-width:600px){.page-header{padding:16px}.capture-empty{margin:12px}}
+
+.agent-management-form {grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;padding:20px 0;}
+.agent-management-form .wide {grid-column:1/-1;}
+.agent-management-form > button {grid-column:1/-1;justify-self:start;}
+@media(max-width:600px){.agent-management-form{grid-template-columns:1fr}.agent-management-form > button{justify-self:stretch}}

@@ -2,6 +2,8 @@
 
 Independent edition aligned to the final field-sales/KYC/incentives proposal. The original full Relay source, deployment and Android package remain intact. Scope authority and boundaries: [../docs/SCOPE.md](../docs/SCOPE.md).
 
+Admin scope and controls: [audit matrix](docs/ADMIN-CONTROL-AUDIT.md).
+
 Latest proposal release and verification: [docs/FINAL-PROPOSAL-RELEASE.md](docs/FINAL-PROPOSAL-RELEASE.md).
 
 Web: https://relay-client.187-127-162-233.sslip.io/

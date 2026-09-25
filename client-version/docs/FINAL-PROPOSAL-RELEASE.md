@@ -1,6 +1,17 @@
 # Relay Client release history
 
-## Current release: balanced colour refresh, APK build 12, 24 September 2026
+## Current web/API release: admin control audit, 25 September 2026
+
+Added a compact administrator-only Manage tab inside the agent drawer for daily targets and branch-compatible outlet/leader assignments. Updates require a reason, are audited, reject stale edits and protect assigned SIM stock. Added scoped KYC reference search, verification-status filters and paging beyond the former 50-record UI limit. Default agent ordering is now stable after updates, and team details omit internal database IDs. No extra sidebar sections were added.
+
+Verification: 39 backend tests and Ruff passed; web build passed; all 17 hosted Playwright tests passed, including real VPS OCR through reviewer completion, exports, admin target save/restore, history search, popups, role-sensitive views and responsive layouts. A subsequent form-layout refinement was checked with both admin browser tests. Desktop and phone-width agent-management screenshots were visually reviewed. Flutter analysis and all four widget tests passed. Mobile build 12 remains compatible; there is no new APK for this admin-only update. Physical-device tests were not repeated in this pass.
+
+See [admin control coverage and boundaries](ADMIN-CONTROL-AUDIT.md). Tests establish the enumerated behavior, not a guarantee of no bugs, a penetration test or a 150-user load certification. Carrier services and notification delivery retain their documented demo boundaries.
+
+Backups: `/opt/relay-client/backups/admin-audit-20260925T045438Z` (pre-audit) and `/opt/relay-client/backups/admin-audit-20260925T045946Z` (follow-up). Each includes database and source/web backups; the corresponding prior API image is tagged `relay-client-api:before-admin-<timestamp>`. No migration was required. Restoring source/web and the previous image is the rollback path. The original full edition remains separate and healthy.
+
+
+## Earlier release: balanced colour refresh, APK build 12, 24 September 2026
 
 Added a restrained shared surface palette: lavender capture areas, teal history/review accents, blue panel headers and warm report/summary accents. Page headers and app bars use soft tinted surfaces; input fields remain white and existing status colours are retained. The transaction workflow and backend are unchanged.
 

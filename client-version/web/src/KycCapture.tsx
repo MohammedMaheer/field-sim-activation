@@ -33,9 +33,12 @@ export default function KycCapture() {
     [review, setReview] = useState(""),
     [dirty, setDirty] = useState(false),
     [preview, setPreview] = useState("");
+  const [historySearch, setHistorySearch] = useState("");
+  const [historyStatus, setHistoryStatus] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
   const list = useQuery({
-    queryKey: ["kyc-captures"],
-    queryFn: () => api("/kyc-captures"),
+    queryKey: ["kyc-captures", historySearch, historyStatus, historyPage],
+    queryFn: () => api(`/kyc-captures?limit=20&offset=${historyPage*20}&search=${encodeURIComponent(historySearch)}&status=${historyStatus}`),
     refetchInterval: 8000,
   });
   const detail = useQuery({
@@ -233,8 +236,13 @@ export default function KycCapture() {
           )}
           <Panel
             title="Capture history"
-            subtitle="Your latest 50 captures · status refreshes automatically"
+            subtitle="Search every capture in your authorized scope"
           >
+            <div className="capture-upload">
+              <label>Search capture reference<input value={historySearch} maxLength={120} onChange={e=>{setHistorySearch(e.target.value);setHistoryPage(0);}} placeholder="Transaction reference"/></label>
+              <label>Verification status<select value={historyStatus} onChange={e=>{setHistoryStatus(e.target.value);setHistoryPage(0);}}><option value="">All statuses</option>{["QUEUED","OCR_FAILED","EXTRACTED","VALIDATED","SUBMITTED","VERIFIED","REJECTED"].map(s=><option key={s} value={s}>{s.replaceAll("_"," ")}</option>)}</select></label>
+              <div className="capture-toolbar"><button disabled={!historyPage||list.isFetching} onClick={()=>setHistoryPage(p=>p-1)}>Previous captures</button><span>Page {historyPage+1}</span><button disabled={list.isFetching||(list.data?.length||0)<20} onClick={()=>setHistoryPage(p=>p+1)}>Next captures</button></div>
+            </div>
             {list.isPending ? (
               <Loading />
             ) : list.error ? (
@@ -258,7 +266,7 @@ export default function KycCapture() {
                     </button>
                   ))
                 ) : (
-                  <p>No captures yet. Upload a screenshot to begin.</p>
+                  <p>{historySearch || historyStatus || historyPage ? "No matching captures. Adjust the filters or return to the previous page." : "No captures yet. Upload a screenshot to begin."}</p>
                 )}
               </div>
             )}

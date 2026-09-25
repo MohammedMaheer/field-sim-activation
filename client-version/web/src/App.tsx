@@ -1,3 +1,4 @@
+import AgentManagement from "./AgentManagement";
 import KycCapture from "./KycCapture";
 import { FieldTasks, Incentives, Support } from "./ProposalOperations";
 
@@ -679,6 +680,7 @@ function AgentDrawer({
           "Inventory",
           "Compliance",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
+          ...(user.role === "Administrator" ? ["Manage"] : []),
         ].map((t) => (
           <button
             className={tab === t ? "active" : ""}
@@ -689,7 +691,7 @@ function AgentDrawer({
           </button>
         ))}
       </div>
-      {tab === "Overview" ? (
+      {tab === "Manage" ? <AgentManagement agentId={a.id} onSaved={() => {notify("Agent updated and audited"); onClose();}} /> : tab === "Overview" ? (
         <>
           <DetailList
             data={{
@@ -1079,7 +1081,7 @@ function TeamDrawer({ team, onClose }: { team: Row; onClose: () => void }) {
   const { data = [] } = useResource("agents");
   return (
     <Drawer title={team.name + " · Team performance"} onClose={onClose}>
-      <DetailList data={team} />
+      <DetailList data={{branch:team.branch, agents:team.agents, active_agents:team.active, daily_target:team.target, activations_today:team.activations, sim_stock:team.stock, average_handling_minutes:team.aht, verification_pass_rate:team.ekyc_rate+"%"}} />
       <DataTable
         rows={data.filter(
           (a) =>

@@ -235,7 +235,7 @@ def records(resource, db, user, branch_id=""):
     """All branch filters intersect the authenticated user scope."""
     require(db, user, "read")
     ids = visible_agents(db, user)
-    agents = db.scalars(select(Agent).where(Agent.id.in_(ids))).all()
+    agents = db.scalars(select(Agent).where(Agent.id.in_(ids)).order_by(Agent.employee_id, Agent.id)).all()
     if branch_id:
         agents = [a for a in agents if db.get(Outlet, a.outlet_id).branch_id == branch_id]
         ids = [a.id for a in agents]
@@ -737,13 +737,16 @@ def move(
         raise HTTPException(409, "This SIM cannot be moved from its current state")
     if body.agent_id:
         assert_agent(db, user, body.agent_id)
+    assigned_agent = None
+    if body.agent_id or sim.agent_id:
+        assigned_agent = db.scalar(select(Agent).where(Agent.id == (body.agent_id or sim.agent_id)).with_for_update())
     old = {"status": sim.status, "agent_id": sim.agent_id}
     if sim.status == body.status and (not body.agent_id or body.agent_id == sim.agent_id):
         raise HTTPException(409, "No inventory change requested")
     sim.status = body.status
     if body.agent_id:
         sim.agent_id = body.agent_id
-        sim.outlet_id = db.get(Agent, body.agent_id).outlet_id
+        sim.outlet_id = assigned_agent.outlet_id
         sim.assigned_at = now()
     db.add(
         Movement(
@@ -991,6 +994,63 @@ def edit_agent(
         body.model_dump(),
         request=request,
     )
+    db.commit()
+    return agent_view(db, agent)
+
+
+class AgentManagement(BaseModel):
+    target: int = Field(ge=1, le=1000)
+    outlet_id: str
+    leader_id: str
+    expected_target: int
+    expected_outlet_id: str
+    expected_leader_id: str
+    reason: str = Field(min_length=5, max_length=300)
+
+
+def admin_only(db, user):
+    if db.get(Role, user.role_id).name != "Administrator":
+        raise HTTPException(403, "Only an administrator can manage agent assignments")
+
+
+@app.get("/api/agents/{agent_id}/management")
+def agent_management(agent_id: str, user=Depends(principal), db=Depends(get_db)):
+    admin_only(db, user)
+    assert_agent(db, user, agent_id)
+    return {
+        "agent": agent_view(db, db.get(Agent, agent_id)),
+        "outlets": [{"id": o.id, "name": o.name, "branch_id": o.branch_id,
+                     "branch": db.get(Branch, o.branch_id).name} for o in db.scalars(select(Outlet).order_by(Outlet.name))],
+        "leaders": [{"id": u.id, "name": u.name, "branch_id": u.branch_id}
+                    for u in db.scalars(select(User).join(Role, User.role_id == Role.id).where(Role.name == "Team Leader").order_by(User.name))],
+    }
+
+
+@app.patch("/api/agents/{agent_id}/management")
+def save_agent_management(agent_id: str, body: AgentManagement, request: Request,
+                          user=Depends(principal), db=Depends(get_db)):
+    admin_only(db, user)
+    assert_agent(db, user, agent_id)
+    agent = db.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
+    old = {k: getattr(agent, k) for k in ("target", "outlet_id", "leader_id")}
+    if any(old[k] != getattr(body, "expected_" + k) for k in old):
+        raise HTTPException(409, "Assignment changed. Reopen management before saving.")
+    outlet, leader = db.get(Outlet, body.outlet_id), db.get(User, body.leader_id)
+    if not outlet or not leader or db.get(Role, leader.role_id).name != "Team Leader":
+        raise HTTPException(422, "Select a valid outlet and team leader")
+    if leader.branch_id != outlet.branch_id:
+        raise HTTPException(422, "Choose a team leader belonging to the outlet branch")
+    if len(body.reason.strip()) < 5:
+        raise HTTPException(422, "Enter a meaningful reason")
+    # Prevent moving stock silently across outlets; use the audited inventory workflow first.
+    if outlet.id != agent.outlet_id and db.scalar(select(Sim.id).where(
+        Sim.agent_id == agent.id, Sim.status.in_(["AVAILABLE", "ASSIGNED TO AGENT", "RESERVED"])).limit(1)):
+        raise HTTPException(409, "Return or transfer the agent's available/reserved SIM stock before changing outlet")
+    for key in old:
+        setattr(agent, key, getattr(body, key))
+    db.get(User, agent.user_id).branch_id = outlet.branch_id
+    audit(db, user, "Agent Assignment Changed", agent.id, agent.id, old,
+          {k: getattr(agent, k) for k in old}, body.reason.strip(), request)
     db.commit()
     return agent_view(db, agent)
 
