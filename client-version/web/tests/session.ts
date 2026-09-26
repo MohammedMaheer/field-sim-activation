@@ -1,6 +1,8 @@
+import {previewBuild} from './preview';
 import {expect,Page,BrowserContext} from '@playwright/test';
 let cookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
 export async function authenticate(page:Page) {
+ await previewBuild(page);
  if(cookies.length) await page.context().addCookies(cookies);
  await page.goto('/');
  const heading=page.getByRole("heading",{name:"Operations overview"});

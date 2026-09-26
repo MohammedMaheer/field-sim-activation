@@ -61,3 +61,11 @@ Web fonts are self-hosted under `web/public/fonts`; the same licensed DM Sans an
 Run browser tests against a local or hosted API: set `DEMO_PASSWORD`, optionally `RELAY_WEB_URL`, then `npx playwright install chromium` and `npm test`. Synthetic fixtures are included in `web/tests/fixtures`. Tests write screenshots to ignored `output/qa`.
 
 Generated APKs, data, keys and test output are excluded from Git. This repository holds the proposal edition only; the earlier full Relay demonstration is not required to run it.
+
+## Shared interaction design (build 16)
+
+The web colour/motion layer is `web/src/experience.css`; Flutter navigation/motion helpers are in `mobile/lib/experience.dart`. Keep burgundy for primary actions, violet for current navigation, teal for successful states, and amber/red for warnings/errors. Motion lasts 160–240 ms and respects reduced-motion preferences. Avoid perpetual decorative animation.
+
+Web has workspace breadcrumbs, history-aware back navigation, a keyboard-contained mobile menu, click-outside/Escape dismissal, and a skip-to-content link. Flutter direct routes have a safe Home fallback; tab state and search remain intact, and Android Back from a secondary tab returns Home. The original three-stage demo and screenshot review workflows are unchanged.
+
+Before publishing a UI build, browser tests can preview local `web/dist` files against the hosted demo API using `RELAY_PREVIEW_DIST=1` and `RELAY_WEB_URL` set to the demo host. Set `DEMO_PASSWORD` privately. This preview replaces HTML/assets in the test browser only; it does not deploy files. Clear `RELAY_PREVIEW_DIST` for hosted-release checks. Tests that modify records must use synthetic demo data only.

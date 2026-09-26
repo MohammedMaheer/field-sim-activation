@@ -6,10 +6,11 @@ import 'package:go_router/go_router.dart';
 import 'dashboard_charts.dart';
 
 import 'services.dart';
+import 'experience.dart';
 
-const burgundy = Color(0xFF6B1D3B),
+const burgundy = Color(0xFF8B2452),
     ink = Color(0xFF202B38),
-    muted = Color(0xFF596675),
+    muted = Color(0xFF526079),
     green = Color(0xFF087E6A);
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,42 +28,60 @@ final router = GoRouter(
     GoRoute(
       path: '/tasks',
       builder: (c, s) => Scaffold(
-        appBar: AppBar(title: const Text('My tasks')),
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('My tasks'),
+        ),
         body: const TasksScreen(),
       ),
     ),
     GoRoute(
       path: '/records',
       builder: (c, s) => Scaffold(
-        appBar: AppBar(title: const Text('Sales records')),
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('Sales records'),
+        ),
         body: const OrdersScreen(),
       ),
     ),
     GoRoute(
       path: '/incentives',
       builder: (c, s) => Scaffold(
-        appBar: AppBar(title: const Text('My incentives')),
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('My incentives'),
+        ),
         body: const IncentivesScreen(),
       ),
     ),
     GoRoute(
       path: '/customers',
       builder: (c, s) => Scaffold(
-        appBar: AppBar(title: const Text('Customers')),
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('Customers'),
+        ),
         body: const CustomersScreen(),
       ),
     ),
     GoRoute(
       path: '/support',
       builder: (c, s) => Scaffold(
-        appBar: AppBar(title: const Text('Support')),
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('Support'),
+        ),
         body: const SupportScreen(),
       ),
     ),
     GoRoute(
       path: '/reports',
       builder: (c, s) => Scaffold(
-        appBar: AppBar(title: const Text('Daily report')),
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('Daily report'),
+        ),
         body: const DailyReportScreen(),
       ),
     ),
@@ -78,21 +97,57 @@ class RelayApp extends StatelessWidget {
     routerConfig: router,
     theme: ThemeData(
       useMaterial3: true,
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: {
+          TargetPlatform.android: RelayPageTransitions(),
+          TargetPlatform.iOS: RelayPageTransitions(),
+          TargetPlatform.windows: RelayPageTransitions(),
+          TargetPlatform.macOS: RelayPageTransitions(),
+          TargetPlatform.linux: RelayPageTransitions(),
+        },
+      ),
+      navigationBarTheme: NavigationBarThemeData(
+        indicatorColor: const Color(0xFFE8D8FF),
+        labelTextStyle: WidgetStateProperty.resolveWith(
+          (states) => TextStyle(
+            fontFamily: 'DM Sans',
+            fontSize: 12,
+            fontWeight: states.contains(WidgetState.selected)
+                ? FontWeight.w800
+                : FontWeight.w500,
+            color: states.contains(WidgetState.selected)
+                ? const Color(0xFF642BA6)
+                : muted,
+          ),
+        ),
+      ),
+      snackBarTheme: SnackBarThemeData(
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xFF293B58),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
       fontFamily: 'DM Sans',
       colorScheme: ColorScheme.fromSeed(
         seedColor: burgundy,
         primary: burgundy,
         surface: Colors.white,
       ),
-      scaffoldBackgroundColor: const Color(0xFFEEF1F8),
+      scaffoldBackgroundColor: const Color(0xFFF4F7FF),
       appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFECE0FA),
+        backgroundColor: Color(0xFFF5EDFF),
+        surfaceTintColor: Colors.transparent,
+        titleTextStyle: TextStyle(
+          fontFamily: 'Manrope',
+          fontSize: 20,
+          fontWeight: FontWeight.w800,
+          color: ink,
+        ),
         foregroundColor: ink,
         centerTitle: false,
       ),
       cardTheme: CardThemeData(
         elevation: 0,
-        color: const Color(0xFFFAF8FD),
+        color: Colors.white,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
@@ -103,6 +158,15 @@ class RelayApp extends StatelessWidget {
         filled: true,
         fillColor: Colors.white,
         contentPadding: const EdgeInsets.all(16),
+        hintStyle: const TextStyle(color: Color(0xFF67758C), fontSize: 14),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: Color(0xFFD6DEEF)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: burgundy, width: 1.6),
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: Color(0xFFE2E5EB)),
@@ -283,6 +347,7 @@ class FieldShell extends ConsumerStatefulWidget {
 class _FieldShellState extends ConsumerState<FieldShell>
     with WidgetsBindingObserver {
   int tab = 0;
+  final visitedTabs = <int>{0};
   bool foreground = true;
   @override
   void initState() {
@@ -305,71 +370,99 @@ class _FieldShellState extends ConsumerState<FieldShell>
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(serviceProvider);
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            if (!s.online || s.queued > 0)
-              Container(
-                width: double.infinity,
-                color: const Color(0xFFFFF2DC),
-                padding: const EdgeInsets.all(10),
-                child: Text(
-                  '${s.online ? 'SYNC PENDING' : 'OFFLINE'} · ${s.queued} queued operation(s)',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF9F7527),
+    return PopScope(
+      canPop: tab == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && tab != 0) setState(() => tab = 0);
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: Column(
+            children: [
+              if (!s.online || s.queued > 0)
+                Container(
+                  width: double.infinity,
+                  color: const Color(0xFFFFF2DC),
+                  padding: const EdgeInsets.all(10),
+                  child: Text(
+                    '${s.online ? 'SYNC PENDING' : 'OFFLINE'} · ${s.queued} queued operation(s)',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF9F7527),
+                    ),
                   ),
                 ),
+              Expanded(
+                child: IndexedStack(
+                  index: tab,
+                  children: List.generate(5, (i) {
+                    if (!visitedTabs.contains(i)) {
+                      return const SizedBox.shrink();
+                    }
+                    return TickerMode(
+                      enabled: tab == i,
+                      child: AnimatedOpacity(
+                        opacity: tab == i ? 1 : 0,
+                        duration: motionDuration(context),
+                        child: [
+                          const HomeScreen(),
+                          const SizedBox.shrink(),
+                          const TasksScreen(),
+                          const StockScreen(),
+                          const ProfileScreen(),
+                        ][i],
+                      ),
+                    );
+                  }),
+                ),
               ),
-            Expanded(
-              child: [
-                const HomeScreen(),
-                const SizedBox.shrink(),
-                const TasksScreen(),
-                const StockScreen(),
-                const ProfileScreen(),
-              ][tab],
+            ],
+          ),
+        ),
+        bottomNavigationBar: NavigationBar(
+          height: 72,
+          backgroundColor: Colors.white,
+          indicatorColor: const Color(0xFFE4D3FF),
+          selectedIndex: tab,
+          onDestinationSelected: (i) {
+            if (i == 1) {
+              ScaffoldMessenger.of(context).removeCurrentSnackBar();
+              context.push('/ekyc');
+            } else {
+              setState(() {
+                tab = i;
+                visitedTabs.add(i);
+              });
+            }
+          },
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.grid_view_outlined),
+              selectedIcon: Icon(Icons.grid_view_rounded),
+              label: 'Home',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.add_circle_outline),
+              label: 'eKYC',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.receipt_long_outlined),
+              selectedIcon: Icon(Icons.receipt_long),
+              label: 'Tasks',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.sim_card_outlined),
+              selectedIcon: Icon(Icons.sim_card),
+              label: 'Stock',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline),
+              selectedIcon: Icon(Icons.person),
+              label: 'Profile',
             ),
           ],
         ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        height: 72,
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFF2E5EC),
-        selectedIndex: tab,
-        onDestinationSelected: (i) {
-          if (i == 1) {
-            ScaffoldMessenger.of(context).removeCurrentSnackBar();
-            context.push('/ekyc');
-          } else {
-            setState(() => tab = i);
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.grid_view_outlined),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.add_circle_outline),
-            label: 'eKYC',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            label: 'Tasks',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.sim_card_outlined),
-            label: 'Stock',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            label: 'Profile',
-          ),
-        ],
       ),
     );
   }
@@ -1788,53 +1881,55 @@ class MetricTile extends StatelessWidget {
     this.onTap,
   });
   @override
-  Widget build(BuildContext context) => Card(
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(17),
-        decoration: BoxDecoration(
-          color: accent.withValues(alpha: .11),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: accent.withValues(alpha: .18)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Text(
-                    label,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: muted,
-                      fontWeight: FontWeight.w600,
+  Widget build(BuildContext context) => EnterSurface(
+    child: Card(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(17),
+          decoration: BoxDecoration(
+            color: accent.withValues(alpha: .14),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: accent.withValues(alpha: .18)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: muted,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(7),
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: .1),
-                    borderRadius: BorderRadius.circular(9),
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: .16),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(icon, size: 18, color: accent),
                   ),
-                  child: Icon(icon, size: 18, color: accent),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 29,
-                fontWeight: FontWeight.w700,
-                letterSpacing: -1,
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 12),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 29,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: -1,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     ),

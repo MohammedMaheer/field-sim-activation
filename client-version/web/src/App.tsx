@@ -9,6 +9,7 @@ import {
   useState,
   useEffect,
   useCallback,
+  useRef,
   createContext,
   useContext,
 } from "react";
@@ -52,6 +53,9 @@ import {
   Plus,
   ArrowUpRight,
   ArrowRight,
+  ArrowLeft,
+  Home,
+  X,
   Download,
   CalendarDays,
   Check,
@@ -265,6 +269,7 @@ export default function App() {
   const [live, setLive] = useState(false);
   const [toast, setToast] = useState("");
   const [mobileMenu, setMobileMenu] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
   const client = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
@@ -323,7 +328,47 @@ export default function App() {
   }, [toast]);
   useEffect(() => {
     setMobileMenu(false);
+    window.scrollTo({ top: 0, behavior: "instant" });
   }, [location.pathname]);
+  useEffect(() => {
+    if (!mobileMenu) return;
+    const previous = document.activeElement as HTMLElement;
+    const nodes = () =>
+      Array.from(
+        sidebarRef.current?.querySelectorAll<HTMLElement>(
+          "a[href],button:not(:disabled)",
+        ) || [],
+      ).filter((n) => n.getClientRects().length > 0);
+    nodes()[0]?.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMobileMenu(false);
+      if (e.key === "Tab") {
+        const items = nodes(),
+          first = items[0],
+          last = items[items.length - 1];
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault();
+          last?.focus();
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault();
+          first?.focus();
+        }
+      }
+    };
+    const resize = () => {
+      if (innerWidth > 720) setMobileMenu(false);
+    };
+    document.addEventListener("keydown", key);
+    window.addEventListener("resize", resize);
+    const oldOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", key);
+      window.removeEventListener("resize", resize);
+      document.body.style.overflow = oldOverflow;
+      previous?.focus();
+    };
+  }, [mobileMenu]);
   if (!ready) return <Loading />;
   if (!user)
     return (
@@ -337,11 +382,36 @@ export default function App() {
   const current =
     navigation
       .flatMap((g) => g.items)
-      .find((i) => "/" + i[0] === location.pathname)?.[1] || "eKYC concept";
+      .find((i) => "/" + i[0] === location.pathname)?.[1] ||
+    (location.pathname === "/screenshot-capture"
+      ? "Screenshot review"
+      : "Workspace");
   return (
     <Context.Provider value={{ user, notify: setToast }}>
       <div className="app-shell">
-        <aside className={"sidebar " + (mobileMenu ? "open" : "")}>
+        <a className="skip-link" href="#workspace-content">
+          Skip to content
+        </a>
+        {mobileMenu && (
+          <button
+            className="navigation-scrim"
+            aria-label="Close navigation"
+            onClick={() => setMobileMenu(false)}
+            tabIndex={-1}
+          />
+        )}
+        <aside
+          ref={sidebarRef}
+          id="workspace-navigation"
+          className={"sidebar " + (mobileMenu ? "open" : "")}
+        >
+          <button
+            className="mobile-nav-close icon-btn"
+            aria-label="Close menu"
+            onClick={() => setMobileMenu(false)}
+          >
+            <X size={20} />
+          </button>
           <Link className="logo" to="/">
             <span className="logo-mark">
               <Radio />
@@ -407,23 +477,56 @@ export default function App() {
             <LogOut size={17} />
           </button>
         </aside>
-        <div className="main-shell">
+        <div className="main-shell" inert={mobileMenu || undefined}>
           <header className="topbar">
             <div className="breadcrumb">
               <button
                 className="icon-btn menu-btn"
                 aria-label="Toggle navigation"
+                aria-controls="workspace-navigation"
+                aria-expanded={mobileMenu}
                 onClick={() => setMobileMenu(!mobileMenu)}
               >
                 <Menu size={20} />
               </button>
-              <span>Workspace</span>
-              <span>/</span>
-              <b>{String(current)}</b>
+              {location.pathname !== "/" && (
+                <button
+                  className="icon-btn workspace-back"
+                  aria-label="Back to previous page"
+                  title="Back"
+                  onClick={() => {
+                    if ((window.history.state?.idx || 0) > 0) navigate(-1);
+                    else navigate("/");
+                  }}
+                >
+                  <ArrowLeft size={19} />
+                </button>
+              )}
+              <Link
+                className="workspace-home"
+                to="/"
+                aria-label="Workspace overview"
+              >
+                <Home size={16} />
+                <span>Workspace</span>
+              </Link>
+              <span aria-hidden="true">/</span>
+              <b aria-current="page">{String(current)}</b>
             </div>
             <div className="top-actions">
               <span
                 className={"live-indicator " + (!live ? "disconnected" : "")}
+                role="status"
+                aria-label={
+                  live
+                    ? "Live updates connected"
+                    : "Reconnecting to live updates"
+                }
+                title={
+                  live
+                    ? "Live updates connected"
+                    : "Reconnecting to live updates"
+                }
               >
                 <i />
                 {live ? "Live updates" : "Reconnecting"}
@@ -449,52 +552,56 @@ export default function App() {
               <Avatar name={user.name} size="small" />
             </div>
           </header>
-          <main className="content">
-            <Routes>
-              <Route path="/kyc-capture" element={<TransactionJourney />} />
-              <Route path="/screenshot-capture" element={<KycCapture />} />
-              <Route
-                path="/field-tasks"
-                element={<FieldTasks user={user} notify={setToast} />}
-              />
-              <Route
-                path="/incentives"
-                element={<Incentives user={user} notify={setToast} />}
-              />
-              <Route
-                path="/support"
-                element={<Support user={user} notify={setToast} />}
-              />
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/live" element={<LiveOperations />} />
-              <Route path="/reports" element={<Reports />} />
-              {[
-                "agents",
-                "customers",
-                "team-leaders",
-
-                "activations",
-
-                "inventory",
-                "compliance",
-                "audit",
-              ].map((resource) => (
+          <main className="content" id="workspace-content" tabIndex={-1}>
+            <div className="route-stage" key={location.pathname}>
+              <Routes>
+                <Route path="/kyc-capture" element={<TransactionJourney />} />
+                <Route path="/screenshot-capture" element={<KycCapture />} />
                 <Route
-                  key={resource}
-                  path={"/" + resource}
-                  element={<ResourcePage key={resource} resource={resource} />}
+                  path="/field-tasks"
+                  element={<FieldTasks user={user} notify={setToast} />}
                 />
-              ))}
-              <Route
-                path="*"
-                element={
-                  <PageHeader
-                    title="Page not included"
-                    description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
+                <Route
+                  path="/incentives"
+                  element={<Incentives user={user} notify={setToast} />}
+                />
+                <Route
+                  path="/support"
+                  element={<Support user={user} notify={setToast} />}
+                />
+                <Route path="/" element={<Dashboard />} />
+                <Route path="/live" element={<LiveOperations />} />
+                <Route path="/reports" element={<Reports />} />
+                {[
+                  "agents",
+                  "customers",
+                  "team-leaders",
+
+                  "activations",
+
+                  "inventory",
+                  "compliance",
+                  "audit",
+                ].map((resource) => (
+                  <Route
+                    key={resource}
+                    path={"/" + resource}
+                    element={
+                      <ResourcePage key={resource} resource={resource} />
+                    }
                   />
-                }
-              />
-            </Routes>
+                ))}
+                <Route
+                  path="*"
+                  element={
+                    <PageHeader
+                      title="Page not included"
+                      description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
+                    />
+                  }
+                />
+              </Routes>
+            </div>
             <footer className="page-footer">
               <span>
                 Relay Operations <span>·</span>{" "}

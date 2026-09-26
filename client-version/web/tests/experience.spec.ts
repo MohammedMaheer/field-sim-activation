@@ -1,0 +1,31 @@
+import { test, expect } from '@playwright/test';
+import { authenticate } from './session';
+
+test('backlinks, mobile navigation dismissal and reduced motion', async ({ page }) => {
+  await authenticate(page);
+  await page.getByRole('link', { name: 'Reports', exact: true }).click();
+  await expect(page).toHaveURL(/\/reports$/);
+  await page.getByRole('button', { name: 'Back to previous page' }).click();
+  await expect(page.getByRole('heading', { name: 'Operations overview' })).toBeVisible();
+  await page.goto('/screenshot-capture');
+  await expect(page.locator('[aria-current="page"]').last()).toHaveText('Screenshot review');
+  await page.getByRole('link', { name: 'Workspace overview', exact: true }).click();
+  await expect(page).toHaveURL(/\/$/);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Toggle navigation' }).click();
+  await expect(page.locator('.main-shell')).toHaveAttribute('inert', '');
+  await expect(page.getByRole('button', { name: 'Close menu' })).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  expect(await page.locator('.sidebar').evaluate(el => el.contains(document.activeElement))).toBeTruthy();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.main-shell')).not.toHaveAttribute('inert', '');
+  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toBeFocused();
+  await page.getByRole('button', { name: 'Toggle navigation' }).click();
+  await page.getByRole('button', { name: 'Close navigation' }).click({ position: { x: 350, y: 400 } });
+  await expect(page.getByRole('button', { name: 'Toggle navigation' })).toHaveAttribute('aria-expanded', 'false');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/reports');
+  await expect(page.locator('.route-stage')).toHaveCSS('animation-name', 'none');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
+  await page.screenshot({ path: '../output/qa/experience/mobile-reports.png', fullPage: true });
+});

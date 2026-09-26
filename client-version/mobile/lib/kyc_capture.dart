@@ -9,6 +9,7 @@ import 'package:dio/dio.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'services.dart';
+import 'experience.dart';
 
 class KycCaptureScreen extends ConsumerStatefulWidget {
   const KycCaptureScreen({super.key});
@@ -280,6 +281,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         ['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(capture!['status']);
     return Scaffold(
       appBar: AppBar(
+        leading: const WorkspaceBackButton(),
         title: const Text('KYC capture'),
         actions: [
           if (capture != null)

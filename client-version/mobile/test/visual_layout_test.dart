@@ -107,6 +107,26 @@ void main() {
       await t.tap(find.text(tab).last);
       await shot(tab.toLowerCase());
     }
+    await t.tap(find.text('Stock').last);
+    await t.pumpAndSettle();
+    final search = find.byType(TextField).first;
+    await t.enterText(search, 'DEMO');
+    await t.tap(find.text('Home').last);
+    await t.pumpAndSettle();
+    await t.tap(find.text('Stock').last);
+    await t.pumpAndSettle();
+    expect(
+      find.text('DEMO'),
+      findsWidgets,
+      reason: 'Stock search survives tab changes',
+    );
+    await t.binding.handlePopRoute();
+    await t.pumpAndSettle();
+    expect(
+      t.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      0,
+      reason: 'System back returns a secondary tab to Home',
+    );
     for (final path in [
       '/records',
       '/screenshot-capture',
