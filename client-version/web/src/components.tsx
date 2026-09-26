@@ -182,7 +182,7 @@ export function Metric({
         )}
       </div>
       <div className="metric-sub">
-        <ArrowUpRight size={13} />
+        {onClick && <ArrowUpRight size={13} />}
         {sub}
       </div>
     </>
@@ -300,7 +300,14 @@ export function DataTable({
         </button>
       </div>
       {!filtered.length ? (
-        <Empty />
+        <Empty
+          text={rows.length ? "No matching records" : "No records yet"}
+          detail={
+            rows.length
+              ? "Try changing your search or filters."
+              : "New records will appear here as work is recorded."
+          }
+        />
       ) : (
         <div className="table-scroll">
           <table>
@@ -325,9 +332,20 @@ export function DataTable({
             <tbody>
               {filtered.slice(safePage * 8, safePage * 8 + 8).map((r) => (
                 <tr key={r.id}>
-                  {columns.map((c) => (
+                  {columns.map((c, index) => (
                     <td key={c.key} data-label={c.label}>
-                      {c.render ? c.render(r) : String(r[c.key] ?? "—")}
+                      {onRow && index === 0 ? (
+                        <button
+                          className="record-link"
+                          onClick={() => onRow(r)}
+                        >
+                          {c.render ? c.render(r) : String(r[c.key] ?? "—")}
+                        </button>
+                      ) : c.render ? (
+                        c.render(r)
+                      ) : (
+                        String(r[c.key] ?? "—")
+                      )}
                     </td>
                   ))}
                   {onRow && (

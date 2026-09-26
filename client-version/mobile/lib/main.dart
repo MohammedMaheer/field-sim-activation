@@ -20,6 +20,13 @@ final router = GoRouter(
     GoRoute(path: '/', builder: (c, s) => const Gate()),
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
     GoRoute(
+      path: '/tasks',
+      builder: (c, s) => Scaffold(
+        appBar: AppBar(title: const Text('My tasks')),
+        body: const TasksScreen(),
+      ),
+    ),
+    GoRoute(
       path: '/records',
       builder: (c, s) => Scaffold(
         appBar: AppBar(title: const Text('Sales records')),
@@ -74,7 +81,7 @@ class RelayApp extends StatelessWidget {
       ),
       scaffoldBackgroundColor: const Color(0xFFEEF1F8),
       appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFEAE4F5),
+        backgroundColor: Color(0xFFECE0FA),
         foregroundColor: ink,
         centerTitle: false,
       ),
@@ -242,7 +249,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                 const InfoCard(
                   icon: Icons.shield_outlined,
                   text:
-                      'Demo environment. Use synthetic data only. Identity verification is simulated.',
+                      'Demo workspace · synthetic data only. Capture completed transactions for backend review.',
                 ),
                 const SizedBox(height: 15),
                 const Text(
@@ -515,7 +522,7 @@ class HomeScreen extends ConsumerWidget {
                           ),
                           Text(
                             'Team leader · ${a['leader'] ?? 'Assigned team'}',
-                            style: const TextStyle(fontSize: 12, color: muted),
+                            style: const TextStyle(fontSize: 14, color: muted),
                           ),
                         ],
                       ),
@@ -533,6 +540,7 @@ class HomeScreen extends ConsumerWidget {
                       'Activations',
                       d['today'].toString(),
                       Icons.bolt_outlined,
+                      onTap: () => context.push('/records'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -541,6 +549,7 @@ class HomeScreen extends ConsumerWidget {
                       'Daily target',
                       d['target'].toString(),
                       Icons.flag_outlined,
+                      onTap: () => context.push('/reports'),
                       accent: const Color(0xFFB47721),
                     ),
                   ),
@@ -575,6 +584,7 @@ class HomeScreen extends ConsumerWidget {
                       'KYC captured',
                       '${d['kyc_today']}',
                       Icons.document_scanner_outlined,
+                      onTap: () => context.push('/ekyc'),
                       accent: green,
                     ),
                   ),
@@ -584,6 +594,7 @@ class HomeScreen extends ConsumerWidget {
                       'Tasks to do',
                       '${d['tasks_open']}',
                       Icons.task_alt_outlined,
+                      onTap: () => context.push('/tasks'),
                       accent: const Color(0xFF35699C),
                     ),
                   ),
@@ -869,13 +880,18 @@ class IncentivesScreen extends ConsumerWidget {
                       'AED ${item['amount']}',
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
-                    subtitle: Text(
-                      '${item['period']} · ${item['source']}\n${item['note'] ?? ''}',
-                    ),
-                    isThreeLine: true,
-                    leading: const Icon(
-                      Icons.payments_outlined,
-                      color: burgundy,
+                    subtitle: Text('${item['period']} · ${item['source']}'),
+                    trailing: const Icon(Icons.chevron_right, color: green),
+                    onTap: () =>
+                        showRecordDetails(context, 'Incentive details', {
+                          'Period': item['period'],
+                          'Amount': 'AED ${item['amount']}',
+                          'Source': item['source'],
+                          'Note': item['note'],
+                        }, accent: green),
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFDDF2ED),
+                      child: Icon(Icons.payments_outlined, color: green),
                     ),
                   ),
                 ),
@@ -926,10 +942,33 @@ class _CustomersState extends ConsumerState<CustomersScreen> {
                 const EmptyView('No customers in your scope'),
               ...filtered.map(
                 (r) => Card(
+                  margin: const EdgeInsets.only(bottom: 10),
                   child: ListTile(
                     title: Text(r['name'] ?? ''),
-                    subtitle: Text('${r['mobile']} · ${r['agent']}'),
-                    leading: const Icon(Icons.person_outline, color: burgundy),
+                    subtitle: Text(
+                      '${r['mobile']} · ${r['agent']}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    trailing: const Icon(
+                      Icons.chevron_right,
+                      color: Color(0xFF35699C),
+                    ),
+                    onTap: () =>
+                        showRecordDetails(context, 'Customer details', {
+                          'Name': r['name'],
+                          'Mobile': r['mobile'],
+                          'Document': r['document'],
+                          'Nationality': r['nationality'],
+                          'Agent': r['agent'],
+                        }, accent: const Color(0xFF35699C)),
+                    leading: const CircleAvatar(
+                      backgroundColor: Color(0xFFE3EDFC),
+                      child: Icon(
+                        Icons.person_outline,
+                        color: Color(0xFF35699C),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -1065,7 +1104,9 @@ class _SupportState extends ConsumerState<SupportScreen> {
         const SectionTitle('Request history'),
         const SizedBox(height: 10),
         ...data.when(
-          loading: () => <Widget>[const LoadingCards()],
+          loading: () => <Widget>[
+            const SizedBox(height: 220, child: LoadingCards()),
+          ],
           error: (e, st) => <Widget>[
             RetryView(error: e, onRetry: () => ref.invalidate(supportProvider)),
           ],
@@ -1077,9 +1118,28 @@ class _SupportState extends ConsumerState<SupportScreen> {
                         padding: const EdgeInsets.only(bottom: 10),
                         child: Card(
                           child: ListTile(
-                            title: Text(r['subject']),
+                            title: Text(
+                              r['subject'],
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: const Icon(
+                              Icons.chevron_right,
+                              color: burgundy,
+                            ),
+                            onTap: () =>
+                                showRecordDetails(context, 'Support request', {
+                                  'Subject': r['subject'],
+                                  'Status': r['status'],
+                                  'Message': r['message'],
+                                  'Response': r['response']?.isNotEmpty == true
+                                      ? r['response']
+                                      : 'Awaiting response',
+                                }),
                             subtitle: Text(
                               '${r['status']} · ${r['response']?.isNotEmpty == true ? r['response'] : r['message']}',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
@@ -1713,58 +1773,116 @@ class MetricTile extends StatelessWidget {
   final String label, value;
   final IconData icon;
   final Color accent;
+  final VoidCallback? onTap;
   const MetricTile(
     this.label,
     this.value,
     this.icon, {
     super.key,
     this.accent = burgundy,
+    this.onTap,
   });
   @override
   Widget build(BuildContext context) => Card(
-    child: Container(
-      padding: const EdgeInsets.all(17),
-      decoration: BoxDecoration(
-        color: accent.withValues(alpha: .07),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: accent.withValues(alpha: .18)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Expanded(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: muted,
-                    fontWeight: FontWeight.w600,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(17),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: .11),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withValues(alpha: .18)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: muted,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
-              ),
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: .1),
-                  borderRadius: BorderRadius.circular(9),
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: accent.withValues(alpha: .1),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: Icon(icon, size: 18, color: accent),
                 ),
-                child: Icon(icon, size: 18, color: accent),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: const TextStyle(
-              fontSize: 29,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -1,
+              ],
             ),
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 29,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> showRecordDetails(
+  BuildContext context,
+  String title,
+  Map<String, dynamic> fields, {
+  Color accent = burgundy,
+}) {
+  return showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    backgroundColor: const Color(0xFFFAF8FD),
+    builder: (sheetContext) => ConstrainedBox(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.sizeOf(sheetContext).height * .82,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(22, 0, 22, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: accent,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close details',
+                  onPressed: () => Navigator.pop(sheetContext),
+                  icon: const Icon(Icons.close),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            ...fields.entries.map(
+              (entry) => KeyValue(entry.key, (entry.value ?? '—').toString()),
+            ),
+          ],
+        ),
       ),
     ),
   );
@@ -1796,14 +1914,15 @@ class KeyValue extends StatelessWidget {
         Expanded(
           child: Text(
             label,
-            style: const TextStyle(fontSize: 12, color: muted),
+            style: const TextStyle(fontSize: 14, color: muted),
           ),
         ),
+        const SizedBox(width: 16),
         Expanded(
           child: Text(
             value,
             textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
           ),
         ),
       ],

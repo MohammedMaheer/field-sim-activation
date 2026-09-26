@@ -29,7 +29,7 @@ test("admin target change persists and restores with audit trail",async({page,re
 });
 
 test("KYC history offers scoped search, review queue and recovery",async({page})=>{
- await authenticate(page);await page.goto('/kyc-capture');
+ await authenticate(page);await page.goto('/kyc-capture');await page.getByRole('button',{name:'Capture history',exact:true}).click();
  await page.getByLabel('Search capture reference').fill('NO-SUCH-CAPTURE-987654321');
  await expect(page.getByText('No matching captures. Adjust the filters or return to the previous page.')).toBeVisible();
  await expect(page.getByRole('button',{name:'Next captures',exact:true})).toBeDisabled();

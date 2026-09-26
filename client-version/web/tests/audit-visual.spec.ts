@@ -6,11 +6,12 @@ test('visual audit of all edition routes',async({page})=>{
  await authenticate(page);
  for(const width of [1440,390]) {
   await page.setViewportSize({width,height:960});
-  for(const route of ['/', '/live', '/agents', '/team-leaders', '/activations', '/kyc-capture', '/inventory', '/incentives', '/field-tasks', '/support', '/reports', '/compliance', '/audit']) {
+  for(const route of ['/', '/live', '/agents', '/team-leaders', '/customers', '/activations', '/kyc-capture', '/inventory', '/incentives', '/field-tasks', '/support', '/reports', '/compliance', '/audit']) {
    await page.goto(route);await expect(page.locator('h1').first()).toBeVisible();
    await expect(page.locator('.skeleton').first()).toHaveCount(0,{timeout:15000});
    await expect(page.getByText('Loading assigned agents…',{exact:true})).toHaveCount(0);
    await page.waitForTimeout(400);
+   if(width===390) expect(await page.locator('.page-header > div').first().evaluate(el=>el.getBoundingClientRect().height),route+' compact heading').toBeLessThan(180);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),route+' overflow').toBeTruthy();
    await page.screenshot({path:'../output/qa/audit-visual/'+width+'-'+(route.slice(1)||'dashboard')+'.png',fullPage:true});
   }

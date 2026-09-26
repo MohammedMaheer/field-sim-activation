@@ -9,6 +9,7 @@ test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',
  await page.getByRole('button',{name:'Upload & run VPS OCR',exact:true}).click();
  await expect(page.locator('.capture-detail .badge').first()).toHaveText('extracted',{timeout:65000});
  await expect(page.locator('.transaction-stages [aria-current="step"]')).toContainText('Review details');
+ await page.getByText(/Extracted text ·/).click();
  await expect(page.locator('.ocr-lines')).toContainText('Jordan Demo');
  if(!await page.getByLabel('Transaction reference',{exact:true}).count()) await page.getByRole('button',{name:'Add OCR line 2',exact:true}).click();
  await page.getByLabel('Transaction reference',{exact:true}).first().fill('DEMO-TXN-001');

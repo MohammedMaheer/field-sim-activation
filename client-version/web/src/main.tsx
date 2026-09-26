@@ -20,3 +20,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 );
 
 import "./premium.css";
+
+import "./refinements.css";

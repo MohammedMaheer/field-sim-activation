@@ -21,7 +21,7 @@ test("proposal navigation and historical record details", async ({ page }) => {
   }
   await page.getByRole("link", { name: "Activations", exact: true }).click();
   await page
-    .getByRole("button", { name: /^View RLY/ })
+    .getByRole("button", { name: /^View (RLY|DEMO)/ })
     .first()
     .click();
   await expect(page.getByRole("dialog")).toContainText("Lifecycle timeline");
@@ -112,9 +112,7 @@ test("task, incentive and support actions are saved", async ({ page }) => {
   );
   await page.getByRole("button", { name: "Send request" }).click();
   expect((await opened).status()).toBe(201);
-  const ticket = page
-    .locator(".proposal-task")
-    .filter({ hasText: "Synthetic support QA " + stamp });
+  const ticket = page.getByRole("dialog", {name:"Support request",exact:true});
   await expect(ticket).toBeVisible();
   await ticket
     .getByLabel("Response for Synthetic support QA " + stamp)

@@ -700,3 +700,33 @@ def test_organization_setup_is_atomic_scoped_and_audited(client):
     assert not any(
         a["id"] == created.json()["id"] for a in client.get("/api/resources/agents").json()
     )
+
+
+def test_demo_refresh_is_opt_in_idempotent_and_preserves_history(monkeypatch):
+    from app.demo_refresh import refresh_demo
+    from app.db import Sim, Movement
+
+    monkeypatch.delenv("RELAY_DEMO_REFRESH", raising=False)
+    with pytest.raises(RuntimeError, match="explicit"):
+        refresh_demo()
+    with DB() as db:
+        original = {o.id: (o.status, o.created_at) for o in db.scalars(select(Order)).all()}
+    monkeypatch.setenv("RELAY_DEMO_REFRESH", "1")
+    refresh_demo()
+    with DB() as db:
+        added = db.scalars(select(Order).where(Order.operation_id.like("demo-day-%"))).all()
+        assert added
+        added_ids = {o.id for o in added}
+        for order in added:
+            assert db.get(Sim, order.sim_id).agent_id == order.agent_id
+            assert db.scalar(select(Movement.id).where(Movement.sim_id == order.sim_id))
+            assert db.scalar(select(Audit.id).where(Audit.entity == order.id))
+    refresh_demo()
+    with DB() as db:
+        assert {
+            o.id for o in db.scalars(select(Order).where(Order.operation_id.like("demo-day-%")))
+        } == added_ids
+        assert all(
+            (db.get(Order, key).status, db.get(Order, key).created_at) == value
+            for key, value in original.items()
+        )

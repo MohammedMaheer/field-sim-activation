@@ -282,6 +282,40 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       appBar: AppBar(
         title: const Text('KYC capture'),
         actions: [
+          if (capture != null)
+            TextButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      if (dirty &&
+                          !(await showDialog<bool>(
+                                context: context,
+                                builder: (c) => AlertDialog(
+                                  title: const Text('Discard unsaved changes?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(c, false),
+                                      child: const Text('Keep editing'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.pop(c, true),
+                                      child: const Text('Discard'),
+                                    ),
+                                  ],
+                                ),
+                              ) ??
+                              false)) {
+                        return;
+                      }
+                      if (!mounted) return;
+                      setState(() {
+                        capture = null;
+                        rows = [];
+                        dirty = false;
+                      });
+                    },
+              child: const Text('New capture'),
+            ),
           IconButton(
             onPressed: busy ? null : refresh,
             icon: const Icon(Icons.refresh),
@@ -300,156 +334,136 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 child: Text(error!, style: const TextStyle(color: Colors.red)),
               ),
             ),
-          Card(
-            key: formKey,
-            color: const Color(0xFFF0EAFA),
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'New transaction capture',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-                  ),
-                  const SizedBox(height: 3),
-                  const Text(
-                    'PNG or JPEG · up to 4 MB',
-                    style: TextStyle(fontSize: 13, color: Color(0xFF596675)),
-                  ),
-                  gap(),
-                  TextField(
-                    controller: source,
-                    maxLength: 120,
-                    enabled: !busy && !pending,
-                    decoration: const InputDecoration(
-                      labelText: 'Source transaction reference',
+          if (capture == null)
+            Card(
+              key: formKey,
+              color: const Color(0xFFF0EAFA),
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'New transaction capture',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
-                    onChanged: (_) {
-                      saveDraft();
-                      setState(() {});
-                    },
-                  ),
-                  gap(),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: busy || pending
-                              ? null
-                              : () => pick(ImageSource.camera),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 62),
-                            padding: const EdgeInsets.symmetric(vertical: 7),
-                          ),
-                          child: const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.camera_alt_outlined, size: 20),
-                              SizedBox(height: 3),
-                              Text(
-                                'Take photo',
-                                maxLines: 1,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
+                    const SizedBox(height: 3),
+                    const Text(
+                      'PNG or JPEG · up to 4 MB',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF596675)),
+                    ),
+                    gap(),
+                    TextField(
+                      controller: source,
+                      maxLength: 120,
+                      enabled: !busy && !pending,
+                      decoration: const InputDecoration(
+                        labelText: 'Source transaction reference',
+                      ),
+                      onChanged: (_) {
+                        saveDraft();
+                        setState(() {});
+                      },
+                    ),
+                    gap(),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: busy || pending
+                                ? null
+                                : () => pick(ImageSource.camera),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(0, 62),
+                              padding: const EdgeInsets.symmetric(vertical: 7),
+                            ),
+                            child: const Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.camera_alt_outlined, size: 20),
+                                SizedBox(height: 3),
+                                Text(
+                                  'Take photo',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: busy || pending
-                              ? null
-                              : () => pick(ImageSource.gallery),
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size(0, 62),
-                            padding: const EdgeInsets.symmetric(vertical: 7),
-                          ),
-                          child: const Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.upload, size: 20),
-                              SizedBox(height: 3),
-                              Text(
-                                'Upload',
-                                maxLines: 1,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: busy || pending
+                                ? null
+                                : () => pick(ImageSource.gallery),
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size(0, 62),
+                              padding: const EdgeInsets.symmetric(vertical: 7),
+                            ),
+                            child: const Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.upload, size: 20),
+                                SizedBox(height: 3),
+                                Text(
+                                  'Upload',
+                                  maxLines: 1,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
+                      ],
+                    ),
+                    if (bytes != null) ...[
+                      gap(),
+                      Image.memory(
+                        bytes!,
+                        height: 180,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, e, st) => const Text(
+                          'Image preview unavailable. Choose a PNG or JPEG.',
+                        ),
                       ),
+                      gap(),
+                      const Text('Screenshot saved encrypted on this device.'),
+                      gap(),
                     ],
-                  ),
-                  if (bytes != null) ...[
-                    gap(),
-                    Image.memory(
-                      bytes!,
-                      height: 180,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, e, st) => const Text(
-                        'Image preview unavailable. Choose a PNG or JPEG.',
-                      ),
-                    ),
-                    gap(),
-                    const Text('Screenshot saved encrypted on this device.'),
-                    gap(),
-                  ],
-                  FilledButton(
-                    onPressed:
-                        busy || bytes == null || source.text.trim().length < 2
-                        ? null
-                        : upload,
-                    child: Text(
-                      busy
-                          ? 'Working…'
-                          : pending
-                          ? 'Retry queued upload'
-                          : 'Upload & run VPS OCR',
-                    ),
-                  ),
-                  if (pending)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 10),
+                    FilledButton(
+                      onPressed:
+                          busy || bytes == null || source.text.trim().length < 2
+                          ? null
+                          : upload,
                       child: Text(
-                        'Upload queued locally. Automatic retry while this screen is open; reopen it after restarting to resume.',
+                        busy
+                            ? 'Working…'
+                            : pending
+                            ? 'Retry queued upload'
+                            : 'Upload & run VPS OCR',
                       ),
                     ),
-                ],
+                    if (pending)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Text(
+                          'Upload queued locally. Automatic retry while this screen is open; reopen it after restarting to resume.',
+                        ),
+                      ),
+                  ],
+                ),
               ),
             ),
-          ),
-          gap(),
-          Card(
-            key: historyKey,
-            color: const Color(0xFFE7F5F1),
-            child: ExpansionTile(
-              key: ValueKey('history-${capture?['id'] ?? 'new'}'),
-              initiallyExpanded: false,
-              title: const Text('Capture history'),
-              subtitle: Text('${captures.length} recent captures'),
-              children: [
-                if (loading) const LinearProgressIndicator(),
-                if (!loading && captures.isEmpty)
-                  const ListTile(title: Text('No uploaded captures yet.')),
-                ...captures.map(
-                  (r) => ListTile(
-                    title: Text(r['source_reference']),
-                    subtitle: Text(r['status']),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: busy ? null : () => open(r),
-                  ),
-                ),
-              ],
-            ),
-          ),
           if (capture != null) ...[
             gap(),
             const Divider(),
@@ -664,6 +678,30 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
           ],
           gap(),
+          gap(),
+          Card(
+            key: historyKey,
+            color: const Color(0xFFE7F5F1),
+            child: ExpansionTile(
+              key: ValueKey('history-${capture?['id'] ?? 'new'}'),
+              initiallyExpanded: false,
+              title: const Text('Capture history'),
+              subtitle: Text('${captures.length} recent captures'),
+              children: [
+                if (loading) const LinearProgressIndicator(),
+                if (!loading && captures.isEmpty)
+                  const ListTile(title: Text('No uploaded captures yet.')),
+                ...captures.map(
+                  (r) => ListTile(
+                    title: Text(r['source_reference']),
+                    subtitle: Text(r['status']),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: busy ? null : () => open(r),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

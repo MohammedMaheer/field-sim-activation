@@ -23,7 +23,7 @@ class KycJourneyGuide extends StatelessWidget {
           : 'The original screenshot and validated rows are submitted. Track the backend team’s verification here.',
     ];
     return Card(
-      color: const Color(0xFFEAE3F6),
+      color: const Color(0xFFF1E8FF),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
@@ -37,33 +37,34 @@ class KycJourneyGuide extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 14),
-            ...List.generate(
-              3,
-              (i) => Semantics(
-                selected: i == step,
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: i == step ? const Color(0xFFDACAF0) : Colors.white,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(
-                        '${i + 1}',
-                        style: const TextStyle(fontWeight: FontWeight.w800),
+            Row(
+              children: List.generate(
+                3,
+                (i) => Expanded(
+                  child: Semantics(
+                    label: titles[i],
+                    selected: i == step,
+                    child: Container(
+                      margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                      height: 5,
+                      decoration: BoxDecoration(
+                        color: i <= step
+                            ? const Color(0xFF7541BF)
+                            : const Color(0xFFDED6EB),
+                        borderRadius: BorderRadius.circular(4),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          titles[i],
-                          style: const TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              titles[step],
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF512479),
               ),
             ),
             const SizedBox(height: 8),

@@ -558,6 +558,8 @@ function DateChip() {
 }
 
 function LiveOperations() {
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState("");
   const [branch, setBranch] = useState("");
   const {
     data: agents = [],
@@ -588,7 +590,13 @@ function LiveOperations() {
           ["Today's sales", agents.reduce((n, a) => n + a.activations, 0)],
           ["Available stock", agents.reduce((n, a) => n + a.stock, 0)],
         ].map(([label, value], i) => (
-          <div
+          <button
+            onClick={() =>
+              i < 2
+                ? setFilter(filter === String(i) ? "" : String(i))
+                : navigate(i === 2 ? "/activations" : "/inventory")
+            }
+            aria-pressed={i < 2 ? filter === String(i) : undefined}
             className={
               "premium-kpi tone-" + ["teal", "blue", "violet", "amber"][i]
             }
@@ -596,7 +604,8 @@ function LiveOperations() {
           >
             <div>{label}</div>
             <strong>{value}</strong>
-          </div>
+            <small>{i < 2 ? "Filter field activity" : "Open records"}</small>
+          </button>
         ))}
       </div>
       <Panel
@@ -604,14 +613,42 @@ function LiveOperations() {
         subtitle="Latest synchronized status from your assigned teams"
       >
         <DataTable
-          rows={agents}
+          rows={agents.filter((a) =>
+            filter === "0"
+              ? a.on_shift
+              : filter === "1"
+                ? a.status === "ACTIVE"
+                : true,
+          )}
           columns={[
             {
               key: "status",
               label: "Status",
               render: (r) => <Badge value={r.status} />,
             },
-            ...agentColumns,
+            agentColumns[0],
+            {
+              key: "outlet",
+              label: "Outlet / branch",
+              render: (r) => (
+                <>
+                  {r.outlet}
+                  <small className="cell-sub">{r.branch}</small>
+                </>
+              ),
+            },
+            agentColumns[3],
+            agentColumns[4],
+            agentColumns[7],
+            {
+              key: "last_sync",
+              label: "Last sync",
+              render: (r) =>
+                new Date(r.last_sync).toLocaleTimeString([], {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                }),
+            },
           ]}
           onRow={setSelected}
         />
@@ -1083,7 +1120,19 @@ function ResourcePage({ resource }: { resource: string }) {
           <TeamDrawer team={selected} onClose={closeDetails} />
         ) : (
           <Drawer title={config.title + " details"} onClose={closeDetails}>
-            <DetailList data={selected} />
+            <DetailList
+              data={
+                resource === "customers"
+                  ? {
+                      customer: selected.name,
+                      mobile: selected.mobile,
+                      document: selected.document,
+                      nationality: selected.nationality,
+                      agent: selected.agent,
+                    }
+                  : selected
+              }
+            />
             {resource === "audit" && (
               <>
                 <h3>Previous value</h3>
