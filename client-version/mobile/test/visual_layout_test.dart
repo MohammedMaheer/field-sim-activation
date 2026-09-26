@@ -109,7 +109,7 @@ void main() {
     }
     for (final path in [
       '/records',
-      '/ekyc',
+      '/screenshot-capture',
       '/incentives',
       '/customers',
       '/reports',
@@ -118,7 +118,7 @@ void main() {
     ]) {
       app.router.push(path);
       await shot(path.substring(1));
-      if (path == '/ekyc') {
+      if (path == '/screenshot-capture') {
         await t.ensureVisible(find.text('Capture history'));
         await t.tap(find.text('Capture history'));
         await t.pumpAndSettle();

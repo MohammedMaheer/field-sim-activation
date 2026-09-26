@@ -23,6 +23,7 @@ from . import providers
 from .captures import router as capture_router, process_capture
 from .proposal import router as proposal_router
 from .organization import router as organization_router
+from .transactions import router as transaction_router
 from .client_scope import configure as configure_client_scope
 
 
@@ -73,6 +74,7 @@ app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
 app.include_router(capture_router)
 app.include_router(proposal_router)
 app.include_router(organization_router)
+app.include_router(transaction_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,

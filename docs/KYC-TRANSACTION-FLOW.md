@@ -1,4 +1,21 @@
-# Proposal KYC transaction workflow
+# Transaction workflows
+
+## Current reference demo (owner approved 26 September 2026)
+
+The ZIP mobile flow has **exactly three main stages**, reproduced on web and Flutter:
+
+1. **Identity & eKYC:** national ID or passport selection, synthetic document capture/upload, real server OCR, correction of extracted fields, and an explicitly simulated selfie/liveness outcome.
+2. **SIM & Plan Allocation:** physical SIM/eSIM, agent-assigned ICCID, plan selection, synthetic phone number, and drawn signature. Allocation is saved before dispatch; inventory is reserved atomically on submission.
+3. **Activation & Receipt:** processing and simulated carrier result, downloadable printable PDF receipt, simulated SMS action and return to the dashboard.
+
+Use document, SIM and receipt icons. Completed stages use a check mark; purple marks the current stage, teal completed stages and a neutral background upcoming stages. These are progress indicators, not buttons that bypass required actions. At enlarged mobile text sizes, the three indicators stack vertically.
+
+Identity images and signatures are encrypted in existing order draft storage; no schema migration is required. Synthetic DEMO- identity numbers only. No real payment is collected, no SMS is sent and no telecom service is activated. Saved identity and allocation drafts can be resumed; this new demo does not claim offline document submission. The original screenshot queue retains its offline behavior.
+
+Web: `/kyc-capture`. Flutter: `/ekyc`. The separate screenshot workflow is linked from the demo and available at `/screenshot-capture` in both clients.
+
+## Retained proposal screenshot workflow
+
 
 The web portal and Flutter app combine the demo's compact three-stage presentation with the approved proposal's real screenshot processing. There is one progress indicator, driven by saved backend status, and no separate clickable six-stage guide.
 
@@ -8,7 +25,7 @@ The web portal and Flutter app combine the demo's compact three-stage presentati
 | 2. Review details | Compare OCR rows with the original, correct and validate; generate Excel; address rejection feedback | EXTRACTED, VALIDATED, REJECTED |
 | 3. Submit & track | Submit the original and validated rows to the backend team; follow the synchronized verification decision | SUBMITTED, VERIFIED |
 
-Before capture, the agent completes Emirates ID/identity, customer information, plan/SIM information and order details in Etisalat. These remain external prerequisites, summarized once beside the new capture form. Relay adds no selfie, biometric, signature, SIM allocation or carrier activation forms to this journey. VERIFIED means human backend verification of the captured transaction, not carrier activation.
+Before capture, the agent completes Emirates ID/identity, customer information, plan/SIM information and order details in Etisalat. These remain external prerequisites, summarized once beside the new capture form. These external prerequisites apply to the screenshot workflow; the separately labelled demo above is not external carrier approval. VERIFIED means human backend verification of the captured transaction, not carrier activation.
 
 ## Screenshot processing
 

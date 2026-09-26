@@ -730,3 +730,168 @@ def test_demo_refresh_is_opt_in_idempotent_and_preserves_history(monkeypatch):
             (db.get(Order, key).status, db.get(Order, key).created_at) == value
             for key, value in original.items()
         )
+
+
+def transaction_identity(client, monkeypatch, operation):
+    from app.transactions import extractor
+
+    lines = [
+        {"text": line, "confidence": 98.2}
+        for line in [
+            "Name: Jordan Demo",
+            "Document: DEMO-ID-1001",
+            "Nationality: Synthetic UAE resident",
+            "Expiry: 2030-12-31",
+            "Date of birth: 1995-04-12",
+        ]
+    ]
+    monkeypatch.setattr(extractor, "extract", lambda _: {"lines": lines})
+    me = login(client, "agent1")["user"]
+    r = client.post(
+        "/api/transactions", json={"agent_id": me["agent_id"], "operation_id": operation}
+    )
+    assert r.status_code == 200, r.text
+    tx = r.json()
+    identifier = tx["id"]
+    sample = client.get("/api/transactions/sample/id")
+    assert sample.status_code == 200, sample.text
+    r = client.post(
+        f"/api/transactions/{identifier}/scan",
+        json={"version": tx["version"], "document_type": "National Identity Card", **sample.json()},
+    )
+    assert r.status_code == 200, r.text
+    tx = r.json()
+    body = {k: tx["data"][k] for k in ["name", "document_number", "nationality", "expiry", "dob"]}
+    r = client.post(
+        f"/api/transactions/{identifier}/identity", json={"version": tx["version"], **body}
+    )
+    assert r.status_code == 200, r.text
+    tx = r.json()
+    r = client.post(
+        f"/api/transactions/{identifier}/liveness",
+        json={"version": tx["version"], "scenario": "pass"},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def test_reference_transaction_all_stages_and_idempotent_submit(client, monkeypatch):
+    from app.db import Sim, Movement, Activation
+    from app.services import finish_pending
+    from datetime import timedelta
+
+    tx = transaction_identity(client, monkeypatch, "test-full-reference-journey")
+    assert tx["stage"] == 2
+    catalog = client.get("/api/transactions/catalog", params={"agent_id": tx["agent_id"]}).json()
+    sim = catalog["sims"][0]
+    signature = [[[i / 20, 0.3 + i / 100] for i in range(12)]]
+    body = {
+        "version": tx["version"],
+        "sim_id": sim["id"],
+        "plan_id": catalog["plans"][0]["id"],
+        "msisdn": catalog["numbers"][0],
+        "signature": signature,
+    }
+    invalid = client.post(
+        f"/api/transactions/{tx['id']}/allocate", json={**body, "signature": [[[0.1, 0.1]]]}
+    )
+    assert invalid.status_code == 422
+    r = client.post(f"/api/transactions/{tx['id']}/allocate", json=body)
+    assert r.status_code == 200, r.text
+    tx = r.json()
+    r = client.post(f"/api/transactions/{tx['id']}/submit", json={"version": tx["version"]})
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "PROCESSING"
+    again = client.post(f"/api/transactions/{tx['id']}/submit", json={"version": tx["version"]})
+    assert again.status_code == 200
+    assert client.get(f"/api/transactions/{tx['id']}/receipt").status_code == 409
+    with DB() as db:
+        assert db.get(Sim, sim["id"]).status == "RESERVED"
+        assert (
+            len(
+                db.scalars(
+                    select(Movement).where(
+                        Movement.sim_id == sim["id"], Movement.new_status == "RESERVED"
+                    )
+                ).all()
+            )
+            == 1
+        )
+        order = db.get(Order, tx["id"])
+        assert "Jordan Demo" not in str(order.draft)
+        order.updated_at -= timedelta(seconds=15)
+        db.commit()
+    finish_pending()
+    r = client.get(f"/api/transactions/{tx['id']}")
+    assert r.json()["status"] == "ACTIVATED"
+    assert client.get(f"/api/transactions/{tx['id']}/receipt").content.startswith(b"%PDF")
+    assert client.post(f"/api/transactions/{tx['id']}/sms").json()["delivered"] is False
+    with DB() as db:
+        assert len(db.scalars(select(Activation).where(Activation.order_id == tx["id"])).all()) == 1
+
+
+def test_reference_transaction_scope_stale_versions_and_stock_conflict(client, monkeypatch):
+    from app.db import Sim
+
+    tx = transaction_identity(client, monkeypatch, "test-reference-conflict")
+    catalog = client.get("/api/transactions/catalog", params={"agent_id": tx["agent_id"]}).json()
+    r = client.post(
+        f"/api/transactions/{tx['id']}/liveness", json={"version": 1, "scenario": "pass"}
+    )
+    assert r.status_code == 409
+    login(client, "agent2")
+    assert client.get(f"/api/transactions/{tx['id']}").status_code in [403, 404]
+    assert client.get(
+        "/api/transactions/catalog", params={"agent_id": tx["agent_id"]}
+    ).status_code in [403, 404]
+    login(client, "agent1")
+    sim = catalog["sims"][0]
+    body = {
+        "version": tx["version"],
+        "sim_id": sim["id"],
+        "plan_id": catalog["plans"][0]["id"],
+        "msisdn": catalog["numbers"][0],
+        "signature": [[[i / 20, 0.4] for i in range(12)]],
+    }
+    r = client.post(f"/api/transactions/{tx['id']}/allocate", json=body)
+    assert r.status_code == 200
+    with DB() as db:
+        item = db.get(Sim, sim["id"])
+        item.status = "RESERVED"
+        db.commit()
+    assert (
+        client.post(
+            f"/api/transactions/{tx['id']}/submit", json={"version": r.json()["version"]}
+        ).status_code
+        == 409
+    )
+    with DB() as db:
+        item = db.get(Sim, sim["id"])
+        item.status = "AVAILABLE"
+        db.commit()
+
+
+def test_reference_transaction_cannot_skip_identity(client):
+    me = login(client, "agent1")["user"]
+    tx = client.post(
+        "/api/transactions",
+        json={"agent_id": me["agent_id"], "operation_id": "test-reference-no-skipping"},
+    ).json()
+    assert (
+        client.post(
+            f"/api/transactions/{tx['id']}/submit", json={"version": tx["version"]}
+        ).status_code
+        == 422
+    )
+    assert (
+        client.post(
+            f"/api/transactions/{tx['id']}/liveness",
+            json={"version": tx["version"], "scenario": "pass"},
+        ).status_code
+        == 422
+    )
+    repeated = client.post(
+        "/api/transactions",
+        json={"agent_id": me["agent_id"], "operation_id": "test-reference-no-skipping"},
+    ).json()
+    assert repeated["id"] == tx["id"]

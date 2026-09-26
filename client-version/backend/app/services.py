@@ -76,8 +76,8 @@ def transition(db, order, state, actor):
     db.add(OrderEvent(order_id=order.id, actor=actor, action=state.replace("_", " ").title()))
 
 
-def submit(db, user, order_id, request=None):
-    require(db, user, "activation.write")
+def submit(db, user, order_id, request=None, permission="activation.write", monitor_location=True):
+    require(db, user, permission)
     order = db.scalar(select(Order).where(Order.id == order_id).with_for_update())
     if not order:
         raise HTTPException(404, "Order not found")
@@ -146,7 +146,7 @@ def submit(db, user, order_id, request=None):
         request=request,
     )
     agent = db.get(Agent, order.agent_id)
-    if agent.geofence == "OUT OF BOUNDS":
+    if monitor_location and agent.geofence == "OUT OF BOUNDS":
         db.add(
             Alert(
                 agent_id=agent.id, title="Activation submitted outside territory", severity="REVIEW"
@@ -249,6 +249,7 @@ def order_view(db, row):
     plan = db.get(Plan, row.plan_id) if row.plan_id else None
     return {
         **raw(row),
+        "draft": {k: v for k, v in row.draft.items() if k != "transaction_data"},
         "agent": db.get(User, agent.user_id).name,
         "outlet": db.get(Outlet, agent.outlet_id).name,
         "customer": customer.name if customer else row.draft.get("name", "New customer"),

@@ -45,7 +45,14 @@ def configure(app):
         if not isinstance(r, APIRoute)
         or r.path in PATHS
         or r.path.startswith(
-            ("/api/organization", "/api/kyc-captures", "/api/field-tasks", "/api/incentives", "/api/support-tickets")
+            (
+                "/api/transactions",
+                "/api/organization",
+                "/api/kyc-captures",
+                "/api/field-tasks",
+                "/api/incentives",
+                "/api/support-tickets",
+            )
         )
     ]
     app.title = "Relay Client — Field Operations Concept"

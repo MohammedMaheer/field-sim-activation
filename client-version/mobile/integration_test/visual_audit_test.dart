@@ -55,7 +55,7 @@ void main() {
       // Review primary and secondary pages through the real router.
       for (final path in [
         '/records',
-        '/ekyc',
+        '/screenshot-capture',
         '/incentives',
         '/customers',
         '/reports',

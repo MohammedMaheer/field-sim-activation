@@ -60,7 +60,7 @@ void main() {
         'operation': 'phone-${DateTime.now().microsecondsSinceEpoch}',
         'pending': false,
       });
-      app.router.push('/ekyc');
+      app.router.push('/screenshot-capture');
       await wait(find.byType(KycCaptureScreen));
       await wait(find.text('Screenshot saved encrypted on this device.'));
       await binding.convertFlutterSurfaceToImage();

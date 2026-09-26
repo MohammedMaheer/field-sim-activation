@@ -37,7 +37,7 @@ test("branch selection scopes charts and team rosters; retired location routes s
 
 test("capture has three real stages without extra activation forms", async ({page}) => {
   await authenticate(page);
-  await page.goto("/kyc-capture");
+  await page.goto("/screenshot-capture");
   const guide = page.getByRole("region", { name: "Transaction capture progress" });
   await expect(guide.locator("li")).toHaveCount(3);
   await expect(guide.locator('[aria-current="step"]')).toHaveText("1Capture transaction");

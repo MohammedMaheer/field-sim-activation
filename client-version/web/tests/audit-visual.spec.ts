@@ -6,7 +6,7 @@ test('visual audit of all edition routes',async({page})=>{
  await authenticate(page);
  for(const width of [1440,390]) {
   await page.setViewportSize({width,height:960});
-  for(const route of ['/', '/live', '/agents', '/team-leaders', '/customers', '/activations', '/kyc-capture', '/inventory', '/incentives', '/field-tasks', '/support', '/reports', '/compliance', '/audit']) {
+  for(const route of ['/', '/live', '/agents', '/team-leaders', '/customers', '/activations', '/kyc-capture', '/screenshot-capture', '/inventory', '/incentives', '/field-tasks', '/support', '/reports', '/compliance', '/audit']) {
    await page.goto(route);await expect(page.locator('h1').first()).toBeVisible();
    await expect(page.locator('.skeleton').first()).toHaveCount(0,{timeout:15000});
    await expect(page.getByText('Loading assigned agents…',{exact:true})).toHaveCount(0);

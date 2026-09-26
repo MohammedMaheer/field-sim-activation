@@ -5,7 +5,7 @@ The maintained product is `client-version/`: FastAPI/PostgreSQL, React/TypeScrip
 - Update web and mobile together for changes to shared workflows and field names.
 - Teams belong to branches. Intersect branch filters with the authenticated user's authorized agents; never broaden access through a UI filter.
 - Location, territory and geofencing are excluded. Do not add location permissions, collection, maps or geofence reports to the client edition.
-- Etisalat stages 1–4 are external. Relay performs screenshot capture, server OCR, row review, Excel generation, backend verification and status synchronization. Never represent a guide step as biometric verification or carrier approval.
+- The owner approved the full ZIP three-stage demo on 26 September: identity/eKYC, SIM/plan allocation, activation/receipt. Label identity, liveness, carrier and SMS simulations explicitly; do not claim real biometric verification or carrier approval. Preserve the separate screenshot capture, server OCR, row review, Excel generation, backend verification and status synchronization workflow. Real Etisalat operations remain external.
 - Use synthetic demo data. Keep secrets, device credentials, captured customer images, database snapshots and generated binaries outside Git.
 - Run relevant backend, web and Flutter tests. Visually inspect changed desktop/mobile screens and preserve evidence outside Git.
 - Repository: `https://github.com/MohammedMaheer/field-sim-activation`. The owner requests that completed changes be committed and pushed here. Check for remote changes first, use meaningful commits, and never force-push or overwrite work from another computer.

@@ -30,10 +30,10 @@ test("proposal navigation and historical record details", async ({ page }) => {
     .getByRole("link", { name: "KYC transactions", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: /KYC transaction capture/i }),
+    page.getByRole("heading", { name: /New connection/i }),
   ).toBeVisible();
   await expect(
-    page.getByText("Etisalat", { exact: false }).first(),
+    page.getByText("Demo workspace", { exact: false }).first(),
   ).toBeVisible();
 });
 

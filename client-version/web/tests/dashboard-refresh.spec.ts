@@ -17,5 +17,5 @@ test('live dashboard actions remain useful at desktop and phone widths', async (
     await page.screenshot({ path: '../output/qa/colour-dashboard-' + width + '.png', fullPage: true });
   }
   await page.getByRole('button', { name: 'Capture transaction' }).click();
-  await expect(page.getByRole('heading', { name: /KYC transaction capture/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /New connection/i })).toBeVisible();
 });

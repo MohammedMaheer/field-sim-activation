@@ -1,4 +1,5 @@
 import 'kyc_capture.dart';
+import 'transaction_journey.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +19,11 @@ void main() {
 final router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
-    GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
+    GoRoute(path: '/ekyc', builder: (c, s) => const TransactionScreen()),
+    GoRoute(
+      path: '/screenshot-capture',
+      builder: (c, s) => const KycCaptureScreen(),
+    ),
     GoRoute(
       path: '/tasks',
       builder: (c, s) => Scaffold(
@@ -459,7 +464,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Ready to capture?',
+                      'Ready for a new connection?',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -468,7 +473,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 5),
                     const Text(
-                      'Capture a completed transaction. Review its extracted details and track verification.',
+                      'Follow identity, SIM and receipt steps in the guided demo.',
                       style: TextStyle(
                         color: Color(0xFFF0DDE6),
                         fontSize: 13,
@@ -487,7 +492,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       icon: const Icon(Icons.add_circle_outline),
                       label: const Text(
-                        'Capture transaction',
+                        'Start demo transaction',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),

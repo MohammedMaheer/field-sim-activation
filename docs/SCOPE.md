@@ -19,3 +19,7 @@ Location, territories, GPS collection, maps, geofence alerts and geofence report
 Third-party AI/biometric services, SMS/WhatsApp/email gateways, BI/ERP/billing integrations, real carrier access, infrastructure costs and ongoing maintenance require separate inputs. The proposal's 150-user sizing is not a performance certification.
 
 All seed records are synthetic. See [setup](../client-version/README.md) and [workflow](KYC-TRANSACTION-FLOW.md). The earlier full Relay demonstration is preserved locally and is outside the GitHub handoff.
+
+## Owner-approved reference demo extension — 26 September 2026
+
+The owner explicitly selected the full ZIP flow, labelled demo: identity/eKYC → SIM/plan allocation → activation/receipt. See KYC-TRANSACTION-FLOW.md for the current three-stage contract. Real carrier/identity operations remain external; screenshot OCR and human backend review remain available independently. Location and geofencing remain excluded.

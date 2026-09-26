@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {authenticate} from './session';
 import path from 'node:path';
 test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',async({page,request})=>{
- test.setTimeout(120000);await authenticate(page);await page.goto('/kyc-capture');
+ test.setTimeout(120000);await authenticate(page);await page.goto('/screenshot-capture');
  const reference='DEMO-WEB-'+Date.now();
  await page.getByLabel('Source transaction reference',{exact:true}).fill(reference);
  await page.getByLabel('Upload screenshot',{exact:true}).setInputFiles(path.resolve('tests/fixtures/transaction-sample.png'));

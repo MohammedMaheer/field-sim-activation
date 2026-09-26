@@ -1,6 +1,7 @@
 import OrganizationSetup from "./OrganizationSetup";
 import AgentManagement from "./AgentManagement";
 import KycCapture from "./KycCapture";
+import TransactionJourney from "./TransactionJourney";
 import { FieldTasks, Incentives, Support } from "./ProposalOperations";
 
 import Dashboard, { BranchFilter } from "./Dashboard";
@@ -450,7 +451,8 @@ export default function App() {
           </header>
           <main className="content">
             <Routes>
-              <Route path="/kyc-capture" element={<KycCapture />} />
+              <Route path="/kyc-capture" element={<TransactionJourney />} />
+              <Route path="/screenshot-capture" element={<KycCapture />} />
               <Route
                 path="/field-tasks"
                 element={<FieldTasks user={user} notify={setToast} />}
