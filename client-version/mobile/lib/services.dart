@@ -17,20 +17,33 @@ const apiUrl = String.fromEnvironment(
   defaultValue: 'https://relay-client.187-127-162-233.sslip.io/api',
 );
 final serviceProvider = ChangeNotifierProvider((ref) => RelayService());
+// Sync status changes must not discard mounted content. Explicit refreshes retain
+// AsyncValue's previous data, while account changes remain dependency reloads.
+RelayService _resourceService(Ref ref) {
+  ref.watch(serviceProvider.select((service) => service.user?['id']));
+  ref.listen<bool>(serviceProvider.select((service) => service.syncing), (
+    previous,
+    next,
+  ) {
+    if (previous == true && !next) ref.invalidateSelf();
+  });
+  return ref.read(serviceProvider);
+}
+
 final resourceProvider = FutureProvider.family<List<Json>, String>(
-  (ref, resource) => ref.watch(serviceProvider).list(resource),
+  (ref, resource) => _resourceService(ref).list(resource),
 );
 final dashboardProvider = FutureProvider<Json>(
-  (ref) => ref.watch(serviceProvider).dashboard(),
+  (ref) => _resourceService(ref).dashboard(),
 );
 final taskProvider = FutureProvider<List<Json>>(
-  (ref) => ref.watch(serviceProvider).proposalList('field-tasks'),
+  (ref) => _resourceService(ref).proposalList('field-tasks'),
 );
 final incentiveProvider = FutureProvider<List<Json>>(
-  (ref) => ref.watch(serviceProvider).proposalList('incentives'),
+  (ref) => _resourceService(ref).proposalList('incentives'),
 );
 final supportProvider = FutureProvider<List<Json>>(
-  (ref) => ref.watch(serviceProvider).proposalList('support-tickets'),
+  (ref) => _resourceService(ref).proposalList('support-tickets'),
 );
 
 abstract class PushAdapter {
