@@ -437,27 +437,30 @@ class _FieldShellState extends ConsumerState<FieldShell>
           },
           destinations: const [
             NavigationDestination(
-              icon: Icon(Icons.grid_view_outlined),
-              selectedIcon: Icon(Icons.grid_view_rounded),
+              icon: Icon(Icons.grid_view_outlined, color: RelayPalette.plum),
+              selectedIcon: Icon(
+                Icons.grid_view_rounded,
+                color: RelayPalette.plum,
+              ),
               label: 'Home',
             ),
             NavigationDestination(
-              icon: Icon(Icons.add_circle_outline),
+              icon: Icon(Icons.add_circle_outline, color: RelayPalette.brand),
               label: 'Receipts',
             ),
             NavigationDestination(
-              icon: Icon(Icons.receipt_long_outlined),
-              selectedIcon: Icon(Icons.receipt_long),
+              icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF98610F)),
+              selectedIcon: Icon(Icons.receipt_long, color: Color(0xFF98610F)),
               label: 'Tasks',
             ),
             NavigationDestination(
-              icon: Icon(Icons.sim_card_outlined),
-              selectedIcon: Icon(Icons.sim_card),
+              icon: Icon(Icons.sim_card_outlined, color: RelayPalette.teal),
+              selectedIcon: Icon(Icons.sim_card, color: RelayPalette.teal),
               label: 'Stock',
             ),
             NavigationDestination(
-              icon: Icon(Icons.person_outline),
-              selectedIcon: Icon(Icons.person),
+              icon: Icon(Icons.person_outline, color: Color(0xFF426FB6)),
+              selectedIcon: Icon(Icons.person, color: Color(0xFF426FB6)),
               label: 'Profile',
             ),
           ],

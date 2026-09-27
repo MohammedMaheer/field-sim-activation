@@ -437,8 +437,8 @@ export default function App() {
                       user.permissions.includes("audit.read"),
                   )
                   .map(([path, label, Icon]: any) => (
-                    <NavLink key={path} end to={"/" + path}>
-                      <Icon size={17} />
+                    <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
+                      <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
                       <span>{label}</span>
                       {path === "live" && <i className="live-dot" />}
                       {path === "compliance" && (

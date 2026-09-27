@@ -305,3 +305,21 @@ button.primary:hover:not(:disabled) { background: linear-gradient(110deg, #a02a6
 @media (prefers-reduced-motion: reduce) {
  button.premium-kpi:hover, button.report-card:hover, a.report-card:hover { transform: none; }
 }
+
+/* Route accents stay legible against the dark navigation and selected surface. */
+.sidebar nav a { --nav-accent: #ceb2ff; --nav-soft: #ceb2ff1c; }
+.sidebar nav a[data-section="live"], .sidebar nav a[data-section="inventory"], .sidebar nav a[data-section="compliance"] { --nav-accent: #79e2c6; --nav-soft: #79e2c61c; }
+.sidebar nav a[data-section="field-tasks"], .sidebar nav a[data-section="incentives"], .sidebar nav a[data-section="reports"] { --nav-accent: #ffd18a; --nav-soft: #ffd18a1c; }
+.sidebar nav a[data-section="agents"], .sidebar nav a[data-section="customers"], .sidebar nav a[data-section="audit"] { --nav-accent: #9fc7ff; --nav-soft: #9fc7ff1c; }
+.sidebar nav a[data-section="activations"], .sidebar nav a[data-section="kyc-capture"], .sidebar nav a[data-section="support"] { --nav-accent: #ffafd0; --nav-soft: #ffafd01c; }
+.sidebar nav .nav-icon { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; flex: 0 0 28px; border-radius: 8px; color: var(--nav-accent); background: var(--nav-soft); }
+.sidebar nav .nav-icon svg { color: inherit; opacity: 1; stroke-width: 1.9; }
+.sidebar nav a.active .nav-icon { color: #7541b0; background: #7541b017; }
+.sidebar nav a.active[data-section="live"] .nav-icon, .sidebar nav a.active[data-section="inventory"] .nav-icon, .sidebar nav a.active[data-section="compliance"] .nav-icon { color: #087e6a; background: #087e6a14; }
+.sidebar nav a.active[data-section="kyc-capture"] .nav-icon, .sidebar nav a.active[data-section="activations"] .nav-icon, .sidebar nav a.active[data-section="support"] .nav-icon { color: #8b2452; background: #8b245215; }
+.page-header > button:not(.primary) svg, .page-header .header-actions button:not(.primary) svg, .capture-file svg { color: #7541b0; }
+.report-card > svg { color: #7541b0; }
+.report-card:nth-child(3n + 2) > svg { color: #087e6a; }
+.report-card:nth-child(3n) > svg { color: #98610f; }
+
+.capture-file:nth-child(2) svg { color: #087e6a; }

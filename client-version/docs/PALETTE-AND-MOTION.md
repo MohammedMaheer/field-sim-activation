@@ -15,3 +15,12 @@ Web build passed. Four browser checks passed using local built assets against th
 Build 19 was installed and launched on the connected Android phone. Home and receipt routes were inspected, versionCode 19 confirmed, and original automatic rotation restored. APK SHA256: f0fcd744297f38bc038803b727d1a8baeb337f2b1b75ac93f87019a7f7bbdff7. Local and VPS hashes match.
 
 Client-only backup: /opt/relay-client/backups/palette-20260927T083922Z, including database, web assets, build 18 APK and migration state. Migration remains 005 (head), API health passed, and this presentation-only release changes no database or backend behavior. Rollback restores backed-up web assets and previous.apk; database restoration is unnecessary. Existing receipt OCR workflow and its previously tested limitations remain unchanged.
+
+
+## Icon consistency — build 21
+
+Navigation icons now have route-specific coordinated accents and softly tinted 28px containers. Teal represents live operations/stock/compliance, amber tasks/incentives/reports, blue people/audit, and rose activation receipts/support. Selected states retain a light surface and darker icon colour. Receipt upload and camera actions use plum and teal. Flutter bottom navigation follows corresponding semantic accents.
+
+Verified: web production build; all 15 routes captured at 1440px and 390px with overflow checks, plus sorting/drawer focus and navigation/reduced-motion checks. Rendered route contact sheets and receipt screen inspected. The preview receipt test briefly failed because a concurrent rebuild replaced dist; the completed hosted build subsequently passed both receipt and navigation checks. Flutter analysis clean; 10 widget/render tests passed, including synchronization stability. Build 21 installed on the connected phone on retry and launched successfully; versionCode confirmed and coloured bottom navigation visually inspected. Evidence remains outside Git.
+
+Client-only backup: /opt/relay-client/backups/icons-20260927T085952Z; database, web, build 20 APK and migration 005 backed up. No backend or schema changes. Rollback restores web.tar.gz and previous.apk without restoring the database. APK SHA256 e8a6e2089812fbfacaf0505ee8e2384bd595fbc558549b7a279f120186ce2cf8 matched locally and on VPS. Existing background-refresh flicker fix retained.
