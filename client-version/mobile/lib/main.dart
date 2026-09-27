@@ -7,10 +7,10 @@ import 'dashboard_charts.dart';
 import 'services.dart';
 import 'experience.dart';
 
-const burgundy = Color(0xFF8B2452),
-    ink = Color(0xFF202B38),
+const burgundy = RelayPalette.brand,
+    ink = RelayPalette.ink,
     muted = Color(0xFF526079),
-    green = Color(0xFF087E6A);
+    green = RelayPalette.teal;
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const ProviderScope(child: RelayApp()));
@@ -131,9 +131,9 @@ class RelayApp extends StatelessWidget {
         primary: burgundy,
         surface: Colors.white,
       ),
-      scaffoldBackgroundColor: const Color(0xFFF4F7FF),
+      scaffoldBackgroundColor: RelayPalette.canvas,
       appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFF5EDFF),
+        backgroundColor: Color(0xFFF6EEF6),
         surfaceTintColor: Colors.transparent,
         titleTextStyle: TextStyle(
           fontFamily: 'Manrope',
@@ -527,9 +527,14 @@ class HomeScreen extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(19),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFF74234A), Color(0xFF5E397B)],
-                  ),
+                  gradient: RelayPalette.hero,
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x208B2452),
+                      blurRadius: 22,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
                   borderRadius: BorderRadius.circular(18),
                 ),
                 child: Column(
@@ -1888,7 +1893,14 @@ class MetricTile extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(17),
           decoration: BoxDecoration(
-            color: accent.withValues(alpha: .14),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                accent.withValues(alpha: .18),
+                accent.withValues(alpha: .04),
+              ],
+            ),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: accent.withValues(alpha: .18)),
           ),

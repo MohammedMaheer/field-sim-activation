@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'experience.dart';
 
 int captureStage(String? status) {
   if (['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(status)) return 1;
@@ -23,8 +24,9 @@ class KycJourneyGuide extends StatelessWidget {
           : 'The original receipt and validated rows are submitted. Track the backend team’s verification here.',
     ];
     return Card(
-      color: const Color(0xFFF1E8FF),
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: const BoxDecoration(gradient: RelayPalette.soft),
         padding: const EdgeInsets.all(18),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -44,12 +46,14 @@ class KycJourneyGuide extends StatelessWidget {
                   child: Semantics(
                     label: titles[i],
                     selected: i == step,
-                    child: Container(
+                    child: AnimatedContainer(
+                      duration: motionDuration(context),
+                      curve: Curves.easeOutCubic,
                       margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
                       height: 5,
                       decoration: BoxDecoration(
                         color: i <= step
-                            ? const Color(0xFF7541BF)
+                            ? RelayPalette.plum
                             : const Color(0xFFDED6EB),
                         borderRadius: BorderRadius.circular(4),
                       ),

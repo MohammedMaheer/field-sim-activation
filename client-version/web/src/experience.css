@@ -1,6 +1,13 @@
 /* Shared colour and motion tokens. State colours retain their meaning. */
 :root {
-  --brand: #912852;
+  --brand: #8b2452;
+  --plum: #7541b0;
+  --teal: #087e6a;
+  --ink: #242b42;
+  --rose-soft: #fbeaf1;
+  --plum-soft: #eee7fa;
+  --teal-soft: #e2f5ee;
+  --amber-soft: #fff2d8;
   --green: #067a67;
   --muted: #56657e;
   --line: #dce3f0;
@@ -16,7 +23,7 @@
   box-shadow: 0 2px 12px #384c7605;
 }
 .sidebar {
-  background: #222d4b;
+  background: linear-gradient(165deg, #292d49 0%, #24243e 62%, #3e2746 100%);
 }
 .sidebar nav a.active {
   background: #e9dbff;
@@ -29,7 +36,7 @@
   background: #e3d0ff;
 }
 .page-header {
-  background: linear-gradient(115deg, #f0e3ff, #def8f1);
+  background: linear-gradient(115deg, #f9e2ed 0%, #eee6fa 55%, #e2f5ee 100%);
   border-color: #ded2f3;
 }
 .page-header h1 {
@@ -43,22 +50,22 @@
   box-shadow: 0 5px 20px #33497708;
 }
 .panel-head {
-  background: #eef2ff;
+  background: linear-gradient(110deg, #f5effa, #f7f9fc);
 }
 .premium-kpi.tone-violet {
-  background: #eadeff;
+  background: linear-gradient(135deg, #e8daf9, #f8f2ff);
   border-color: #d2b7f5;
 }
 .premium-kpi.tone-teal {
-  background: #d5f5e8;
+  background: linear-gradient(135deg, #cceedd, #effaf5);
   border-color: #a9e3cc;
 }
 .premium-kpi.tone-blue {
-  background: #ddecff;
+  background: linear-gradient(135deg, #dbe5f9, #f0f5ff);
   border-color: #b2d0f8;
 }
 .premium-kpi.tone-amber {
-  background: #ffedc8;
+  background: linear-gradient(135deg, #ffe8b9, #fff8e9);
   border-color: #efd090;
 }
 .premium-kpi strong {
@@ -269,4 +276,32 @@ button.primary:hover:not(:disabled) {
 .workspace-back,
 .menu-btn {
   flex-shrink: 0;
+}
+
+/* One palette across actions, workflows and secondary surfaces. */
+.primary { background: linear-gradient(110deg, var(--brand), #74305e); color: #fff; }
+button.primary:hover:not(:disabled) { background: linear-gradient(110deg, #a02a60, #833a6f); }
+.journey-guide { background: linear-gradient(120deg, #faf0f6, #f1eafa 65%, #edf8f4); border-color: #dccdea; }
+.transaction-stages li.active { background: linear-gradient(110deg, #7541b0, #8b427d); color: #fff; }
+.transaction-stages li.complete { background: var(--teal-soft); color: #086751; }
+.capture-focused .capture-upload { background: linear-gradient(145deg, #fff, #faf7fc); }
+.capture-dropzone { background: linear-gradient(130deg, #f6eefb, #edf7f4); border-color: #bda4d5; }
+.report-card:nth-child(3n + 1) { background: linear-gradient(135deg, #f1e7fa, #fcf9ff); }
+.report-card:nth-child(3n + 2) { background: linear-gradient(135deg, #def2e9, #f8fffc); }
+.report-card:nth-child(3n) { background: linear-gradient(135deg, #ffefcf, #fffcf6); }
+.premium-kpi, .report-card { transition: box-shadow 200ms ease, transform 200ms ease; }
+@media (hover: hover) {
+ button.premium-kpi:hover, button.report-card:hover, a.report-card:hover { transform: translateY(-3px); box-shadow: 0 10px 24px #44335c14; }
+}
+@media (prefers-reduced-motion: no-preference) {
+ .page-header, .dashboard-hero { animation: relay-enter 360ms var(--motion-ease) both; }
+ .premium-kpi { animation: relay-enter 380ms var(--motion-ease) both; }
+ .premium-kpi:nth-child(2) { animation-delay: 35ms; }
+ .premium-kpi:nth-child(3) { animation-delay: 70ms; }
+ .premium-kpi:nth-child(4) { animation-delay: 105ms; }
+ .transaction-stages li.active { animation: relay-step-reveal 280ms ease-out both; }
+ @keyframes relay-step-reveal { from { box-shadow: 0 0 0 5px #7541b020; } to { box-shadow: 0 0 0 0 #7541b000; } }
+}
+@media (prefers-reduced-motion: reduce) {
+ button.premium-kpi:hover, button.report-card:hover, a.report-card:hover { transform: none; }
 }

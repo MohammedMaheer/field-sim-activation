@@ -151,12 +151,12 @@ void main() {
         await t.pumpAndSettle();
         await t.tap(find.text(reference));
         await t.pumpAndSettle();
-        expect(find.text('New transaction capture'), findsNothing);
+        expect(find.text('Upload Etisalat receipt'), findsNothing);
         await t.drag(find.byType(Scrollable).first, const Offset(0, 2000));
         await shot('ekyc-review');
         await t.tap(find.text('New capture'));
         await t.pumpAndSettle();
-        expect(find.text('New transaction capture'), findsOneWidget);
+        expect(find.text('Upload Etisalat receipt'), findsOneWidget);
       }
       if (path == '/incentives' || path == '/customers') {
         await t.tap(find.byType(ListTile).first);

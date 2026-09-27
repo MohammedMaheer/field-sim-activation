@@ -37,11 +37,11 @@ import {
 } from "./components";
 
 export const palette = [
-  "#7c3aed",
-  "#0c9a8a",
-  "#3785e6",
-  "#e69a22",
-  "#d44e7c",
+  "#7541b0",
+  "#087e6a",
+  "#426fb6",
+  "#b77713",
+  "#a53f70",
   "#69758e",
   "#e25959",
 ];
@@ -100,12 +100,12 @@ function Donut({
   caption: string;
 }) {
   const stateColors: Record<string, string> = {
-    VERIFIED: "#0c9a8a",
-    SUBMITTED: "#e69a22",
-    REJECTED: "#d95064",
-    OCR_FAILED: "#d95064",
-    QUEUED: "#3785e6",
-    EXTRACTED: "#8550d5",
+    VERIFIED: "#087e6a",
+    SUBMITTED: "#b77713",
+    REJECTED: "#bf3d57",
+    OCR_FAILED: "#bf3d57",
+    QUEUED: "#426fb6",
+    EXTRACTED: "#7541b0",
     VALIDATED: "#5179bb",
   };
   const data: Row[] = rows

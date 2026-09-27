@@ -1,7 +1,8 @@
+import 'experience.dart';
 import 'package:flutter/material.dart';
 import 'services.dart';
 
-const chartViolet = Color(0xFF8550D5), chartTeal = Color(0xFF0C9A8A);
+const chartViolet = RelayPalette.plum, chartTeal = RelayPalette.teal;
 
 class WeeklyActivityCard extends StatelessWidget {
   final Json data;
