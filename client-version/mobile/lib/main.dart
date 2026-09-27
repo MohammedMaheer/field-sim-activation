@@ -1,5 +1,4 @@
 import 'kyc_capture.dart';
-import 'transaction_journey.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,7 +19,7 @@ void main() {
 final router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
-    GoRoute(path: '/ekyc', builder: (c, s) => const TransactionScreen()),
+    GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
     GoRoute(
       path: '/screenshot-capture',
       builder: (c, s) => const KycCaptureScreen(),
@@ -444,7 +443,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
             ),
             NavigationDestination(
               icon: Icon(Icons.add_circle_outline),
-              label: 'eKYC',
+              label: 'Receipts',
             ),
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined),
@@ -557,7 +556,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Ready for a new connection?',
+                      'Capture a completed activation',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 22,
@@ -566,7 +565,7 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 5),
                     const Text(
-                      'Follow identity, SIM and receipt steps in the guided demo.',
+                      'Upload the Etisalat activation receipt, review extracted details and track backend verification.',
                       style: TextStyle(
                         color: Color(0xFFF0DDE6),
                         fontSize: 13,
@@ -585,7 +584,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       icon: const Icon(Icons.add_circle_outline),
                       label: const Text(
-                        'Start demo transaction',
+                        'Upload activation receipt',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),

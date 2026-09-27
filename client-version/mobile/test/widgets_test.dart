@@ -42,7 +42,7 @@ void main() {
       expect(
         find.text(
           [
-            'Capture transaction',
+            'Upload receipt',
             'Review details',
             'Submit & track',
           ][entry.value],

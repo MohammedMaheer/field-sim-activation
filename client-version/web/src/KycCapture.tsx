@@ -125,9 +125,9 @@ export default function KycCapture() {
       <div className="page-header">
         <div>
           <div className="eyebrow">CAPTURE · EXTRACT · VERIFY</div>
-          <h1>KYC transaction capture</h1>
+          <h1>Activation receipt capture</h1>
           <p>
-            Turn transaction screenshots into reviewed records and an auditable
+            Turn Etisalat activation receipts into reviewed records and an auditable
             Excel file.
           </p>
         </div>
@@ -219,7 +219,7 @@ export default function KycCapture() {
                     </label>
                     <div className="capture-picker">
                       <ImageIcon size={28} />
-                      <b>{file?.name || "Choose a transaction screenshot"}</b>
+                      <b>{file?.name || "Choose an activation receipt image"}</b>
                       <span>
                         Original image is encrypted and retained for review.
                       </span>
@@ -257,7 +257,7 @@ export default function KycCapture() {
                       <img
                         className="capture-preview"
                         src={preview}
-                        alt="Selected transaction screenshot"
+                        alt="Selected activation receipt"
                       />
                     )}
                     <button

@@ -1,18 +1,10 @@
 # Transaction workflows
 
-## Current reference demo (owner approved 26 September 2026)
+## Current receipt workflow — owner clarification, 27 September 2026
 
-The ZIP mobile flow has **exactly three main stages**, reproduced on web and Flutter:
+Activation, identity verification and SIM/plan processing happen externally in Etisalat. Relay starts after activation: the agent photographs or uploads the Etisalat activation receipt, the VPS performs OCR, the agent checks/corrects the extracted rows, then submits the original and rows for authorized backend review. VERIFIED means receipt review, never carrier activation.
 
-1. **Identity & eKYC:** national ID or passport selection, synthetic document capture/upload, real server OCR, correction of extracted fields, and an explicitly simulated selfie/liveness outcome.
-2. **SIM & Plan Allocation:** physical SIM/eSIM, agent-assigned ICCID, plan selection, synthetic phone number, and drawn signature. Allocation is saved before dispatch; inventory is reserved atomically on submission.
-3. **Activation & Receipt:** processing and simulated carrier result, downloadable printable PDF receipt, simulated SMS action and return to the dashboard.
-
-Use document, SIM and receipt icons. Completed stages use a check mark; purple marks the current stage, teal completed stages and a neutral background upcoming stages. These are progress indicators, not buttons that bypass required actions. At enlarged mobile text sizes, the three indicators stack vertically.
-
-Identity images and signatures are encrypted in existing order draft storage; no schema migration is required. Synthetic DEMO- identity numbers only. No real payment is collected, no SMS is sent and no telecom service is activated. Saved identity and allocation drafts can be resumed; this new demo does not claim offline document submission. The original screenshot queue retains its offline behavior.
-
-Web: `/kyc-capture`. Flutter: `/ekyc`. The separate screenshot workflow is linked from the demo and available at `/screenshot-capture` in both clients.
+Both web `/kyc-capture` and Flutter `/ekyc` now open this receipt workflow. `/screenshot-capture` remains a compatible entry point. The previously approved synthetic activation demonstration is superseded and has no active product navigation. Historical records remain preserved.
 
 ## Retained proposal screenshot workflow
 
@@ -25,7 +17,7 @@ The web portal and Flutter app combine the demo's compact three-stage presentati
 | 2. Review details | Compare OCR rows with the original, correct and validate; generate Excel; address rejection feedback | EXTRACTED, VALIDATED, REJECTED |
 | 3. Submit & track | Submit the original and validated rows to the backend team; follow the synchronized verification decision | SUBMITTED, VERIFIED |
 
-Before capture, the agent completes Emirates ID/identity, customer information, plan/SIM information and order details in Etisalat. These remain external prerequisites, summarized once beside the new capture form. These external prerequisites apply to the screenshot workflow; the separately labelled demo above is not external carrier approval. VERIFIED means human backend verification of the captured transaction, not carrier activation.
+Before capture, the agent completes Emirates ID/identity, customer information, plan/SIM information and order details in Etisalat. These remain external prerequisites, summarized once beside the new capture form. Relay never requests carrier activation. VERIFIED means human backend verification of the captured transaction, not carrier activation.
 
 ## Screenshot processing
 

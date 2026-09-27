@@ -1,7 +1,6 @@
 import OrganizationSetup from "./OrganizationSetup";
 import AgentManagement from "./AgentManagement";
 import KycCapture from "./KycCapture";
-import TransactionJourney from "./TransactionJourney";
 import { FieldTasks, Incentives, Support } from "./ProposalOperations";
 
 import Dashboard, { BranchFilter } from "./Dashboard";
@@ -136,7 +135,7 @@ const navigation = [
     items: [
       ["activations", "Activations", Zap],
 
-      ["kyc-capture", "KYC transactions", ScanFace],
+      ["kyc-capture", "Activation receipts", ScanFace],
 
       ["inventory", "SIM inventory", Layers3],
       ["incentives", "Incentives", Coins],
@@ -555,7 +554,7 @@ export default function App() {
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>
               <Routes>
-                <Route path="/kyc-capture" element={<TransactionJourney />} />
+                <Route path="/kyc-capture" element={<KycCapture />} />
                 <Route path="/screenshot-capture" element={<KycCapture />} />
                 <Route
                   path="/field-tasks"

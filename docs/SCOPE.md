@@ -23,3 +23,7 @@ All seed records are synthetic. See [setup](../client-version/README.md) and [wo
 ## Owner-approved reference demo extension — 26 September 2026
 
 The owner explicitly selected the full ZIP flow, labelled demo: identity/eKYC → SIM/plan allocation → activation/receipt. See KYC-TRANSACTION-FLOW.md for the current three-stage contract. Real carrier/identity operations remain external; screenshot OCR and human backend review remain available independently. Location and geofencing remain excluded.
+
+## Current owner clarification — 27 September 2026
+
+This supersedes the reference demo extension above. Activation occurs in Etisalat. Relay accepts the completed activation receipt as an image, performs VPS OCR, supports correction/validation and Excel generation, and submits the receipt and rows for backend verification with synchronized status. Both web and mobile start at receipt capture; simulated identity, allocation, carrier activation and generated activation receipts are not part of the active client journey.

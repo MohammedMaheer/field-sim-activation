@@ -12,15 +12,15 @@ class KycJourneyGuide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final step = captureStage(status);
-    const titles = ['Capture transaction', 'Review details', 'Submit & track'];
+    const titles = ['Upload receipt', 'Review details', 'Submit & track'];
     final messages = [
-      'Take or upload the completed transaction screenshot. OCR extracts its details on the server.',
+      'Photograph or upload the Etisalat activation receipt. OCR extracts its details on the VPS.',
       status == 'REJECTED'
           ? 'Review the backend feedback, correct the details and validate before resubmitting.'
-          : 'Check the extracted details against the original screenshot, make corrections and validate the rows.',
+          : 'Check the extracted details against the original receipt, make corrections and validate the rows.',
       status == 'VERIFIED'
           ? 'Backend verification is complete. The result is synchronized with your transaction history.'
-          : 'The original screenshot and validated rows are submitted. Track the backend team’s verification here.',
+          : 'The original receipt and validated rows are submitted. Track the backend team’s verification here.',
     ];
     return Card(
       color: const Color(0xFFF1E8FF),
@@ -72,7 +72,7 @@ class KycJourneyGuide extends StatelessWidget {
             if (status == null) ...[
               const SizedBox(height: 10),
               const Text(
-                'Before capture: complete identity, customer, plan and order details in Etisalat.',
+                'Activation happens in Etisalat. Relay records the receipt and tracks backend review; it does not activate a SIM.',
                 style: TextStyle(
                   fontSize: 13,
                   height: 1.5,

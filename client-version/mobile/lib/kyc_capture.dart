@@ -282,7 +282,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: const WorkspaceBackButton(),
-        title: const Text('KYC capture'),
+        title: const Text('Activation receipt'),
         actions: [
           if (capture != null)
             TextButton(
@@ -346,7 +346,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'New transaction capture',
+                      'Upload Etisalat receipt',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
