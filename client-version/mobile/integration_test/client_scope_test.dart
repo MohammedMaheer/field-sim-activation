@@ -25,7 +25,7 @@ void main() {
   }
 
   testWidgets(
-    'client edition: scoped records, eKYC, stock and sync without sales flows',
+    'client edition: scoped records, stock, offline recovery and logout',
     (t) async {
       app.main();
       await wait(t, find.byType(app.Gate));
@@ -49,31 +49,36 @@ void main() {
       await binding.convertFlutterSurfaceToImage();
       await t.pump();
       await binding.takeScreenshot('client-home');
-      await tap(t, 'Records');
+      app.router.push('/records');
       await wait(t, find.text('Activation records'));
+      app.router.pop();
+      await t.pump(const Duration(milliseconds: 400));
       await tap(t, 'Stock');
       await wait(t, find.text('My SIM stock'));
-      expect(find.text('Scan SIM barcode'), findsNothing);
+      await t.pump(const Duration(milliseconds: 500));
       await binding.takeScreenshot('client-stock');
-      await tap(t, 'eKYC');
-      await wait(t, find.text('Run demo verification'));
-      await t.enterText(find.byType(TextField).first, 'Client Phone Demo');
-      await tap(t, 'Run demo verification');
-      await wait(t, find.text('VERIFIED'));
-      await binding.takeScreenshot('client-ekyc');
+      final stock = await service.list('inventory');
+      final available = stock.firstWhere((row) => row['status'] == 'AVAILABLE');
+      await t.enterText(find.byType(TextField).first, available['iccid']);
       FocusManager.instance.primaryFocus?.unfocus();
-      await t.pump();
-      await t.scrollUntilVisible(
-        find.text('Back to home'),
-        350,
-        scrollable: find
-            .descendant(
-              of: find.byType(ListView).last,
-              matching: find.byType(Scrollable),
+      await t.pump(const Duration(milliseconds: 500));
+      await t.ensureVisible(find.widgetWithText(ListTile, available['iccid']));
+      await t.tap(find.widgetWithText(ListTile, available['iccid']));
+      await wait(t, find.text('Update SIM stock'));
+      expect(
+        t
+            .widget<TextButton>(
+              find.ancestor(
+                of: find.text('Return SIM'),
+                matching: find.byType(TextButton),
+              ),
             )
-            .first,
+            .onPressed,
+        isNull,
       );
-      await tap(t, 'Back to home');
+      await binding.takeScreenshot('client-stock-dialog');
+      await tap(t, 'Cancel');
+
       await tap(t, 'Profile');
       await wait(t, find.text('My workspace'));
       await service.sync();

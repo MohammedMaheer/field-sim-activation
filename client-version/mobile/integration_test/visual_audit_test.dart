@@ -55,6 +55,7 @@ void main() {
       // Review primary and secondary pages through the real router.
       for (final path in [
         '/records',
+        '/ekyc',
         '/screenshot-capture',
         '/incentives',
         '/customers',
@@ -66,8 +67,8 @@ void main() {
         await t.pump(const Duration(seconds: 3));
         await shot(path.substring(1));
         if (path == '/customers' || path == '/incentives') {
+          await wait(find.byType(ListTile));
           final tile = find.byType(ListTile).first;
-          await wait(tile);
           await t.tap(tile);
           await wait(find.byTooltip('Close details'));
           await shot('${path.substring(1)}-details');

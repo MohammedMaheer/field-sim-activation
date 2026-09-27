@@ -82,6 +82,96 @@ void main() {
     },
   );
 
+  testWidgets('signature gestures remain captured inside a scrolling form', (
+    t,
+  ) async {
+    List<List<Offset>> strokes = [];
+    await t.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (c, set) => Scaffold(
+            body: ListView(
+              children: [
+                const SizedBox(height: 650),
+                SignaturePad(
+                  value: strokes,
+                  onChanged: (v) => set(() => strokes = v),
+                ),
+                const SizedBox(height: 400),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await t.scrollUntilVisible(find.byType(SignaturePad), 350);
+    await t.ensureVisible(find.byType(SignaturePad));
+    await t.pumpAndSettle();
+    final box = t.getRect(find.byType(SignaturePad));
+    final g = await t.startGesture(box.topLeft + const Offset(25, 45));
+    for (var i = 1; i <= 20; i++) {
+      await g.moveTo(box.topLeft + Offset(25 + i * 8, 45 + (i % 6) * 12));
+      await t.pump(const Duration(milliseconds: 25));
+    }
+    await g.up();
+    expect(strokes.expand((s) => s).length, greaterThanOrEqualTo(8));
+  });
+
+  testWidgets('identity completion has a gated, working next-stage action', (
+    t,
+  ) async {
+    for (final verified in [false, true]) {
+      final service = VisualService({
+        '/transactions/demo': {
+          'id': 'demo',
+          'version': 1,
+          'stage': 1,
+          'status': 'DRAFT',
+          'msisdn': 'DEMO-050-0001',
+          'data': {
+            'document_type': 'National Identity Card',
+            'name': 'Jordan Demo',
+            'ocr_lines': [],
+            'identity_saved': true,
+            'identity_verified': verified,
+          },
+        },
+        '/transactions/catalog': {'sims': [], 'plans': [], 'numbers': []},
+      });
+      service.user = {'id': 'demo-user', 'agent_id': 'demo-agent'};
+      await service.memoryStore.put('transaction-journey-demo-user', {
+        'id': 'demo',
+      });
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [serviceProvider.overrideWith((ref) => service)],
+          child: const MaterialApp(home: TransactionScreen()),
+        ),
+      );
+      await t.pumpAndSettle();
+      final next = find.text('Continue to SIM & plan');
+      await t.scrollUntilVisible(
+        next,
+        350,
+        scrollable: find.byType(Scrollable).first,
+      );
+      final button = t.widget<FilledButton>(
+        find.ancestor(
+          of: next,
+          matching: find.byWidgetPredicate((w) => w is FilledButton),
+        ),
+      );
+      expect(button.onPressed != null, verified);
+      if (verified) {
+        await t.tap(next);
+        await t.pumpAndSettle();
+        expect(find.text('Allocate SIM & plan'), findsOneWidget);
+      }
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    }
+  });
+
   testWidgets('all three native transaction screens render without overflow', (
     t,
   ) async {

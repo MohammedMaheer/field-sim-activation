@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
@@ -552,7 +553,9 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
                   ),
                   gap(8),
                   Text(
-                    identity['liveness'] == 'SIMULATED_FAIL'
+                    identity['identity_verified'] == true
+                        ? 'Demo identity check passed.'
+                        : identity['liveness'] == 'SIMULATED_FAIL'
                         ? 'Demo check failed. Retry to continue.'
                         : 'Simulation only — no biometric data is captured.',
                   ),
@@ -564,6 +567,14 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
                     child: const Text('Open demo selfie check'),
                   ),
                 ], color: const Color(0xFFE0F5EB)),
+                gap(),
+                FilledButton.icon(
+                  onPressed: busy || identity['identity_verified'] != true
+                      ? null
+                      : () => setState(() => step = 2),
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  label: const Text('Continue to SIM & plan'),
+                ),
               ],
               gap(),
               TextButton(
@@ -862,10 +873,22 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
   }
 }
 
-class SignaturePad extends StatelessWidget {
+class SignaturePad extends StatefulWidget {
   final List<List<Offset>> value;
   final ValueChanged<List<List<Offset>>> onChanged;
   const SignaturePad({super.key, required this.value, required this.onChanged});
+  @override
+  State<SignaturePad> createState() => _SignaturePadState();
+}
+
+class _SignaturePadState extends State<SignaturePad> {
+  int? pointer;
+  List<List<Offset>> strokes = [];
+
+  void emit() => widget.onChanged([
+    for (final stroke in strokes) [...stroke],
+  ]);
+
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (c, box) {
@@ -873,29 +896,57 @@ class SignaturePad extends StatelessWidget {
           Offset((p.dx / box.maxWidth).clamp(0, 1), (p.dy / 160).clamp(0, 1));
       return Semantics(
         label: 'Customer signature pad',
-        child: GestureDetector(
-          onPanStart: (d) => onChanged([
-            ...value,
-            [norm(d.localPosition)],
-          ]),
-          onPanUpdate: (d) {
-            if (value.isNotEmpty && value.expand((s) => s).length < 3000) {
-              onChanged([
-                ...value.take(value.length - 1),
-                [...value.last, norm(d.localPosition)],
-              ]);
-            }
+        child: RawGestureDetector(
+          // Drawing must own the touch from pointer-down; otherwise a vertical
+          // signature stroke can be stolen by the surrounding scrolling form.
+          gestures: {
+            EagerGestureRecognizer:
+                GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+                  EagerGestureRecognizer.new,
+                  (_) {},
+                ),
           },
-          child: Container(
-            height: 160,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              border: Border.all(color: const Color(0xFFBDA6D4)),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: CustomPaint(
-              painter: _SignaturePainter(value),
-              size: Size(box.maxWidth, 160),
+          child: Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) {
+              if (pointer != null ||
+                  e.buttons != kPrimaryButton ||
+                  widget.value.length >= 30 ||
+                  widget.value.expand((s) => s).length >= 3000) {
+                return;
+              }
+              pointer = e.pointer;
+              strokes = [
+                for (final stroke in widget.value) [...stroke],
+                [norm(e.localPosition)],
+              ];
+              emit();
+            },
+            onPointerMove: (e) {
+              if (pointer != e.pointer ||
+                  strokes.expand((s) => s).length >= 3000) {
+                return;
+              }
+              strokes.last.add(norm(e.localPosition));
+              emit();
+            },
+            onPointerUp: (e) {
+              if (pointer == e.pointer) pointer = null;
+            },
+            onPointerCancel: (e) {
+              if (pointer == e.pointer) pointer = null;
+            },
+            child: Container(
+              height: 160,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                border: Border.all(color: const Color(0xFFBDA6D4)),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: CustomPaint(
+                painter: _SignaturePainter(widget.value),
+                size: Size(box.maxWidth, 160),
+              ),
             ),
           ),
         ),

@@ -66,7 +66,18 @@ void main() {
       await binding.convertFlutterSurfaceToImage();
       await tester.pump();
       await binding.takeScreenshot('capture-local-draft');
+      final apiBase = service.dio.options.baseUrl;
+      service.dio.options.baseUrl = 'http://127.0.0.1:1/api';
       await tap('Upload & run VPS OCR');
+      await wait(find.text('Retry queued upload'));
+      final queued = await service.store.get(
+        'kyc-draft-${service.user!['id']}',
+      );
+      expect(queued?['pending'], true);
+      expect(queued?['image'], isNotNull);
+      service.dio.options.baseUrl = apiBase;
+      // The open capture screen retries its encrypted queue automatically.
+
       await wait(find.text('Status: EXTRACTED'));
       await reveal(find.text('Transaction 1'));
       await tester.enterText(
