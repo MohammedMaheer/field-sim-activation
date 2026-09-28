@@ -44,3 +44,11 @@ New OCR results contain transaction rows with an ordered `fields` list: label, v
 Web and Flutter allow editing field names/values, adding/removing fields and adding/removing transactions. A transaction needs at least one nonblank value and every field needs a name. The API bounds labels, values, field count and source indices, preserves version conflicts, audit revisions, encryption and scoped access. Legacy four-column records stay readable/exportable. Older apps cannot replace flexible rows with their fixed format.
 
 Dynamic Excel exports use one row per receipt field (transaction, field, value, confidence and provenance), preserving repeated labels, leading zeros and formula-like text safely. No database migration is required because the existing encrypted JSON payload holds the schema. APK build 22 is required to edit new captures. The separate mobile browser preview uses the same fields with explicitly synthetic extraction.
+
+## Backend review workspace — 28 September 2026
+
+Users with compliance.write now land in an automatically refreshed review inbox, filtered to submitted receipts. Entries identify their assigned agent and capture reference; search, status filters and pagination remain scoped by the API. Selecting a record opens its authenticated original image beside read-only transaction fields. Image zoom/fit, download, raw OCR and Excel are available in the same workspace. Smaller screens stack the two panes.
+
+Reviewers compare the evidence, check the comparison acknowledgement and enter a note, then Verify receipt or Request correction. Verification remains blocked without a loaded image, comparison acknowledgement or note. The API still enforces independent reviewer, submitted state, authorized-agent scope and version checks. Rejection returns the capture for agent corrections and resubmission; decisions appear through polling on both clients. Own drafts remain editable by their creator, but own submissions cannot be self-verified.
+
+Images use authenticated blob requests, abort on navigation and revoke object URLs on cleanup. Failed image loads offer retry. Captures expose creator_id so the portal can clearly explain the independent-review restriction before an action.

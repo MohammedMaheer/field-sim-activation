@@ -5,7 +5,8 @@ test('primary receipt journey starts after external activation', async ({page}) 
  await authenticate(page);
  await page.getByRole('link', {name:'Activation receipts',exact:true}).click();
  await expect(page).toHaveURL(/\/kyc-capture$/);
- await expect(page.getByRole('heading',{name:'Activation receipt capture'})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Receipt verification'})).toBeVisible();
+ await page.getByRole('button',{name:'New transaction capture',exact:true}).click();
  await expect(page.getByText('Activation happens in Etisalat.',{exact:false})).toBeVisible();
  await expect(page.locator('.transaction-stages li')).toHaveText(['1Upload receipt','2Review details','3Submit & track']);
  await expect(page.getByRole('button',{name:'Use synthetic sample'})).toHaveCount(0);

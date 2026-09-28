@@ -120,3 +120,10 @@ export async function stream(
       await new Promise((resolve) => setTimeout(resolve, 3000));
   }
 }
+
+export async function receiptImage(path: string, signal: AbortSignal, retry = true): Promise<Blob> {
+  const response = await fetch('/api' + path, {credentials:'include', signal, headers:{Authorization:'Bearer '+access}});
+  if(response.status===401 && retry){await refreshSession();return receiptImage(path,signal,false);}
+  if(!response.ok) throw new Error('Could not load the original receipt. Check access or retry.');
+  return response.blob();
+}

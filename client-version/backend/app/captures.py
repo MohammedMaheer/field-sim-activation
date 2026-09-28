@@ -45,6 +45,7 @@ def view(row, detail=True):
     result = {
         "id": row.id,
         "agent_id": row.agent_id,
+        "creator_id": row.creator_id,
         "source_reference": row.source_reference,
         "status": row.status,
         "version": row.version,

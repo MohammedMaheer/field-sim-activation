@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {authenticate} from './session';
 import path from 'node:path';
 test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',async({page,request})=>{
- test.setTimeout(120000);await authenticate(page);await page.goto('/screenshot-capture');
+ test.setTimeout(120000);await authenticate(page);await page.goto('/screenshot-capture');await page.getByRole('button',{name:'New transaction capture',exact:true}).click();
  const reference='DEMO-WEB-'+Date.now();
  await page.getByLabel('Source transaction reference',{exact:true}).fill(reference);
  await page.getByLabel('Upload screenshot',{exact:true}).setInputFiles(path.resolve('tests/fixtures/transaction-sample.png'));
@@ -22,11 +22,11 @@ test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',
  await expect(page.locator('.capture-detail .badge').first()).toHaveText('validated');
  const dl=page.waitForEvent('download');await page.getByRole('button',{name:'Generate Excel',exact:true}).click();expect((await dl).suggestedFilename()).toMatch(/\.xlsx$/);
  await page.getByRole('button',{name:'Submit to backend team',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Awaiting backend review',exact:true})).toBeVisible();
- await expect(page.locator('.transaction-stages [aria-current="step"]')).toContainText('Submit & track');
+ await expect(page.getByRole('heading',{name:'Independent review required',exact:true})).toBeVisible();
+ await expect(page.getByRole('button',{name:'Verify receipt',exact:true})).toHaveCount(0);
  const auth=await request.post('/api/auth/login',{data:{email:'compliance@relay.demo',password:process.env.DEMO_PASSWORD,native:true}});expect(auth.ok()).toBeTruthy();const headers={Authorization:'Bearer '+(await auth.json()).access_token};
  const list=await (await request.get('/api/kyc-captures',{headers})).json();const capture=list.find((r:any)=>r.source_reference===reference);expect(capture).toBeTruthy();
  const reviewed=await request.post('/api/kyc-captures/'+capture.id+'/review',{headers,data:{version:capture.version,outcome:'VERIFIED',reason:'Screenshot matches reviewed transaction row'}});expect(reviewed.ok()).toBeTruthy();
- await expect(page.locator('.capture-detail .badge').first()).toHaveText('verified',{timeout:15000});
+ await expect(page.getByRole('heading',{name:'Receipt verified',exact:true})).toBeVisible({timeout:15000});
  for(const width of [1440,768,390]){await page.setViewportSize({width,height:1000});await page.waitForTimeout(500);if(width<800 && await page.locator('.sidebar.open').count()) await page.getByRole('button',{name:'Close menu',exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:'../output/qa/capture-web-'+width+'.png',fullPage:true});}
 });
