@@ -14,8 +14,22 @@ export default function CustomerIntake({
   onReady: () => void;
 }) {
   const [camera, setCamera] = useState("");
-  const [reading,setReading]=useState(false),[scanImage,setScanImage]=useState("");
+  const [reading, setReading] = useState(false),
+    [scanImage, setScanImage] = useState("");
   const plans = useResource("plans");
+  const [missing, setMissing] = useState<string[]>([]);
+  const fieldLabels: Record<string, string> = {
+    name: "full name",
+    document_number: "document number",
+    nationality: "nationality",
+    birth_date: "date of birth",
+    expiry_date: "document expiry date",
+    document_image: "ID or passport photo",
+    sim_identifier: "SIM barcode",
+    plan_id: "subscriber plan",
+    msisdn: "phone number",
+    signature: "customer signature",
+  };
   const [step, setStep] = useState(0),
     [version, setVersion] = useState(0),
     [busy, setBusy] = useState(false),
@@ -40,13 +54,32 @@ export default function CustomerIntake({
     };
   }, []);
   const set = (key: string, v: any) => {
-    setError("");
+    const remaining = missing.filter((item) => item !== key);
+    setMissing(remaining);
+    setError(
+      remaining.length
+        ? "Required to continue: " +
+            remaining.map((item) => fieldLabels[item] || item).join(", ") +
+            "."
+        : "",
+    );
     onChange({ ...value, [key]: v });
+  };
+  const clearMissing = (keys: string[]) => {
+    const remaining = missing.filter((item) => !keys.includes(item));
+    setMissing(remaining);
+    setError(
+      remaining.length
+        ? "Required to continue: " +
+            remaining.map((item) => fieldLabels[item] || item).join(", ") +
+            "."
+        : "",
+    );
   };
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
     setBusy(true);
-    setReading(key==='document_image');
+    setReading(key === "document_image");
     setError("");
     try {
       if (
@@ -65,7 +98,7 @@ export default function CustomerIntake({
       bitmap.close();
       const image = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
       if (image.length > 1333336) throw Error("Choose a smaller photo.");
-      if(key==='document_image')setScanImage(image);
+      if (key === "document_image") setScanImage(image);
       let details = {};
       if (key === "document_image") {
         try {
@@ -80,7 +113,8 @@ export default function CustomerIntake({
     } catch (e: any) {
       setError(e.message);
     } finally {
-      setBusy(false);setReading(false);
+      setBusy(false);
+      setReading(false);
     }
   }
   async function save(next: boolean) {
@@ -99,8 +133,38 @@ export default function CustomerIntake({
                 "document_image",
               ]
             : ["sim_identifier", "plan_id", "msisdn"];
-        if (keys.some((k) => !String(value[k] || "").trim()))
-          throw Error("Please complete the required details.");
+        const absent = keys.filter((k) => !String(value[k] || "").trim());
+        if (step === 1 && (value.signature || []).flat().length < 8)
+          absent.push("signature");
+        if (absent.length) {
+          setMissing(absent);
+          const labels: Record<string, string> = {
+            name: "full name",
+            document_number: "document number",
+            nationality: "nationality",
+            birth_date: "date of birth",
+            expiry_date: "document expiry date",
+            document_image: "ID or passport photo",
+            sim_identifier: "SIM barcode",
+            plan_id: "subscriber plan",
+            msisdn: "phone number",
+            signature: "customer signature",
+          };
+          setError(
+            `Required to continue: ${absent.map((key) => labels[key] || key).join(", ")}.`,
+          );
+          const target =
+            document.querySelector<HTMLElement>(
+              `[data-intake-field="${absent[0]}"] input, [data-intake-field="${absent[0]}"] canvas`,
+            ) ||
+            document.querySelector<HTMLElement>(
+              `[data-intake-field="${absent[0]}"]`,
+            );
+          target?.scrollIntoView({ behavior: "smooth", block: "center" });
+          if (target instanceof HTMLInputElement)
+            target.focus({ preventScroll: true });
+          return;
+        }
         if (
           step === 0 &&
           (value.expiry_date < new Date().toISOString().slice(0, 10) ||
@@ -129,12 +193,18 @@ export default function CustomerIntake({
   }
   function input(key: string, label: string, type = "text", max = 120) {
     return (
-      <label key={key}>
+      <label
+        key={key}
+        data-intake-field={key}
+        className={missing.includes(key) ? "field-missing" : ""}
+      >
         {label}
         <input
           type={type}
           maxLength={max}
           value={value[key] || ""}
+          aria-invalid={missing.includes(key)}
+          aria-required="true"
           onChange={(e) => set(key, e.target.value)}
         />
       </label>
@@ -193,7 +263,38 @@ export default function CustomerIntake({
               Selfie · optional
             </button>
           </div>
-          <div className={`document-scan ${reading?'reading':value.document_image?'complete':'ready'}`} aria-live="polite">{(scanImage||value.document_image)?<img src={'data:image/jpeg;base64,'+(scanImage||value.document_image)} alt="Captured identity document"/>:<div className="scan-document-placeholder"><Camera size={42}/><strong>{value.document_type==='Passport'?'Passport':'Emirates ID'}</strong></div>}<div className="scan-beam"/><span className="scan-status">{reading?'Reading document…':value.document_image?'Document captured':'Position document'}</span></div>
+          <div
+            data-intake-field="document_image"
+            className={`document-scan ${reading ? "reading" : value.document_image ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
+            aria-live="polite"
+          >
+            {scanImage || value.document_image ? (
+              <img
+                src={
+                  "data:image/jpeg;base64," +
+                  (scanImage || value.document_image)
+                }
+                alt="Captured identity document"
+              />
+            ) : (
+              <div className="scan-document-placeholder">
+                <Camera size={42} />
+                <strong>
+                  {value.document_type === "Passport"
+                    ? "Passport"
+                    : "Emirates ID"}
+                </strong>
+              </div>
+            )}
+            <div className="scan-beam" />
+            <span className="scan-status">
+              {reading
+                ? "Reading document…"
+                : value.document_image
+                  ? "Document captured"
+                  : "Position document"}
+            </span>
+          </div>
           <div className="intake-photos">
             {[
               ["document_image", "Identity document"],
@@ -263,14 +364,15 @@ export default function CustomerIntake({
           ) : plans.error ? (
             <button onClick={() => plans.refetch()}>Reload plans</button>
           ) : (
-            <div className="intake-plans">
+            <div className="intake-plans" data-intake-field="plan_id">
               {plans.data?.map((p: Row) => (
                 <button
                   key={p.id}
                   className={value.plan_id === p.id ? "selected" : ""}
-                  onClick={() =>
-                    onChange({ ...value, plan_id: p.id, plan_name: p.name })
-                  }
+                  onClick={() => {
+                    clearMissing(["plan_id"]);
+                    onChange({ ...value, plan_id: p.id, plan_name: p.name });
+                  }}
                 >
                   <strong>{p.name}</strong>
                   <span>AED {p.monthly_cost}</span>
@@ -279,11 +381,19 @@ export default function CustomerIntake({
               ))}
             </div>
           )}
-          <h3>Customer signature</h3>
-          <Signature
-            value={value.signature || []}
-            onChange={(v) => set("signature", v)}
-          />
+          <div
+            data-intake-field="signature"
+            className={missing.includes("signature") ? "field-missing" : ""}
+          >
+            <h3>Customer signature</h3>
+            {missing.includes("signature") && (
+              <span className="field-required">Required</span>
+            )}
+            <Signature
+              value={value.signature || []}
+              onChange={(v) => set("signature", v)}
+            />
+          </div>
         </>
       )}
       <footer className="intake-actions">

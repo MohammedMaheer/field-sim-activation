@@ -159,6 +159,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   int step = 0, version = 0, revision = 0;
   bool busy = true, reading = false;
   String? error;
+  final Set<String> missing = {};
+  final Map<String, GlobalKey> fieldAnchors = {};
+  final Map<String, FocusNode> fieldFocus = {};
   String get cacheKey => 'intake-${ref.read(serviceProvider).user?['id']}';
   @override
   void initState() {
@@ -194,7 +197,53 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     'version': version,
   });
   void set(String k, dynamic v) {
-    setState(() => data[k] = v);
+    setState(() {
+      data[k] = v;
+      missing.remove(k);
+      error = null;
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final focus in fieldFocus.values) {
+      focus.dispose();
+    }
+    super.dispose();
+  }
+
+  String fieldLabel(String key) => switch (key) {
+    'name' => 'full name',
+    'document_number' => 'document number',
+    'nationality' => 'nationality',
+    'birth_date' => 'date of birth',
+    'expiry_date' => 'document expiry date',
+    'document_image' => 'ID or passport photo',
+    'sim_identifier' => 'SIM barcode',
+    'msisdn' => 'phone number',
+    'plan_id' => 'subscriber plan',
+    'signature' => 'customer signature',
+    _ => key,
+  };
+
+  Future<void> showMissing(Set<String> fields) async {
+    final first = fields.first;
+    setState(() {
+      missing
+        ..clear()
+        ..addAll(fields);
+      error = 'Required to continue: ${fields.map(fieldLabel).join(', ')}.';
+    });
+    final anchor = fieldAnchors[first]?.currentContext;
+    if (anchor != null) {
+      await Scrollable.ensureVisible(
+        anchor,
+        alignment: .35,
+        duration: motionDuration(context),
+        curve: Curves.easeOutCubic,
+      );
+      fieldFocus[first]?.requestFocus();
+    }
   }
 
   Future<void> photo(String key, bool gallery) async {
@@ -284,8 +333,17 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 'document_image',
               ]
             : ['sim_identifier', 'plan_id', 'msisdn'];
-        if (required.any((k) => (data[k] ?? '').toString().trim().isEmpty)) {
-          throw Exception('Complete required details');
+        final missingFields = required
+            .where((k) => (data[k] ?? '').toString().trim().isEmpty)
+            .toSet();
+        if (step == 1 &&
+            (data['signature'] as List? ?? []).expand((s) => s as List).length <
+                8) {
+          missingFields.add('signature');
+        }
+        if (missingFields.isNotEmpty) {
+          await showMissing(missingFields);
+          return;
         }
         if (step == 0) {
           final birth = DateTime.tryParse(data['birth_date']),
@@ -298,11 +356,6 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               )) {
             throw Exception('Check document dates');
           }
-        }
-        if (step == 1 &&
-            (data['signature'] as List? ?? []).expand((s) => s as List).length <
-                8) {
-          throw Exception('Add customer signature');
         }
       }
       data['step'] = next ? step + 1 : step;
@@ -337,13 +390,16 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   }
 
   Widget field(String key, String label, {bool date = false}) => Padding(
+    key: fieldAnchors.putIfAbsent(key, GlobalKey.new),
     padding: const EdgeInsets.only(bottom: 16),
     child: TextFormField(
       key: ValueKey('$key-$revision-${date ? data[key] : ''}'),
+      focusNode: fieldFocus.putIfAbsent(key, FocusNode.new),
       initialValue: data[key] ?? '',
       readOnly: date,
       decoration: InputDecoration(
         labelText: label,
+        errorText: missing.contains(key) ? 'Required' : null,
         suffixIcon: date ? const Icon(Icons.calendar_month) : null,
       ),
       onTap: !date
@@ -570,6 +626,8 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   onTap: () => setState(() {
                     data['plan_id'] = p['id'];
                     data['plan_name'] = p['name'];
+                    missing.remove('plan_id');
+                    error = null;
                   }),
                 ),
               ),
@@ -577,6 +635,14 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               'Customer signature',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
+            if (missing.contains('signature'))
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Text(
+                  'Required',
+                  style: TextStyle(color: Colors.red, fontSize: 12),
+                ),
+              ),
             SignaturePad(
               value: (data['signature'] as List? ?? [])
                   .map(
