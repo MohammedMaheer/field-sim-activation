@@ -6,6 +6,17 @@ import 'package:relay_agent/preview_main.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test('receipt PDF keeps pending and verified outcomes distinct', () {
+    final row = <String, dynamic>{'source_reference': 'RCP-TEST', 'status': 'SUBMITTED',
+      'intake': {'name': 'Alex Sample', 'msisdn': 'SAMPLE-PHONE', 'plan_name': 'Test plan'},
+      'rows': []};
+    final pending = ascii.decode(previewReceiptPdf(row));
+    expect(pending, startsWith('%PDF-1.4'));
+    expect(pending, contains('FINAL REVIEW PENDING'));
+    expect(pending, isNot(contains('SUCCESS')));
+    row['status'] = 'VERIFIED';
+    expect(ascii.decode(previewReceiptPdf(row)), contains('SUCCESS - RECEIPT VERIFIED'));
+  });
   test('preview actions stay isolated and workbook uses edited rows', () async {
     final s = PreviewService(
       jsonDecode(File('assets/demo/workspace.json').readAsStringSync()),

@@ -61,3 +61,7 @@ Users with compliance.write now land in an automatically refreshed review inbox,
 Reviewers compare the evidence, check the comparison acknowledgement and enter a note, then Verify receipt or Request correction. Verification remains blocked without a loaded image, comparison acknowledgement or note. The API still enforces independent reviewer, submitted state, authorized-agent scope and version checks. Rejection returns the capture for agent corrections and resubmission; decisions appear through polling on both clients. Own drafts remain editable by their creator, but own submissions cannot be self-verified.
 
 Images use authenticated blob requests, abort on navigation and revoke object URLs on cleanup. Failed image loads offer retry. Captures expose creator_id so the portal can clearly explain the independent-review restriction before an action.
+
+## Printable receipt before final review — 28 September 2026
+
+The owner permits receipt printing/PDF generation before independent staff verification. Pending receipts explicitly show Final review pending, rejected receipts show Correction required, and only a VERIFIED backend decision shows success. The receipt endpoint retains authentication, scoped access and identity masking. This removes the final-review gate from printing, not from confirmation or carrier activation. Native clients share/download the generated PDF; the web panel can print directly.

@@ -1,3 +1,9 @@
+## Latest owner clarification — 28 September 2026
+
+Relay generates a printable receipt before independent review, marked Final review pending. The actual backend VERIFIED decision changes the receipt to success. Receipt printing does not perform Etisalat activation or remove authentication. Payment verification remains excluded.
+
+Administrators have a central master-data workspace for branches, teams, outlets, agents, customers, SIM stock, tasks and incentives, alongside plan management and receipt review. Unused master records can be deleted; linked history, captures, audits, stock movements and completed operational evidence remain protected. Corrections are recorded with a reason. Step 3 has a brief receipt paper-feed animation on web, Flutter and phone preview.
+
 # Approved client scope
 
 ## Current owner clarification — 28 September 2026

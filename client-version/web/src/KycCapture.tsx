@@ -1,3 +1,4 @@
+import ActivationReceipt from "./ActivationReceipt";
 import CustomerIntake from "./CustomerIntake";
 import ReceiptReview from "./ReceiptReview";
 import KycJourney from "./KycJourney";
@@ -429,6 +430,7 @@ export default function KycCapture() {
                       subtitle={"Capture " + capture.id.slice(0, 8)}
                     >
                       <div className="capture-detail">
+                        <ActivationReceipt capture={capture} />
                         <div className="capture-toolbar">
                           <Badge value={capture.status} />
                           <button
@@ -869,35 +871,7 @@ export default function KycCapture() {
                             )}
                           </section>
                         )}
-                        {capture.status === "VERIFIED" && capture.intake && (
-                          <section className="panel intake-review">
-                            <h2>Activation confirmed</h2>
-                            <strong>Receipt verified</strong>
-                            <dl className="intake-grid">
-                              {[
-                                ["Reference", capture.source_reference],
-                                ["Customer", capture.intake.name],
-                                ["Phone", capture.intake.msisdn],
-                                [
-                                  "SIM type",
-                                  capture.intake.sim_type === "ESIM"
-                                    ? "eSIM"
-                                    : "Physical SIM",
-                                ],
-                                ["Plan", capture.intake.plan_name],
-                                [
-                                  "Verified",
-                                  new Date(capture.review.at).toLocaleString(),
-                                ],
-                              ].map(([label, value]) => (
-                                <div key={label}>
-                                  <dt>{label}</dt>
-                                  <dd>{value}</dd>
-                                </div>
-                              ))}
-                            </dl>
-                          </section>
-                        )}
+
                         {capture.review && (
                           <div className="compliance-banner">
                             <div>

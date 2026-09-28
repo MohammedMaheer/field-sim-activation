@@ -8,7 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'main.dart' as app;
 import 'services.dart';
 
-// Separate build entry point. No credentials or requests to the hosted API.
+// Separate build entry point. Only the public plan catalog uses the hosted API.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SemanticsBinding.instance.ensureSemantics();
@@ -21,6 +21,57 @@ void main() async {
       child: const app.RelayApp(),
     ),
   );
+}
+
+Uint8List previewReceiptPdf(Json row) {
+  final intake = row['intake'] as Map? ?? {};
+  final status = row['status'] == 'VERIFIED'
+      ? 'SUCCESS - RECEIPT VERIFIED'
+      : row['status'] == 'REJECTED'
+      ? 'CORRECTION REQUIRED'
+      : 'FINAL REVIEW PENDING';
+  final lines = [
+    'RELAY | ACTIVATION RECEIPT',
+    status,
+    'Reference: ${row['source_reference']}',
+    'Customer: ${intake['name'] ?? ''}',
+    'Phone: ${intake['msisdn'] ?? ''}',
+    'Plan: ${intake['plan_name'] ?? ''}',
+    for (final item in row['rows'] as List? ?? [])
+      for (final field in item['fields'] as List? ?? [])
+        if (!RegExp(
+          r'document|identity|passport|\bid\b',
+          caseSensitive: false,
+        ).hasMatch(field['label'].toString()))
+          '${field['label']}: ${field['value']}',
+  ];
+  String clean(String text) => text
+      .replaceAll(RegExp(r'[^\x20-\x7E]'), ' ')
+      .replaceAll('\\', '\\\\')
+      .replaceAll('(', '\\(')
+      .replaceAll(')', '\\)');
+  final stream =
+      'BT /F1 12 Tf 48 780 Td 20 TL ${lines.take(32).map((v) => '(${clean(v)}) Tj T*').join(' ')} ET';
+  final objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    '<< /Length ${stream.length} >>\nstream\n$stream\nendstream',
+  ];
+  var pdf = '%PDF-1.4\n';
+  final offsets = <int>[0];
+  for (var i = 0; i < objects.length; i++) {
+    offsets.add(pdf.length);
+    pdf += '${i + 1} 0 obj\n${objects[i]}\nendobj\n';
+  }
+  final xref = pdf.length;
+  pdf += 'xref\n0 6\n0000000000 65535 f \n';
+  for (final offset in offsets.skip(1)) {
+    pdf += '${offset.toString().padLeft(10, '0')} 00000 n \n';
+  }
+  pdf += 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n$xref\n%%EOF';
+  return Uint8List.fromList(ascii.encode(pdf));
 }
 
 class PreviewStore extends OfflineStore {
@@ -235,6 +286,7 @@ class PreviewService extends RelayService {
       if (parts.length > 3) {
         final action = parts[3];
         if (action == 'original') return await previewReceipt();
+        if (action == 'receipt') return previewReceiptPdf(row);
         if (action == 'excel') return previewWorkbook(row['rows'] as List);
         if (action == 'rows') {
           row['rows'] = body['rows'];

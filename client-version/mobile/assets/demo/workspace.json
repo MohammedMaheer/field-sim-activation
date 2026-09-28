@@ -548,7 +548,7 @@
           "reference": "DEMO-RECEIPT-001",
           "customer": "Jordan Demo",
           "account": "DEMO-050-0001",
-          "details": "Everyday 200 plan. Activation completed externally.",
+          "details": "5G Unlimited Ultra",
           "source_line": 0,
           "fields": [
             {
@@ -571,13 +571,19 @@
             },
             {
               "label": "Plan",
-              "value": "Everyday 200 plan. Activation completed externally.",
+              "value": "5G Unlimited Ultra",
               "source_line": 0,
               "confidence": 97.2
             },
             {
               "label": "VAT",
-              "value": "AED 10.00",
+              "value": "AED 16.67",
+              "source_line": null,
+              "confidence": null
+            },
+            {
+              "label": "Total paid",
+              "value": "AED 350.00",
               "source_line": null,
               "confidence": null
             }
@@ -596,7 +602,16 @@
           "actor": "Zayn Mercer",
           "at": "2026-09-28T09:30:00Z"
         }
-      ]
+      ],
+      "intake": {
+        "name": "Jordan Demo",
+        "document_type": "EMIRATES_ID",
+        "document_number": "SAMPLE-ID-1000",
+        "sim_identifier": "SAMPLE-SIM-1000",
+        "sim_type": "PHYSICAL",
+        "plan_name": "5G Unlimited Ultra",
+        "msisdn": "DEMO-050-0001"
+      }
     },
     {
       "id": "capture-1",
@@ -612,7 +627,7 @@
           "reference": "DEMO-RECEIPT-002",
           "customer": "Jordan Demo",
           "account": "DEMO-050-0001",
-          "details": "Everyday 200 plan. Activation completed externally.",
+          "details": "Flexi Postpaid",
           "source_line": 0,
           "fields": [
             {
@@ -635,13 +650,19 @@
             },
             {
               "label": "Plan",
-              "value": "Everyday 200 plan. Activation completed externally.",
+              "value": "Flexi Postpaid",
               "source_line": 0,
               "confidence": 97.2
             },
             {
               "label": "VAT",
-              "value": "AED 10.00",
+              "value": "AED 11.90",
+              "source_line": null,
+              "confidence": null
+            },
+            {
+              "label": "Total paid",
+              "value": "AED 250.00",
               "source_line": null,
               "confidence": null
             }
@@ -660,7 +681,16 @@
           "actor": "Zayn Mercer",
           "at": "2026-09-28T09:30:00Z"
         }
-      ]
+      ],
+      "intake": {
+        "name": "Jordan Demo",
+        "document_type": "EMIRATES_ID",
+        "document_number": "SAMPLE-ID-1001",
+        "sim_identifier": "SAMPLE-SIM-1001",
+        "sim_type": "PHYSICAL",
+        "plan_name": "Flexi Postpaid",
+        "msisdn": "DEMO-050-0001"
+      }
     },
     {
       "id": "capture-2",

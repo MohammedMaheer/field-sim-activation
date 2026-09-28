@@ -1233,6 +1233,68 @@ button:active:not(:disabled) {
 .intake-plans button.selected .plan-details {
   color: #4c3d67;
 }
+.verified-receipt {
+  overflow: hidden;
+  border: 1px solid #9adfc3;
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 30px #174b3512;
+}
+.verified-receipt-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 22px;
+  color: #086d50;
+  background: linear-gradient(105deg, #e8fbf2, #f5fffb 55%, #edf6ff);
+  border-bottom: 1px solid #d8eee4;
+}
+.verified-receipt-heading > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  flex: 0 0 48px;
+  place-items: center;
+  border: 2px solid #11a875;
+  border-radius: 50%;
+  background: #fff;
+}
+.verified-receipt-heading h2 { margin: 0; color: #192b38; font-size: 19px; }
+.verified-receipt-heading p { margin: 3px 0 0; color: #56716c; font-size: 13px; }
+.verified-receipt-heading .receipt-print { margin-left: auto; white-space: nowrap; }
+.verified-receipt-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+  margin: 0;
+  padding: 12px 22px;
+}
+.verified-receipt-grid > div,
+.verified-receipt-lines > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid #edf0f3;
+}
+.verified-receipt-grid dt,
+.verified-receipt-lines span { color: #64738a; font-size: 13px; }
+.verified-receipt-grid dd,
+.verified-receipt-lines strong { margin: 0; color: #202b3b; font-size: 14px; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.verified-receipt-lines { padding: 0 22px 18px; }
+.verified-receipt-lines h3 { margin: 10px 0 0; color: #687890; font-size: 13px; }
+@media (max-width: 600px) {
+  .verified-receipt-heading { flex-wrap: wrap; padding: 16px; }
+  .verified-receipt-heading .receipt-print { margin: 0 0 0 62px; }
+  .verified-receipt-grid { grid-template-columns: 1fr; padding: 8px 16px; }
+  .verified-receipt-lines { padding: 0 16px 16px; }
+}
+@media print {
+  body * { visibility: hidden !important; }
+  .verified-receipt, .verified-receipt * { visibility: visible !important; }
+  .verified-receipt { position: fixed; inset: 12mm; border: 1px solid #bcc8cc; box-shadow: none; }
+  .verified-receipt .receipt-print { display: none; }
+}
 @media (max-width: 600px) {
   .intake-serial-control {
     grid-template-columns: minmax(0, 1fr) auto;
@@ -1470,3 +1532,20 @@ button:active:not(:disabled) {
     grid-column: auto;
   }
 }
+
+.admin-sections {display:flex;flex-wrap:wrap;gap:8px;margin:20px 0}
+.admin-sections button,.admin-sections a{padding:10px 14px;border-radius:12px;border:1px solid #ded6ee;background:#fff;color:#573a75;font-weight:650}
+.admin-sections button[aria-pressed="true"]{background:linear-gradient(110deg,#a62c78,#753ed1);color:white;border-color:transparent}
+.admin-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px}
+.admin-row-actions{display:flex;flex-wrap:wrap;gap:8px}
+.admin-row-actions button,.admin-row-actions a{display:inline-flex;gap:6px;align-items:center;padding:8px;border-radius:8px;background:#f1eaff;color:#6530ac;border:0}
+.verified-receipt{animation:receipt-feed .7s cubic-bezier(.2,.8,.2,1) both;transform-origin:top center}
+.verified-receipt::before{content:"";display:block;height:7px;background:linear-gradient(90deg,#733bc5,#bd3588,#00ac8a);box-shadow:0 3px 10px #733bc530}
+@keyframes receipt-feed{from{opacity:0;transform:translateY(-18px) scaleY(.94);clip-path:inset(0 0 75% 0)}to{opacity:1;transform:none;clip-path:inset(0)}}
+@media(prefers-reduced-motion:reduce){.verified-receipt{animation:none}}
+@media print{.verified-receipt{animation:none;clip-path:none;transform:none}}
+
+.receipt-submitted .verified-receipt-heading,.receipt-validated .verified-receipt-heading,.receipt-extracted .verified-receipt-heading{background:linear-gradient(100deg,#fff5d7,#f9ecff);color:#75450d}
+.receipt-rejected .verified-receipt-heading{background:#fff0f0;color:#a63243}
+.receipt-done{display:flex;justify-content:center;margin:18px 22px;text-decoration:none;border-radius:12px;padding:13px;min-height:44px;box-sizing:border-box;background:linear-gradient(100deg,#07976c,#00b38e);color:white;font-weight:750}
+@media print{.receipt-done{display:none!important}}

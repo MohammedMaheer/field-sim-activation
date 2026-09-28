@@ -36,6 +36,7 @@ PATHS = {
     "/api/agents/{agent_id}/ping",
     "/api/agents/{agent_id}/management",
     "/api/inventory/{sim_id}/move",
+    "/api/inventory/{sim_id}",
     "/api/compliance/{alert_id}",
     "/api/events",
     "/api/events/stream",
@@ -53,6 +54,7 @@ def configure(app):
             (
                 "/api/transactions",
                 "/api/organization",
+                "/api/administration",
                 "/api/kyc-captures",
                 "/api/field-tasks",
                 "/api/incentives",

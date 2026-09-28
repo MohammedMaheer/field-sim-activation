@@ -149,7 +149,9 @@ def test_plan_management_is_restricted_to_administrators(client):
 def test_public_plans_catalog_is_read_only_and_requires_no_account(client):
     response = client.get("/api/public/plans")
     assert response.status_code == 200
-    assert len(response.json()) == 4
+    from app.db import Plan
+    with DB() as db:
+        assert {p["id"] for p in response.json()} == set(db.scalars(select(Plan.id).where(Plan.active.is_(True))))
     assert client.post("/api/public/plans", json={}).status_code == 405
 
 
@@ -1044,6 +1046,12 @@ def test_intake_draft_and_independent_review_without_payment(client, monkeypatch
     assert created.status_code == 201, created.text
     row = created.json()
     path = "/api/kyc-captures/" + row["id"]
+    receipt = client.get(path + "/receipt")
+    assert receipt.status_code == 200
+    assert receipt.content.startswith(b"%PDF")
+    from pypdf import PdfReader
+    text = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(receipt.content)).pages)
+    assert "FINAL REVIEW PENDING" in text
     assert client.post("/api/kyc-captures", json=body).json()["id"] == row["id"]
     assert client.get("/api/kyc-captures/draft").json()["data"] == {}
     assert (
@@ -1069,6 +1077,33 @@ def test_intake_draft_and_independent_review_without_payment(client, monkeypatch
     verified = client.post(path + "/review", json=review)
     assert verified.status_code == 200, verified.text
     assert "payment_confirmed" not in verified.json()["review"]
+    receipt = client.get(path + "/receipt")
+    assert receipt.status_code == 200
+    text = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(receipt.content)).pages)
+    assert "RECEIPT VERIFIED" in text
+
+
+def test_inventory_edit_is_scoped_audited_and_rejects_stale_details(client):
+    login(client)
+    sim = next(s for s in client.get("/api/resources/inventory").json()
+               if s["status"] not in {"ACTIVATED", "RESERVED"})
+    body = {"iccid": "QA-EDIT-" + sim["iccid"], "serial": sim["serial"],
+            "sim_type": sim["sim_type"], "expected_iccid": sim["iccid"],
+            "expected_serial": sim["serial"], "expected_type": sim["sim_type"],
+            "reason": "Corrected inventory record"}
+    path = "/api/inventory/" + sim["id"]
+    edited = client.patch(path, json=body)
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["iccid"] == body["iccid"]
+    assert client.patch(path, json=body).status_code == 409
+    with DB() as db:
+        assert db.scalar(select(Audit).where(Audit.entity == sim["id"],
+                                             Audit.action == "SIM Details Updated"))
+    login(client, "agent1")
+    assert client.patch(path, json=body).status_code == 403
+    login(client)
+    body.update(iccid=sim["iccid"], expected_iccid=edited.json()["iccid"])
+    assert client.patch(path, json=body).status_code == 200
 
 
 def test_identity_extraction_maps_printed_dates_without_verification_claim(client,monkeypatch):
@@ -1078,3 +1113,57 @@ def test_identity_extraction_maps_printed_dates_without_verification_claim(clien
     response=client.post("/api/kyc-captures/read-document",json={"image_base64":"eA=="})
     assert response.status_code==200
     assert response.json()=={"name":"Alex Sample","document_number":"SAMPLE-001","birth_date":"1991-11-14","expiry_date":"2030-11-14"}
+
+
+def test_admin_edit_delete_and_history_guards(client):
+    login(client)
+    made = client.post("/api/organization/branches", json={"name": "Admin control QA"})
+    assert made.status_code == 201
+    branch = made.json()
+    change = {"values": {"name": "Admin control edited"}, "expected": {"name": branch["name"]}, "reason": "Corrected branch display name"}
+    updated = client.patch("/api/administration/branches/" + branch["id"], json=change)
+    assert updated.status_code == 200
+    assert client.patch("/api/administration/branches/" + branch["id"], json=change).status_code == 409
+    assert client.request("DELETE", "/api/administration/branches/" + branch["id"], json={"values": {}, "reason": "Removed unused QA branch"}).status_code == 200
+    linked = client.get("/api/administration/branches").json()[0]
+    assert client.request("DELETE", "/api/administration/branches/" + linked["id"], json={"values": {}, "reason": "Attempt protected deletion"}).status_code == 409
+    login(client, "agent1")
+    assert client.get("/api/administration/branches").status_code == 403
+    assert client.patch("/api/administration/branches/" + linked["id"], json=change).status_code == 403
+
+
+def test_admin_stock_customer_agent_controls(client):
+    login(client)
+    agent = client.get("/api/resources/agents").json()[0]
+    customer = client.post("/api/administration/customers", json={"values": {"name": "Synthetic Admin Customer", "mobile": "SAMPLE-ADMIN", "agent_id": agent["id"]}, "reason": "Created synthetic customer record"})
+    assert customer.status_code == 201
+    assert client.request("DELETE", "/api/administration/customers/" + customer.json()["id"], json={"values": {}, "reason": "Removed unused synthetic customer"}).status_code == 200
+    stock_values = {"iccid": "SAMPLE-ADMIN-ICCID", "serial": "SAMPLE-ADMIN-SERIAL", "sim_type": "Physical", "outlet_id": agent["outlet_id"], "agent_id": agent["id"]}
+    stock = client.post("/api/administration/inventory", json={"values": stock_values, "reason": "Received synthetic stock delivery"})
+    assert stock.status_code == 201, stock.text
+    assert client.post("/api/administration/inventory", json={"values": stock_values, "reason": "Duplicate stock must be rejected"}).status_code == 409
+    assert client.request("DELETE", "/api/administration/inventory/" + stock.json()["id"], json={"values": {}, "reason": "Cannot erase stock movement history"}).status_code == 409
+    profile = next(a for a in client.get("/api/administration/agents").json() if a["id"] == agent["id"])
+    body = {"values": {"name": "Admin Edited Agent", "email": profile["email"], "employee_id": profile["employee_id"], "target": profile["target"]}, "expected": {k: profile[k] for k in ["name", "email", "employee_id", "target"]}, "reason": "Corrected synthetic agent profile"}
+    edited = client.patch("/api/administration/agents/" + agent["id"], json=body)
+    assert edited.status_code == 200, edited.text
+    assert edited.json()["name"] == "Admin Edited Agent"
+    assert "password_hash" not in str(client.get("/api/administration/teams").json())
+    body["values"]["name"] = profile["name"]
+    body["expected"]["name"] = "Admin Edited Agent"
+    assert client.patch("/api/administration/agents/" + agent["id"], json=body).status_code == 200
+
+
+def test_admin_task_and_incentive_edits(client):
+    login(client)
+    agent = client.get("/api/resources/agents").json()[0]
+    for kind, values, key, revised in [
+        ("tasks", {"title": "Synthetic follow-up", "agent_id": agent["id"], "due_date": "2026-10-01"}, "title", "Updated follow-up"),
+        ("incentives", {"period": "2026-09", "amount": "12.50", "agent_id": agent["id"]}, "amount", "15.00"),
+    ]:
+        made = client.post("/api/administration/" + kind, json={"values": values, "reason": "Added synthetic administration record"})
+        assert made.status_code == 201, made.text
+        row = made.json()
+        changed = client.patch("/api/administration/" + kind + "/" + row["id"], json={"values": {key: revised}, "expected": {key: row[key]}, "reason": "Corrected synthetic administration record"})
+        assert changed.status_code == 200, changed.text
+        assert str(changed.json()[key]) == revised

@@ -604,19 +604,30 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               onSelectionChanged: (v) => set('sim_type', v.first),
             ),
             const SizedBox(height: 16),
-            field(
-              'sim_identifier',
-              data['sim_type'] == 'ESIM'
-                  ? 'eSIM identifier'
-                  : 'SIM serial / ICCID',
-            ),
-            Align(
-              alignment: Alignment.centerRight,
-              child: OutlinedButton.icon(
-                onPressed: busy ? null : scanSim,
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Scan SIM barcode'),
-              ),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: field(
+                    'sim_identifier',
+                    data['sim_type'] == 'ESIM'
+                        ? 'eSIM identifier'
+                        : 'SIM serial / ICCID',
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16, left: 8),
+                  child: SizedBox(
+                    width: 52,
+                    height: 56,
+                    child: IconButton.filledTonal(
+                      tooltip: 'Scan SIM barcode',
+                      onPressed: busy ? null : scanSim,
+                      icon: const Icon(Icons.qr_code_scanner),
+                    ),
+                  ),
+                ),
+              ],
             ),
             field('msisdn', 'Phone number', keyboardType: TextInputType.phone),
             const Text(

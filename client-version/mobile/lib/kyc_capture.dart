@@ -1,3 +1,5 @@
+import 'package:go_router/go_router.dart';
+import 'receipt_reveal.dart';
 import 'customer_intake.dart';
 import 'kyc_journey.dart';
 import 'dart:async';
@@ -274,7 +276,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             '/kyc-captures/$id/$type',
             options: Options(responseType: ResponseType.bytes),
           );
-      final ext = type == 'excel'
+      final ext = type == 'receipt'
+          ? 'pdf'
+          : type == 'excel'
           ? 'xlsx'
           : capture!['image_type'] == 'image/jpeg'
           ? 'jpg'
@@ -447,6 +451,39 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         },
       );
     }
+    final verified = capture?['intake'] != null;
+    final receiptSuccess = capture?['status'] == 'VERIFIED';
+    final verifiedReceiptFields = <Json>[];
+    if (verified) {
+      for (final row in rows) {
+        final fields = row['fields'];
+        if (fields is List) {
+          for (final value in fields) {
+            if (value is Map &&
+                (value['value'] ?? '').toString().trim().isNotEmpty) {
+              final label = (value['label'] ?? 'Receipt detail').toString();
+              var text = value['value'].toString();
+              if (RegExp(
+                r'document|passport|identity|\bid\b',
+                caseSensitive: false,
+              ).hasMatch(label)) {
+                text = text.length > 4
+                    ? '•••• ${text.substring(text.length - 4)}'
+                    : '••••';
+              }
+              verifiedReceiptFields.add({'label': label, 'value': text});
+            }
+          }
+        }
+      }
+    }
+    final customerId = (capture?['intake']?['document_number'] ?? '')
+        .toString();
+    final maskedCustomerId = customerId.isEmpty
+        ? '—'
+        : customerId.length > 4
+        ? '•••• ${customerId.substring(customerId.length - 4)}'
+        : '••••';
     return Scaffold(
       appBar: AppBar(
         leading: const WorkspaceBackButton(),
@@ -638,6 +675,122 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
               ),
             ),
           if (capture != null) ...[
+            if (verified)
+              ReceiptReveal(
+                key: ValueKey('receipt-${capture!["id"]}'),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    border: Border.all(color: const Color(0xff9adfc3)),
+                    borderRadius: BorderRadius.circular(18),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x12174b35),
+                        blurRadius: 18,
+                        offset: Offset(0, 7),
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(18),
+                        color: receiptSuccess
+                            ? const Color(0xffe8fbf2)
+                            : const Color(0xfffff3d5),
+                        child: Column(
+                          children: [
+                            Icon(
+                              receiptSuccess
+                                  ? Icons.check_circle
+                                  : Icons.pending_outlined,
+                              color: Color(0xff07966b),
+                              size: 48,
+                            ),
+                            SizedBox(height: 8),
+                            Text(
+                              receiptSuccess
+                                  ? 'SUCCESS - RECEIPT VERIFIED'
+                                  : capture?['status'] == 'REJECTED'
+                                  ? 'CORRECTION REQUIRED'
+                                  : 'FINAL REVIEW PENDING',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: 17,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xff183044),
+                              ),
+                            ),
+                            Text(
+                              receiptSuccess
+                                  ? 'Receipt confirmed'
+                                  : 'Receipt saved',
+                              style: TextStyle(color: Color(0xff087756)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Column(
+                          children: [
+                            _ReceiptLine(
+                              'Invoice / reference',
+                              capture!['source_reference'],
+                            ),
+                            _ReceiptLine(
+                              'Customer',
+                              capture!['intake']['name'],
+                            ),
+                            _ReceiptLine('ID number', maskedCustomerId),
+                            _ReceiptLine(
+                              'Phone number',
+                              capture!['intake']['msisdn'],
+                            ),
+                            _ReceiptLine(
+                              'SIM type',
+                              capture!['intake']['sim_type'] == 'ESIM'
+                                  ? 'eSIM'
+                                  : 'Physical SIM',
+                            ),
+                            _ReceiptLine(
+                              'Plan',
+                              capture!['intake']['plan_name'],
+                            ),
+                            _ReceiptLine(
+                              'SIM serial',
+                              capture!['intake']['sim_identifier'],
+                            ),
+                            _ReceiptLine(
+                              receiptSuccess ? 'Verified' : 'Date',
+                              capture!['review']?['at'] ??
+                                  capture!['updated_at'],
+                            ),
+                            if (verifiedReceiptFields.isNotEmpty) ...[
+                              const Divider(height: 22),
+                              for (final field in verifiedReceiptFields)
+                                _ReceiptLine(field['label'], field['value']),
+                            ],
+                            const SizedBox(height: 12),
+                            OutlinedButton.icon(
+                              onPressed: busy ? null : () => export('receipt'),
+                              icon: const Icon(Icons.picture_as_pdf_outlined),
+                              label: const Text('Download / share receipt'),
+                            ),
+                            const SizedBox(height: 10),
+                            FilledButton(
+                              onPressed: () => context.go('/'),
+                              child: const Text('Done · Return to dashboard'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             gap(),
             const Divider(),
             Text(
@@ -849,36 +1002,6 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 onPressed: busy || dirty ? null : () => command('submit'),
                 child: const Text('Submit for review'),
               ),
-            if (capture!['status'] == 'VERIFIED' && capture!['intake'] != null)
-              Card(
-                color: const Color(0xffe5f7f1),
-                child: Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(
-                        Icons.check_circle,
-                        color: Colors.teal,
-                        size: 42,
-                      ),
-                      const Text(
-                        'Activation confirmed',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const Text('Receipt verified'),
-                      const SizedBox(height: 16),
-                      Text('Reference: ${capture!['source_reference']}'),
-                      Text('Customer: ${capture!['intake']['name']}'),
-                      Text('Phone: ${capture!['intake']['msisdn']}'),
-                      Text('Plan: ${capture!['intake']['plan_name']}'),
-                    ],
-                  ),
-                ),
-              ),
             if (capture!['review'] != null)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 18),
@@ -933,4 +1056,37 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       ),
     );
   }
+}
+
+class _ReceiptLine extends StatelessWidget {
+  const _ReceiptLine(this.label, this.value);
+  final dynamic label;
+  final dynamic value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Text(
+            label.toString(),
+            style: const TextStyle(color: Color(0xff64738a), fontSize: 13),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value.toString().isEmpty ? '—' : value.toString(),
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              color: Color(0xff202b3b),
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }

@@ -1,3 +1,37 @@
+## Administrator workspace and animated receipt — 28 September 2026, build 31
+
+- Added Manage workspace for branches, team leaders, outlets, agent profiles, customers, new SIM stock, tasks and incentives. Existing agent assignment, plan editing, stock movements and receipt review remain connected. Changes are audited. Deletes are permitted for unused master records; records with linked assignments/history are retained. Captures, audit logs, stock movements, tasks and recorded incentives are not silently erased.
+- Step 3 reveals its receipt with a 700 ms paper-feed animation and shows it before transaction rows. Pending review uses an amber status and no success checkmark; only backend verification shows success. Receipt details are sourced from saved intake and captured fields, with identity masking. Native shares/downloads the PDF; web prints/PDF; Done returns to the dashboard.
+- Checked: 53 backend tests passed; Ruff clean; Flutter analysis clean, 15 tests passed with one skipped; web and release APK built. Responsive administrator create/edit/delete and inventory edit/restore browser checks passed. Hosted capture extraction, pending PDF, correction/resubmission, independent verification, automatic status refresh and print behavior passed. Phone preview framing, pending receipt PDF download and dashboard return passed both locally and on the hosted release. Physical installation is not part of this release check.
+- Client-only deployment remains on migration 008. Database/files were backed up at `/opt/relay-client/backups/connected-receipt-before-20260928T125340Z`, with the previous API image retained for rollback. Other application container identities remained unchanged.
+- APK SHA-256: `ef0a8d9042276b029663b02ae7aef92adf15a0f2654bb6e637210a797e240385`, matching hosted copy. Release artifact URLs below use build 31.
+- Web: https://relay-client.187-127-162-233.sslip.io/administration
+- Phone preview: https://relay-client.187-127-162-233.sslip.io/mobile-demo/
+- APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=31
+
+## Pending printable receipts and SIM editing — 28 September 2026, build 30
+
+- Receipt print/PDF is available before final staff review and shows Final review pending. The actual VERIFIED backend decision updates it to success through existing client refresh; rejection shows Correction required. This does not perform Etisalat activation. Access remains authenticated and scoped, and identity fields are masked.
+- Web receipt PDF and mobile PDF sharing use the same backend receipt service. The isolated phone preview generates its own synthetic PDF with the same pending/verified status rule.
+- Authorized inventory staff can edit ICCID, SIM serial and SIM type with a required reason. Stale updates and duplicate identifiers are rejected; RESERVED/ACTIVATED stock is protected. Changes are audited, and the field app reads them through shared inventory sync.
+- Test setup: install `backend/requirements-dev.txt` to include the PDF parser used by receipt assertions.
+- Verified: backend 50 tests passed and Ruff clean; Flutter analysis clean, 15 tests passed and one skipped; web build passed; inventory browser edit/restore passed at desktop and 390px; hosted receipt extraction, pending PDF, correction, resubmission, independent verification, automatic status refresh and print action passed. Receipt and inventory screenshots were visually inspected. Physical APK installation was not performed in this release.
+- Client database/files backed up at `/opt/relay-client/backups/connected-receipt-before-20260928T122605Z`. Migration remains 008; rollback restores files and the previous API image. Other application container identities remained unchanged.
+- APK SHA-256: `e218125c84250f34508f1f8defb45bd1eea7cffe853b39a62f64fca6ec2b889e`, matching hosted copy.
+- Web: https://relay-client.187-127-162-233.sslip.io/kyc-capture
+- Inventory: https://relay-client.187-127-162-233.sslip.io/inventory
+- Phone preview: https://relay-client.187-127-162-233.sslip.io/mobile-demo/
+- APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=30
+
+## SIM scan alignment and verified receipt view — 28 September 2026, build 29
+
+- Placed the SIM barcode scanner action alongside the SIM serial field as a compact, accessible scan button. The phone-number field now begins below the completed SIM row instead of appearing to overlap the scanner.
+- After an authorized reviewer verifies the uploaded Etisalat receipt, web and mobile show a receipt-style confirmation with transaction details; identity numbers are masked. The web panel can print this receipt, and the mobile app can share the verified original. Relay does not claim to perform carrier activation.
+- Verification: Flutter formatting, analysis and tests; web production build; focused phone-demo layout test; visual review of the updated phone-width SIM screen.
+- Web: https://relay-client.187-127-162-233.sslip.io/kyc-capture
+- Interactive phone demo: https://relay-client.187-127-162-233.sslip.io/mobile-demo/
+- Android APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=29
+
 ## Administrator plan catalog and form alignment — 28 September 2026, build 28
 
 - Added administrator-only Subscriber plans management. Administrators can add and edit plan names, prices, data allowance, speed, roaming, contract, advance payment, VAT and details. Removal archives a plan from new transactions; restoring it makes it selectable again, while historical transaction references remain intact. Plan changes are audited.

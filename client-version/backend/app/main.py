@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, or_, text
+from sqlalchemy.exc import IntegrityError
 from .db import *
 from .security import *
 from .services import *
@@ -23,6 +24,7 @@ from . import providers
 from .captures import router as capture_router, process_capture
 from .proposal import router as proposal_router
 from .organization import router as organization_router
+from .administration import router as administration_router
 from .transactions import router as transaction_router
 from .client_scope import configure as configure_client_scope
 
@@ -74,6 +76,7 @@ app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
 app.include_router(capture_router)
 app.include_router(proposal_router)
 app.include_router(organization_router)
+app.include_router(administration_router)
 app.include_router(transaction_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
@@ -738,6 +741,51 @@ class MoveBody(BaseModel):
     ]
     agent_id: str | None = None
     reason: str = Field(min_length=5, max_length=300)
+
+
+class SimEditBody(BaseModel):
+    iccid: str = Field(min_length=3, max_length=60)
+    serial: str = Field(min_length=3, max_length=60)
+    sim_type: Literal["Physical", "eSIM"]
+    expected_iccid: str
+    expected_serial: str
+    expected_type: str
+    reason: str = Field(min_length=5, max_length=300)
+
+
+@app.patch("/api/inventory/{sim_id}")
+def edit_sim(sim_id: str, body: SimEditBody, request: Request,
+             user=Depends(principal), db=Depends(get_db)):
+    require(db, user, "inventory.write")
+    sim = db.scalar(select(Sim).where(Sim.id == sim_id).with_for_update())
+    if not sim:
+        raise HTTPException(404, "SIM not found")
+    if sim.agent_id:
+        assert_agent(db, user, sim.agent_id)
+    elif sim.outlet_id not in {a.outlet_id for a in db.scalars(
+            select(Agent).where(Agent.id.in_(visible_agents(db, user))))}:
+        raise HTTPException(404, "SIM not found")
+    if sim.status in {"ACTIVATED", "RESERVED"}:
+        raise HTTPException(409, "Allocated SIM details cannot be changed")
+    if (sim.iccid, sim.serial, sim.sim_type) != (
+            body.expected_iccid, body.expected_serial, body.expected_type):
+        raise HTTPException(409, "SIM details changed. Reload before editing.")
+    iccid, serial = body.iccid.strip(), body.serial.strip()
+    if len(iccid) < 3 or len(serial) < 3:
+        raise HTTPException(422, "Enter valid SIM identifiers")
+    if db.scalar(select(Sim.id).where(Sim.id != sim.id,
+            or_(Sim.iccid == iccid, Sim.serial == serial))):
+        raise HTTPException(409, "SIM identifier already exists")
+    old = {"iccid": sim.iccid, "serial": sim.serial, "sim_type": sim.sim_type}
+    sim.iccid, sim.serial, sim.sim_type = iccid, serial, body.sim_type
+    audit(db, user, "SIM Details Updated", sim.id, sim.agent_id, old,
+          {"iccid": iccid, "serial": serial, "sim_type": sim.sim_type}, body.reason, request)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(409, "SIM identifier already exists")
+    return raw(sim)
 
 
 @app.post("/api/inventory/{sim_id}/move")

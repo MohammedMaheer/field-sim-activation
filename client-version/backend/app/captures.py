@@ -153,9 +153,11 @@ def save_draft(body:IntakeDraftBody, user=Depends(principal), db=Depends(get_db)
     if (row.version if row else 0) != body.version:
         raise HTTPException(409,"Your draft changed on another device. Reload before continuing.")
     if row is None:
-        row=CaptureDraft(creator_id=user.id,version=0);db.add(row)
+        row=CaptureDraft(creator_id=user.id,version=0)
+        db.add(row)
     row.version += 1
-    store(row,body.data.model_dump(mode="json"));db.commit()
+    store(row,body.data.model_dump(mode="json"))
+    db.commit()
     return {"version":row.version,"data":payload(row)}
 
 
@@ -303,6 +305,56 @@ def original(capture_id: str, user=Depends(principal), db=Depends(get_db)):
             + ('.png"' if row.image_type == "image/png" else '.jpg"')
         },
     )
+
+
+@router.get("/{capture_id}/receipt")
+def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depends(get_db)):
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from xml.sax.saxutils import escape
+
+    row = get_capture(db, user, capture_id)
+    data = payload(row)
+    status = "SUCCESS — RECEIPT VERIFIED" if row.status == "VERIFIED" else (
+        "CORRECTION REQUIRED" if row.status == "REJECTED" else "FINAL REVIEW PENDING"
+    )
+    intake = data.get("intake") or {}
+    entries = [("Reference", row.source_reference), ("Status", status),
+               ("Date", row.created_at.strftime("%d %b %Y %H:%M UTC"))]
+    entries += [(label, intake[key]) for key, label in
+                [("name", "Customer"), ("msisdn", "Phone number"),
+                 ("plan_name", "Plan"), ("sim_type", "SIM type")]
+                if intake.get(key)]
+    for item in data.get("rows", []):
+        fields = item.get("fields") or [{"label": key, "value": item.get(key, "")}
+                                         for key in ["reference", "customer", "account", "details"]]
+        for field in fields:
+            if not str(field.get("value", "")).strip():
+                continue
+            label, value = str(field["label"]), str(field["value"])
+            import re
+            if re.search(r"document|passport|identity|\bid\b", label, re.I):
+                value = "**** " + value[-4:]
+            entries.append((label, value))
+    out = io.BytesIO()
+    styles = getSampleStyleSheet()
+    story = [Paragraph("RELAY | ACTIVATION RECEIPT", styles["Title"]),
+             Paragraph(escape(status), styles["Heading2"]), Spacer(1, 16)]
+    cells = [[Paragraph(escape(str(k)), styles["Normal"]),
+              Paragraph(escape(str(v)), styles["Normal"])] for k, v in entries]
+    table = Table(cells, colWidths=[160, 355])
+    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#f0f7f5")]),
+        ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9)]))
+    story.append(table)
+    SimpleDocTemplate(out, pagesize=A4, leftMargin=40, rightMargin=40).build(story)
+    audit(db, user, "Receipt Generated", row.id, row.agent_id,
+          new={"status": row.status}, request=request)
+    db.commit()
+    return Response(out.getvalue(), media_type="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="receipt-{row.id}.pdf"'})
 
 
 class VersionBody(BaseModel):

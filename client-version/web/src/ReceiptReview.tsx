@@ -1,3 +1,4 @@
+import ActivationReceipt from "./ActivationReceipt";
 import { useEffect, useState } from "react";
 import {
   CheckCircle2,
@@ -277,6 +278,7 @@ export default function ReceiptReview({
           </div>
         </section>
       </div>
+      <ActivationReceipt capture={capture} />
       {capture.intake && (
         <section className="panel intake-review">
           <h3>Customer details</h3>

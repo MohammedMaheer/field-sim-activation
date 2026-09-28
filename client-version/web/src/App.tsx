@@ -1,5 +1,6 @@
 import OrganizationSetup from "./OrganizationSetup";
 import AgentManagement from "./AgentManagement";
+import Administration from "./Administration";
 import PlanManagement from "./PlanManagement";
 import KycCapture from "./KycCapture";
 import { FieldTasks, Incentives, Support } from "./ProposalOperations";
@@ -153,7 +154,7 @@ const navigation = [
   },
   {
     label: "ADMINISTRATION",
-    items: [["plans", "Subscriber plans", Settings]],
+    items: [["plans", "Subscriber plans", Settings], ["administration", "Manage workspace", Settings]],
   },
 ];
 
@@ -430,7 +431,7 @@ export default function App() {
                   )
                   .filter(
                     ([path]) =>
-                      path !== "plans" ||
+                      (path !== "plans" && path !== "administration") ||
                       user.permissions.includes("settings.write"),
                   )
                   .map(([path, label, Icon]: any) => (
@@ -569,6 +570,7 @@ export default function App() {
                 <Route path="/live" element={<LiveOperations />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/plans" element={<PlanManagement />} />
+                <Route path="/administration" element={<Administration />} />
                 {[
                   "agents",
                   "customers",
@@ -1375,6 +1377,31 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
           outlet: sim.outlet,
         }}
       />
+      {user.permissions.includes("inventory.write") && !["ACTIVATED", "RESERVED"].includes(sim.status) && (
+        <form className="proposal-form" onSubmit={async e => {
+          e.preventDefault();
+          const form = new FormData(e.currentTarget);
+          setBusy(true);
+          try {
+            await patch(`/inventory/${sim.id}`, {
+              iccid: form.get("iccid"), serial: form.get("serial"), sim_type: form.get("sim_type"),
+              expected_iccid: sim.iccid, expected_serial: sim.serial, expected_type: sim.sim_type,
+              reason: form.get("edit_reason"),
+            });
+            await client.invalidateQueries({ queryKey: ["inventory"] });
+            await client.invalidateQueries({ queryKey: ["audit"] });
+            notify("SIM details updated"); onClose();
+          } catch (error: any) { notify(error.message); }
+          finally { setBusy(false); }
+        }}>
+          <h3 className="wide">Edit SIM details</h3>
+          <label>ICCID<input name="iccid" defaultValue={sim.iccid} required minLength={3} maxLength={60} /></label>
+          <label>SIM serial<input name="serial" defaultValue={sim.serial} required minLength={3} maxLength={60} /></label>
+          <label>SIM type<select name="sim_type" defaultValue={sim.sim_type}><option>Physical</option><option>eSIM</option></select></label>
+          <label>Reason for edit<input name="edit_reason" required minLength={5} maxLength={300} /></label>
+          <button className="primary wide" disabled={busy}>{busy ? "Saving…" : "Save SIM details"}</button>
+        </form>
+      )}
       {user.permissions.includes("inventory.write") &&
         !["ACTIVATED", "RESERVED", "BLOCKED", "DAMAGED"].includes(
           sim.status,

@@ -32,7 +32,7 @@ Web: from `web`, run `npm ci` and `npm run dev` (port 5174 proxies API 8001). Bu
 
 Mobile: from `mobile`, run `flutter pub get`, then `flutter run --dart-define=API_URL=https://relay-client.187-127-162-233.sslip.io/api`.
 
-Tests: backend `python -m pytest`; web set `DEMO_PASSWORD` and optionally `RELAY_WEB_URL`, then `npm test`; mobile `flutter analyze`, `flutter test`. Device integration uses `test_driver/integration_test.dart` and `integration_test/client_scope_test.dart`, with API_URL and TEST_PASSWORD supplied using a private dart-define file.
+Tests: install `backend/requirements-dev.txt`, then backend `python -m pytest`; web set `DEMO_PASSWORD` and optionally `RELAY_WEB_URL`, then `npm test`; mobile `flutter analyze`, `flutter test`. Device integration uses `test_driver/integration_test.dart` and `integration_test/client_scope_test.dart`, with API_URL and TEST_PASSWORD supplied using a private dart-define file.
 
 ## Isolation and architecture
 
@@ -69,3 +69,10 @@ The web colour/motion layer is `web/src/experience.css`; Flutter navigation/moti
 Web has workspace breadcrumbs, history-aware back navigation, a keyboard-contained mobile menu, click-outside/Escape dismissal, and a skip-to-content link. Flutter direct routes have a safe Home fallback; tab state and search remain intact, and Android Back from a secondary tab returns Home. The original three-stage demo and screenshot review workflows are unchanged.
 
 Before publishing a UI build, browser tests can preview local `web/dist` files against the hosted demo API using `RELAY_PREVIEW_DIST=1` and `RELAY_WEB_URL` set to the demo host. Set `DEMO_PASSWORD` privately. This preview replaces HTML/assets in the test browser only; it does not deploy files. Clear `RELAY_PREVIEW_DIST` for hosted-release checks. Tests that modify records must use synthetic demo data only.
+
+
+### Administrator controls and printable receipts
+
+Manage workspace provides branch/team/outlet and customer editing, agent profile corrections, new stock registration, and task/incentive adjustments. Existing agent assignment and inventory movement controls are linked directly. All mutations require an administrator, a reason, and audit recording. Unused master records can be deleted; linked history and operational evidence are protected.
+
+Receipts can be printed or exported before final staff review, marked Final review pending. A VERIFIED backend decision updates the receipt to success. Etisalat activation remains external. Build the phone-framed browser version with `python mobile/preview/build.py`; copying a plain Flutter web build does not include the phone wrapper.
