@@ -50,7 +50,7 @@ export default function KycCapture() {
     queryKey: ["kyc-captures", historySearch, historyStatus, historyPage],
     queryFn: () =>
       api(
-        `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${historyStatus}`,
+        `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${["READY", "COMPLETED"].includes(historyStatus) ? "" : historyStatus}&stage=${["READY", "COMPLETED"].includes(historyStatus) ? historyStatus : ""}`,
       ),
     refetchInterval: 8000,
   });
@@ -111,6 +111,7 @@ export default function KycCapture() {
         agent_id: agent || user.agent_id || agents.data?.[0]?.id,
         operation_id: operation,
         source_reference: source,
+        document_kind: "PAYMENT_CONFIRMATION",
         image_base64: base64,
         intake,
       });
@@ -143,9 +144,7 @@ export default function KycCapture() {
       <div className={`page-header ${reviewMode ? "review-page-header" : ""}`}>
         <div>
           <div className="eyebrow">TRANSACTIONS</div>
-          <h1>
-            {canReview ? "Receipt verification" : "Activation receipt capture"}
-          </h1>
+          <h1>{canReview ? "Payment review" : "New transaction"}</h1>
         </div>
         <button
           onClick={() =>
@@ -207,7 +206,9 @@ export default function KycCapture() {
                 }}
               >
                 <option value="SUBMITTED">Awaiting review</option>
-                <option value="VERIFIED">Verified</option>
+                <option value="READY">Ready for activation</option>
+                <option value="COMPLETED">Completed activations</option>
+                <option value="VERIFIED">Verified history</option>
                 <option value="REJECTED">Needs correction</option>
                 <option value="">All captures</option>
               </select>
@@ -220,7 +221,7 @@ export default function KycCapture() {
                   setHistorySearch(e.target.value);
                   setHistoryPage(0);
                 }}
-                placeholder="Receipt reference"
+                placeholder="Payment reference"
               />
             </label>
           </div>
@@ -251,7 +252,7 @@ export default function KycCapture() {
             </div>
           ) : (
             <div className="review-inbox-empty">
-              <h3>No receipts in this view</h3>
+              <h3>No submissions in this view</h3>
               <p>
                 New agent submissions will appear here automatically. Try
                 another status or search.
@@ -325,12 +326,10 @@ export default function KycCapture() {
                       </select>
                     </label>
                     <label>
-                      Source transaction reference
+                      Payment reference (optional)
                       <input
-                        required
-                        minLength={2}
                         maxLength={120}
-                        placeholder="Reference from the telecom screen"
+                        placeholder="Payment confirmation reference"
                         value={source}
                         onChange={(e) => {
                           setSource(e.target.value);
@@ -340,10 +339,10 @@ export default function KycCapture() {
                     </label>
                     <div className="capture-picker">
                       <ImageIcon size={28} />
-                      <b>
-                        {file?.name || "Choose an activation receipt image"}
-                      </b>
-                      <span>Your receipt will be available for review.</span>
+                      <b>{file?.name || "Choose payment confirmation"}</b>
+                      <span>
+                        Your confirmation will be available for review.
+                      </span>
                       <div>
                         <label className="capture-file">
                           <Upload size={16} />
@@ -378,14 +377,14 @@ export default function KycCapture() {
                       <img
                         className="capture-preview"
                         src={preview}
-                        alt="Selected activation receipt"
+                        alt="Selected payment confirmation"
                       />
                     )}
                     <button
                       className="primary"
                       disabled={busy || !file || !agents.data?.length}
                     >
-                      {busy ? "Uploading…" : "Upload receipt"}
+                      {busy ? "Uploading…" : "Upload payment confirmation"}
                     </button>
                   </form>
                 </Panel>
@@ -455,7 +454,7 @@ export default function KycCapture() {
 
                         {capture.status === "QUEUED" && (
                           <p role="status">
-                            Your receipt is being prepared. You can return
+                            Your confirmation is being prepared. You can return
                             later.
                           </p>
                         )}
@@ -487,7 +486,7 @@ export default function KycCapture() {
                               Receipt text · {capture.lines.length} lines
                             </summary>
                             <p className="field-help">
-                              Use the receipt text to check or add missing
+                              Use the uploaded text to check or add missing
                               details.
                             </p>
                             <div className="ocr-lines">
@@ -533,8 +532,7 @@ export default function KycCapture() {
 
                             {rows.length === 0 && (
                               <p>
-                                Add details from the receipt or create a new
-                                row.
+                                Add details from the image or create a new row.
                               </p>
                             )}
                             {rows.map((r, i) => (

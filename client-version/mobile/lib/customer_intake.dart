@@ -537,7 +537,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${i + 1}. ${['Identity', 'SIM & plan', 'Receipt'][i]}',
+                      '${i + 1}. ${['Identity', 'SIM & plan', 'Payment'][i]}',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: i == step

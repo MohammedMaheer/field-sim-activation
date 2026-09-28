@@ -110,8 +110,11 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page.waitForTimeout(300);
   await (await reveal("Upload")).click();
   await page
-    .getByRole("button", { name: "Upload receipt", exact: true })
+    .getByRole("button", { name: "Upload payment confirmation", exact: true })
     .click();
+  await page.waitForTimeout(850);
+  await expect(page.getByRole("group",{name:/Payment successful/}).or(page.getByText(/Payment successful/)).first()).toBeVisible();
+  await page.screenshot({path:"../output/qa/phone-payment-invoice-top.png",fullPage:true});
   await expect(await revealText("Transaction rows")).toBeVisible();
   await page.mouse.move(host!.x + host!.width / 2, host!.y + host!.height / 2);
   for(let i=0;i<8;i++){

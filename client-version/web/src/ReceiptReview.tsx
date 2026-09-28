@@ -33,6 +33,7 @@ export default function ReceiptReview({
     [tab, setTab] = useState("fields"),
     [note, setNote] = useState(""),
     [checked, setChecked] = useState(false),
+    [activationReference, setActivationReference] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   useEffect(() => {
@@ -116,10 +117,21 @@ export default function ReceiptReview({
         </div>
       )}
       <div className="review-comparison">
-        <section className="review-pane" aria-label="Original receipt">
+        <section
+          className="review-pane"
+          aria-label={
+            capture.document_kind === "PAYMENT_CONFIRMATION"
+              ? "Payment confirmation"
+              : "Original receipt"
+          }
+        >
           <div className="review-pane-heading">
             <div>
-              <h3>Original receipt</h3>
+              <h3>
+                {capture.document_kind === "PAYMENT_CONFIRMATION"
+                  ? "Payment confirmation"
+                  : "Original receipt"}
+              </h3>
               <small>Uploaded by the agent · unmodified</small>
             </div>
             <div className="review-image-controls">
@@ -158,7 +170,7 @@ export default function ReceiptReview({
             ) : image ? (
               <img
                 src={image}
-                alt={`Original receipt from ${agent?.name || "assigned agent"}`}
+                alt={`${capture.document_kind === "PAYMENT_CONFIRMATION" ? "Payment confirmation" : "Original receipt"} from ${agent?.name || "assigned agent"}`}
                 style={{ width: `${zoom}%` }}
                 onError={() =>
                   setImageError(
@@ -177,7 +189,7 @@ export default function ReceiptReview({
                 perform(() =>
                   download(
                     `/kyc-captures/${capture.id}/original`,
-                    `receipt-${capture.id}.${capture.image_type === "image/jpeg" ? "jpg" : "png"}`,
+                    `confirmation-${capture.id}.${capture.image_type === "image/jpeg" ? "jpg" : "png"}`,
                   ),
                 )
               }
@@ -191,7 +203,11 @@ export default function ReceiptReview({
         <section className="review-pane" aria-label="Extracted receipt data">
           <div className="review-pane-heading">
             <div>
-              <h3>Receipt details</h3>
+              <h3>
+                {capture.document_kind === "PAYMENT_CONFIRMATION"
+                  ? "Payment details"
+                  : "Receipt details"}
+              </h3>
               <small>
                 {capture.rows?.length || 0} transaction(s) · review against
                 original
@@ -291,7 +307,7 @@ export default function ReceiptReview({
                   disabled={busy || !image || !!imageError}
                   onChange={(e) => setChecked(e.target.checked)}
                 />
-                I compared the original receipt with the transaction fields.
+                I compared the uploaded image with the transaction fields.
               </label>
             </div>
             <div>
@@ -326,7 +342,7 @@ export default function ReceiptReview({
                   onClick={() => decide("VERIFIED")}
                 >
                   <CheckCircle2 size={17} />
-                  {busy ? "Saving…" : "Verify receipt"}
+                  {busy ? "Saving…" : "Verify submission"}
                 </button>
               </div>
             </div>
@@ -352,8 +368,124 @@ export default function ReceiptReview({
           </div>
         )}
       </section>
+      {capture.document_kind === "PAYMENT_CONFIRMATION" &&
+        capture.status === "VERIFIED" && (
+          <section className="panel activation-completion">
+            <h2>
+              {capture.activation?.status === "ACTIVATED"
+                ? "Activation completed"
+                : "Backend activation"}
+            </h2>
+            {capture.activation && (
+              <p>
+                {capture.activation.status} · {capture.activation.reference}
+              </p>
+            )}
+            {capture.activation?.status !== "ACTIVATED" &&
+              user.permissions?.includes("ekyc.write") && (
+                <>
+                  <label>
+                    Carrier activation reference
+                    <input
+                      value={activationReference}
+                      onChange={(e) => setActivationReference(e.target.value)}
+                      maxLength={100}
+                    />
+                  </label>
+                  <label>
+                    Completion note
+                    <textarea
+                      value={note}
+                      onChange={(e) => setNote(e.target.value)}
+                      maxLength={300}
+                    />
+                  </label>
+                  <div className="review-decision-actions">
+                    {["FAILED", "ACTIVATED"].map((outcome) => (
+                      <button
+                        className={outcome === "ACTIVATED" ? "primary" : ""}
+                        key={outcome}
+                        disabled={
+                          busy ||
+                          activationReference.trim().length < 3 ||
+                          note.trim().length < 5
+                        }
+                        onClick={() =>
+                          perform(async () => {
+                            await post(
+                              `/kyc-captures/${capture.id}/activation`,
+                              {
+                                version: capture.version,
+                                outcome,
+                                reference: activationReference,
+                                reason: note,
+                              },
+                            );
+                            await onSaved();
+                          })
+                        }
+                      >
+                        {outcome === "ACTIVATED"
+                          ? "Record completed activation"
+                          : "Record activation failure"}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+          </section>
+        )}
+      {capture.document_kind === "PAYMENT_CONFIRMATION" && (
+        <details className="review-history">
+          <summary>Customer documents & signature</summary>
+          <div className="review-intake-evidence">
+            {[
+              ["Identity document", capture.intake?.document_image],
+              ["Selfie", capture.intake?.selfie_image],
+            ].map(([title, image]) => (
+              <section key={title}>
+                <h3>{title}</h3>
+                {image ? (
+                  <img
+                    src={`data:image/${String(image).startsWith("iVBORw0KGgo") ? "png" : "jpeg"};base64,${image}`}
+                    alt={title}
+                  />
+                ) : (
+                  <span>Not recorded</span>
+                )}
+              </section>
+            ))}
+            <section>
+              <h3>Customer signature</h3>
+              {capture.intake?.signature?.length ? (
+                <svg
+                  viewBox="0 0 400 180"
+                  aria-label="Captured customer signature"
+                  role="img"
+                >
+                  {capture.intake.signature.map(
+                    (stroke: number[][], i: number) => (
+                      <polyline
+                        key={i}
+                        points={stroke
+                          .map((p) => `${p[0] * 400},${p[1] * 180}`)
+                          .join(" ")}
+                        fill="none"
+                        stroke="#762765"
+                        strokeWidth="3"
+                      />
+                    ),
+                  )}
+                </svg>
+              ) : (
+                <span>Not recorded</span>
+              )}
+            </section>
+          </div>
+        </details>
+      )}
       <details className="review-history">
-        <summary>Printable receipt</summary>
+        <summary>Printable invoice</summary>
         <ActivationReceipt capture={capture} />
       </details>
       <details className="review-history">

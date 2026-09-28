@@ -1,3 +1,4 @@
+import 'payment_invoice.dart';
 import 'dart:convert';
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
@@ -31,8 +32,12 @@ Uint8List previewReceiptPdf(Json row) {
       ? 'CORRECTION REQUIRED'
       : 'FINAL REVIEW PENDING';
   final lines = [
-    'RELAY | ACTIVATION RECEIPT',
-    status,
+    row['document_kind'] == 'PAYMENT_CONFIRMATION'
+        ? 'RELAY | PAYMENT INVOICE'
+        : 'RELAY | ACTIVATION RECEIPT',
+    row['document_kind'] == 'PAYMENT_CONFIRMATION'
+        ? 'PAYMENT SUCCESSFUL - ${paymentInvoice(row)['status']}'
+        : status,
     'Reference: ${row['source_reference']}',
     'Customer: ${intake['name'] ?? ''}',
     'Date: ${row['created_at'] ?? DateTime.now().toIso8601String()}',
@@ -41,6 +46,10 @@ Uint8List previewReceiptPdf(Json row) {
     'SIM type: ${intake['sim_type'] == 'ESIM' ? 'eSIM' : 'Physical SIM'}',
     'SIM serial: ${intake['sim_identifier'] ?? ''}',
     'Plan: ${intake['plan_name'] ?? ''}',
+    if (row['document_kind'] == 'PAYMENT_CONFIRMATION')
+      for (final section in paymentInvoice(row)['sections'])
+        for (final field in section['fields'])
+          '${section['title']} / ${field['label']}: ${field['value']}',
     for (final item in row['rows'] as List? ?? [])
       for (final field in item['fields'] as List? ?? [])
         if (!RegExp(
@@ -54,15 +63,28 @@ Uint8List previewReceiptPdf(Json row) {
       .replaceAll('\\', '\\\\')
       .replaceAll('(', '\\(')
       .replaceAll(')', '\\)');
-  final stream =
-      'BT /F1 12 Tf 48 780 Td 20 TL ${lines.take(32).map((v) => '(${clean(v)}) Tj T*').join(' ')} ET';
-  final objects = [
+  final wrapped = <String>[];
+  for (final line in lines) {
+    final text = line.replaceAll(RegExp(r'[^\x20-\x7E]'), ' ');
+    for (var start = 0; start < text.length; start += 88) {
+      wrapped.add(text.substring(start, (start + 88).clamp(0, text.length)));
+    }
+  }
+  final pageCount = (wrapped.length / 56).ceil().clamp(1, 1000);
+  final objects = <String>[
     '<< /Type /Catalog /Pages 2 0 R >>',
-    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Pages /Kids [${List.generate(pageCount, (i) => "${4 + i * 2} 0 R").join(" ")}] /Count $pageCount >>',
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
-    '<< /Length ${stream.length} >>\nstream\n$stream\nendstream',
   ];
+  for (var page = 0; page < pageCount; page++) {
+    final chunk = wrapped.skip(page * 56).take(56);
+    final stream =
+        'BT /F1 9 Tf 48 800 Td 12 TL ${chunk.map((v) => "(${clean(v)}) Tj T*").join(" ")} (Page ${page + 1} of $pageCount) Tj ET';
+    objects.add(
+      '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + page * 2} 0 R >>',
+    );
+    objects.add('<< /Length ${stream.length} >>\nstream\n$stream\nendstream');
+  }
   var pdf = '%PDF-1.4\n';
   final offsets = <int>[0];
   for (var i = 0; i < objects.length; i++) {
@@ -70,11 +92,12 @@ Uint8List previewReceiptPdf(Json row) {
     pdf += '${i + 1} 0 obj\n${objects[i]}\nendobj\n';
   }
   final xref = pdf.length;
-  pdf += 'xref\n0 6\n0000000000 65535 f \n';
+  pdf += 'xref\n0 ${objects.length + 1}\n0000000000 65535 f \n';
   for (final offset in offsets.skip(1)) {
     pdf += '${offset.toString().padLeft(10, '0')} 00000 n \n';
   }
-  pdf += 'trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n$xref\n%%EOF';
+  pdf +=
+      'trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF';
   return Uint8List.fromList(ascii.encode(pdf));
 }
 
@@ -229,7 +252,8 @@ class PreviewService extends RelayService {
       try {
         final url = Uri.base.resolve('/api/public/plans').toString();
         final response = await publicApi.get<List<dynamic>>(url);
-        return response.data ?? const <Json>[];
+        data['/resources/plans'] = response.data ?? const <Json>[];
+        return data['/resources/plans'];
       } on DioException {
         // Keep the preview usable offline; online edits come from the shared catalog.
       }
@@ -272,6 +296,14 @@ class PreviewService extends RelayService {
             'version': 1,
             'review': null,
             'intake': body['intake'],
+            'document_kind': body['document_kind'],
+            'payment_reference': body['source_reference'],
+            'created_at': DateTime.now().toIso8601String(),
+            'plan_snapshot': (data['/resources/plans'] as List? ?? [])
+                .firstWhere(
+                  (p) => p['id'] == body['intake']?['plan_id'],
+                  orElse: () => <String, dynamic>{},
+                ),
             'history': [
               {
                 'action': 'Receipt details prepared',
@@ -281,6 +313,9 @@ class PreviewService extends RelayService {
             ],
           });
           captures.insert(0, template);
+          if (template['document_kind'] == 'PAYMENT_CONFIRMATION') {
+            template['invoice'] = paymentInvoice(template);
+          }
           return template;
         }
         return captures;
@@ -306,6 +341,9 @@ class PreviewService extends RelayService {
           'actor': 'Zayn Mercer',
           'at': DateTime.now().toIso8601String(),
         });
+      }
+      if (row['document_kind'] == 'PAYMENT_CONFIRMATION') {
+        row['invoice'] = paymentInvoice(row);
       }
       return row;
     }

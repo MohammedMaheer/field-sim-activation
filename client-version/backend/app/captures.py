@@ -12,9 +12,24 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
-from .db import KycCapture, CaptureDraft, Plan, DB, User, get_db, now
+from .db import (
+    KycCapture,
+    CaptureDraft,
+    Plan,
+    DB,
+    User,
+    Customer,
+    Order,
+    Activation,
+    OrderEvent,
+    Sim,
+    Movement,
+    get_db,
+    now,
+)
 from .security import principal, permissions, require, assert_agent, visible_agents, cipher
 from .services import audit
+from .invoices import invoice
 from .capture_ocr import extractor, inspect_image
 
 router = APIRouter(prefix="/api/kyc-captures", tags=["KYC transaction captures"])
@@ -55,8 +70,13 @@ def view(row, detail=True):
         "updated_at": row.updated_at,
         "error": row.error,
     }
+    content = payload(row)
+    result["document_kind"] = content.get("document_kind", "ACTIVATION_RECEIPT")
+    result["activation"] = content.get("activation")
     if detail:
-        result.update(payload(row))
+        result.update(content)
+        if result["document_kind"] == "PAYMENT_CONFIRMATION":
+            result["invoice"] = invoice(row, content)
     return result
 
 
@@ -112,12 +132,19 @@ class Intake(BaseModel):
     @model_validator(mode="after")
     def safe_data(self):
         import math
-        if sum(len(stroke) for stroke in self.signature) > 3000 or any(not math.isfinite(n) or n < 0 or n > 1 for stroke in self.signature for point in stroke for n in point):
+
+        if sum(len(stroke) for stroke in self.signature) > 3000 or any(
+            not math.isfinite(n) or n < 0 or n > 1
+            for stroke in self.signature
+            for point in stroke
+            for n in point
+        ):
             raise ValueError("Invalid signature")
         for image in [self.document_image, self.selfie_image, self.payment_image]:
             if image:
                 inspect_image(base64.b64decode(image, validate=True))
         from datetime import date
+
         for value in [self.birth_date, self.expiry_date]:
             if value:
                 date.fromisoformat(value)
@@ -125,10 +152,24 @@ class Intake(BaseModel):
 
     def complete(self):
         from datetime import date
-        required = [self.name,self.document_number,self.nationality,self.birth_date,self.expiry_date,self.document_image,self.sim_identifier,self.plan_id,self.msisdn]
+
+        required = [
+            self.name,
+            self.document_number,
+            self.nationality,
+            self.birth_date,
+            self.expiry_date,
+            self.document_image,
+            self.sim_identifier,
+            self.plan_id,
+            self.msisdn,
+        ]
         if not all(v.strip() for v in required) or sum(len(s) for s in self.signature) < 8:
             raise HTTPException(422, "Complete customer details, SIM, plan and signature first")
-        if date.fromisoformat(self.expiry_date) < date.today() or date.fromisoformat(self.birth_date) >= date.today():
+        if (
+            date.fromisoformat(self.expiry_date) < date.today()
+            or date.fromisoformat(self.birth_date) >= date.today()
+        ):
             raise HTTPException(422, "Check the document expiry and date of birth")
 
 
@@ -139,62 +180,82 @@ class IntakeDraftBody(BaseModel):
 
 @router.get("/draft")
 def read_draft(user=Depends(principal), db=Depends(get_db)):
-    access(db,user,True)
+    access(db, user, True)
     row = db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id == user.id))
-    return {"version": row.version, "data": payload(row)} if row else {"version":0,"data":{}}
+    return {"version": row.version, "data": payload(row)} if row else {"version": 0, "data": {}}
 
 
 @router.put("/draft")
-def save_draft(body:IntakeDraftBody, user=Depends(principal), db=Depends(get_db)):
-    access(db,user,True)
+def save_draft(body: IntakeDraftBody, user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
     # Serialize first creation as well as updates for the same user.
-    db.scalar(select(User).where(User.id==user.id).with_for_update())
-    row = db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id==user.id).with_for_update())
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
+    row = db.scalar(
+        select(CaptureDraft).where(CaptureDraft.creator_id == user.id).with_for_update()
+    )
     if (row.version if row else 0) != body.version:
-        raise HTTPException(409,"Your draft changed on another device. Reload before continuing.")
+        raise HTTPException(409, "Your draft changed on another device. Reload before continuing.")
     if row is None:
-        row=CaptureDraft(creator_id=user.id,version=0)
+        row = CaptureDraft(creator_id=user.id, version=0)
         db.add(row)
     row.version += 1
-    store(row,body.data.model_dump(mode="json"))
+    store(row, body.data.model_dump(mode="json"))
     db.commit()
-    return {"version":row.version,"data":payload(row)}
+    return {"version": row.version, "data": payload(row)}
 
 
 class IdentityImage(BaseModel):
-    image_base64:str=Field(max_length=1_333_336)
+    image_base64: str = Field(max_length=1_333_336)
 
 
 @router.post("/read-document")
-def read_document(body:IdentityImage,user=Depends(principal),db=Depends(get_db)):
-    access(db,user,True)
+def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
     try:
-        result=extractor.extract(base64.b64decode(body.image_base64,validate=True))
+        result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
     except Exception:
-        raise HTTPException(422,"Could not read this image. Enter the details or use a clearer photo.")
-    aliases={"full name":"name","full legal name":"name","name":"name","customer name":"name","nationality":"nationality","document number":"document_number","id number":"document_number","identity number":"document_number","id no":"document_number","passport no":"document_number","passport number":"document_number","date of birth":"birth_date","expiry date":"expiry_date","date of expiry":"expiry_date"}
-    fields={}
-    for line in result.get("lines",[]):
-        label,sep,value=line["text"].partition(":")
-        key=aliases.get(label.strip().lower())
+        raise HTTPException(
+            422, "Could not read this image. Enter the details or use a clearer photo."
+        )
+    aliases = {
+        "full name": "name",
+        "full legal name": "name",
+        "name": "name",
+        "customer name": "name",
+        "nationality": "nationality",
+        "document number": "document_number",
+        "id number": "document_number",
+        "identity number": "document_number",
+        "id no": "document_number",
+        "passport no": "document_number",
+        "passport number": "document_number",
+        "date of birth": "birth_date",
+        "expiry date": "expiry_date",
+        "date of expiry": "expiry_date",
+    }
+    fields = {}
+    for line in result.get("lines", []):
+        label, sep, value = line["text"].partition(":")
+        key = aliases.get(label.strip().lower())
         if sep and key and value.strip():
-            value=value.strip()
+            value = value.strip()
             if key.endswith("date"):
-                parsed=None
-                for fmt in ("%Y-%m-%d","%d/%m/%Y","%d-%m-%Y","%d %b %Y","%d %B %Y"):
+                parsed = None
+                for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y"):
                     try:
-                        parsed=datetime.strptime(value,fmt).date().isoformat()
+                        parsed = datetime.strptime(value, fmt).date().isoformat()
                         break
                     except ValueError:
                         pass
                 if not parsed:
                     continue
-                value=parsed
-            fields[key]=value[:80 if key in {"document_number","nationality"} else 120]
+                value = parsed
+            fields[key] = value[: 80 if key in {"document_number", "nationality"} else 120]
     return fields
 
 
 class CaptureBody(BaseModel):
+    document_kind: Literal["ACTIVATION_RECEIPT", "PAYMENT_CONFIRMATION"] = "ACTIVATION_RECEIPT"
     agent_id: str
     operation_id: str = Field(min_length=16, max_length=80)
     source_reference: str = Field(default="", max_length=120)
@@ -211,12 +272,17 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         image_type = inspect_image(data)
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc))
+    if body.document_kind == "PAYMENT_CONFIRMATION" and not body.intake:
+        raise HTTPException(422, "Complete customer details before uploading payment confirmation")
     if body.intake:
         body.intake.complete()
-        plan=db.get(Plan,body.intake.plan_id)
+        plan = db.get(Plan, body.intake.plan_id)
         if not plan or not plan.active:
-            raise HTTPException(422,"Select an available plan")
-        body.intake.plan_name=plan.name
+            raise HTTPException(422, "Select an available plan")
+        body.intake.plan_name = plan.name
+    source = body.source_reference.strip() or (
+        "PAY-" + body.operation_id[:24] if body.document_kind == "PAYMENT_CONFIRMATION" else ""
+    )
     digest = hashlib.sha256(data).hexdigest()
     existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
 
@@ -225,15 +291,17 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
             row.creator_id != user.id
             or row.image_hash != digest
             or row.agent_id != body.agent_id
-            or row.source_reference != body.source_reference.strip()
-            or payload(row).get("intake") != (body.intake.model_dump(mode="json") if body.intake else None)
+            or row.source_reference != source
+            or payload(row).get("document_kind", "ACTIVATION_RECEIPT") != body.document_kind
+            or payload(row).get("intake")
+            != (body.intake.model_dump(mode="json") if body.intake else None)
         ):
             raise HTTPException(409, "This upload identifier was already used for another capture")
         return view(row)
 
     if existing:
         return replay(existing)
-    if not body.source_reference.strip():
+    if not source:
         raise HTTPException(422, "Enter the source transaction reference")
     queued = db.scalar(
         select(func.count()).select_from(KycCapture).where(KycCapture.status == "QUEUED")
@@ -244,7 +312,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         agent_id=body.agent_id,
         creator_id=user.id,
         operation_id=body.operation_id,
-        source_reference=body.source_reference.strip(),
+        source_reference=source,
         image_hash=digest,
         image_type=image_type,
         image_encrypted=cipher.encrypt(data).decode(),
@@ -254,16 +322,33 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     db.add(row)
     try:
         db.flush()
-        content={"rows":[],"lines":[],"history":[]}
+        content = {"rows": [], "lines": [], "history": [], "document_kind": body.document_kind}
+        if body.document_kind == "PAYMENT_CONFIRMATION":
+            content["payment_reference"] = body.source_reference.strip()
+            content["plan_snapshot"] = {
+                "name": plan.name,
+                "monthly_cost": plan.monthly_cost,
+                "promotion": plan.promotion,
+                "vat": plan.vat,
+            }
         if body.intake:
-            content["intake"]=body.intake.model_dump(mode="json")
-        draft=db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id==user.id).with_for_update())
+            content["intake"] = body.intake.model_dump(mode="json")
+        draft = db.scalar(
+            select(CaptureDraft).where(CaptureDraft.creator_id == user.id).with_for_update()
+        )
         if draft and body.intake:
-            draft_data=payload(draft)
-            keys=["name","document_number","document_image","sim_identifier","plan_id","signature"]
-            if all(draft_data.get(k)==content["intake"].get(k) for k in keys):
-                store(draft,{})
-                draft.version+=1
+            draft_data = payload(draft)
+            keys = [
+                "name",
+                "document_number",
+                "document_image",
+                "sim_identifier",
+                "plan_id",
+                "signature",
+            ]
+            if all(draft_data.get(k) == content["intake"].get(k) for k in keys):
+                store(draft, {})
+                draft.version += 1
         record(db, row, user, "Receipt uploaded", request, content)
         db.commit()
     except IntegrityError:
@@ -275,17 +360,36 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
 
 
 @router.get("")
-def listing(user=Depends(principal), db=Depends(get_db), limit: int = Query(50, ge=1, le=100),
-            offset: int = Query(0, ge=0), search: str = Query("", max_length=120),
-            status: Literal["", "QUEUED", "OCR_FAILED", "EXTRACTED", "VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"] = ""):
+def listing(
+    user=Depends(principal),
+    db=Depends(get_db),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    search: str = Query("", max_length=120),
+    stage: Literal["", "READY", "COMPLETED"] = "",
+    status: Literal[
+        "", "QUEUED", "OCR_FAILED", "EXTRACTED", "VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"
+    ] = "",
+):
     access(db, user)
     q = select(KycCapture).where(KycCapture.agent_id.in_(visible_agents(db, user)))
     if search.strip():
         q = q.where(KycCapture.source_reference.icontains(search.strip(), autoescape=True))
-    if status:
+    if stage:
+        q = q.where(KycCapture.status == "VERIFIED")
+    elif status:
         q = q.where(KycCapture.status == status)
-    q = q.order_by(KycCapture.created_at.desc(), KycCapture.id.desc()).offset(offset).limit(limit)
-    return [view(row, False) for row in db.scalars(q)]
+    q = q.order_by(KycCapture.created_at.desc(), KycCapture.id.desc())
+    if stage:
+        rows = [
+            row
+            for row in db.scalars(q)
+            if payload(row).get("document_kind") == "PAYMENT_CONFIRMATION"
+            and ((payload(row).get("activation") or {}).get("status") == "ACTIVATED")
+            == (stage == "COMPLETED")
+        ]
+        return [view(row, False) for row in rows[offset : offset + limit]]
+    return [view(row, False) for row in db.scalars(q.offset(offset).limit(limit))]
 
 
 @router.get("/{capture_id}")
@@ -317,48 +421,101 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
 
     row = get_capture(db, user, capture_id)
     data = payload(row)
-    status = "SUCCESS — RECEIPT VERIFIED" if row.status == "VERIFIED" else (
-        "CORRECTION REQUIRED" if row.status == "REJECTED" else "FINAL REVIEW PENDING"
+    status = (
+        "SUCCESS — RECEIPT VERIFIED"
+        if row.status == "VERIFIED"
+        else ("CORRECTION REQUIRED" if row.status == "REJECTED" else "FINAL REVIEW PENDING")
     )
     intake = data.get("intake") or {}
-    entries = [("Reference", row.source_reference), ("Status", status),
-               ("Date", row.created_at.strftime("%d %b %Y %H:%M UTC"))]
-    entries += [(label, intake[key]) for key, label in
-                [("name", "Customer"), ("msisdn", "Phone number"),
-                 ("plan_name", "Plan"), ("sim_type", "SIM type")]
-                if intake.get(key)]
+    entries = [
+        ("Reference", row.source_reference),
+        ("Status", status),
+        ("Date", row.created_at.strftime("%d %b %Y %H:%M UTC")),
+    ]
+    entries += [
+        (label, intake[key])
+        for key, label in [
+            ("name", "Customer"),
+            ("msisdn", "Phone number"),
+            ("plan_name", "Plan"),
+            ("sim_type", "SIM type"),
+        ]
+        if intake.get(key)
+    ]
     if intake.get("document_number"):
         entries.append(("ID number", "**** " + str(intake["document_number"])[-4:]))
     if intake.get("sim_identifier"):
         entries.append(("SIM serial", intake["sim_identifier"]))
     for item in data.get("rows", []):
-        fields = item.get("fields") or [{"label": key, "value": item.get(key, "")}
-                                         for key in ["reference", "customer", "account", "details"]]
+        fields = item.get("fields") or [
+            {"label": key, "value": item.get(key, "")}
+            for key in ["reference", "customer", "account", "details"]
+        ]
         for field in fields:
             if not str(field.get("value", "")).strip():
                 continue
             label, value = str(field["label"]), str(field["value"])
             import re
-            if re.search(r"document|passport|identity|customer.*id|subscriber.*id|emirates.*id|national.*id|^id(?:\s|$)", label, re.I):
+
+            if re.search(
+                r"document|passport|identity|customer.*id|subscriber.*id|emirates.*id|national.*id|^id(?:\s|$)",
+                label,
+                re.I,
+            ):
                 value = "**** " + value[-4:]
             entries.append((label, value))
+    payment = data.get("document_kind") == "PAYMENT_CONFIRMATION"
+    if payment:
+        projected = invoice(row, data)
+        status = projected["heading"] + " — " + projected["status"]
+        entries = [
+            (section["title"] + " / " + f["label"], f["value"])
+            for section in projected["sections"]
+            for f in section["fields"]
+        ]
     out = io.BytesIO()
     styles = getSampleStyleSheet()
-    story = [Paragraph("RELAY | ACTIVATION RECEIPT", styles["Title"]),
-             Paragraph(escape(status), styles["Heading2"]), Spacer(1, 16)]
-    cells = [[Paragraph(escape(str(k)), styles["Normal"]),
-              Paragraph(escape(str(v)), styles["Normal"])] for k, v in entries]
+    story = [
+        Paragraph(
+            "RELAY | PAYMENT INVOICE" if payment else "RELAY | ACTIVATION RECEIPT", styles["Title"]
+        ),
+        Paragraph(escape(status), styles["Heading2"]),
+        Spacer(1, 16),
+    ]
+    cells = [
+        [Paragraph(escape(str(k)), styles["Normal"]), Paragraph(escape(str(v)), styles["Normal"])]
+        for k, v in entries
+    ]
     table = Table(cells, colWidths=[160, 355])
-    table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#f0f7f5")]),
-        ("TOPPADDING", (0, 0), (-1, -1), 9), ("BOTTOMPADDING", (0, 0), (-1, -1), 9)]))
+    table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#f0f7f5")]),
+                ("TOPPADDING", (0, 0), (-1, -1), 9),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+            ]
+        )
+    )
     story.append(table)
     SimpleDocTemplate(out, pagesize=A4, leftMargin=40, rightMargin=40).build(story)
-    audit(db, user, "Receipt Generated", row.id, row.agent_id,
-          new={"status": row.status}, request=request)
+    audit(
+        db,
+        user,
+        "Receipt Generated",
+        row.id,
+        row.agent_id,
+        new={"status": row.status},
+        request=request,
+    )
     db.commit()
-    return Response(out.getvalue(), media_type="application/pdf",
-                    headers={"Content-Disposition": f'attachment; filename="receipt-{row.id}.pdf"'})
+    return Response(
+        out.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{"invoice" if payment else "receipt"}-{row.id}.pdf"'
+        },
+    )
 
 
 class VersionBody(BaseModel):
@@ -387,11 +544,14 @@ class TransactionRow(BaseModel):
     @model_validator(mode="after")
     def validate_content(self):
         if self.fields is not None:
-            if any(not f.label.strip() for f in self.fields) or not any(f.value.strip() for f in self.fields):
+            if any(not f.label.strip() for f in self.fields) or not any(
+                f.value.strip() for f in self.fields
+            ):
                 raise ValueError("Each field needs a label and the transaction needs a value")
         elif len(self.reference.strip()) < 2 or len(self.details.strip()) < 2:
             raise ValueError("Legacy rows need a reference and details")
         return self
+
     source_line: int | None = Field(default=None, ge=0, le=199)
 
 
@@ -415,8 +575,12 @@ def save_rows(
     if len(set(refs)) != len(refs):
         raise HTTPException(422, "Legacy transaction references must be unique")
     data = payload(row)
-    if any(r.get("fields") is not None for r in data.get("rows", [])) and any(r.get("fields") is None for r in rows):
-        raise HTTPException(409, "This receipt uses dynamic fields. Update the app before editing it.")
+    if any(r.get("fields") is not None for r in data.get("rows", [])) and any(
+        r.get("fields") is None for r in rows
+    ):
+        raise HTTPException(
+            409, "This receipt uses dynamic fields. Update the app before editing it."
+        )
     sources = [r["source_line"] for r in rows]
     sources += [f["source_line"] for r in rows for f in (r.get("fields") or [])]
     if any(n is not None and n >= len(data.get("lines", [])) for n in sources):
@@ -518,20 +682,65 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
     sheet.title = "Transactions"
     dynamic = any(r.get("fields") is not None for r in data["rows"])
     if dynamic:
-        sheet.append(["Transaction", "Field", "Value", "OCR confidence", "Source line", "Source image reference", "Backend verification status"])
+        sheet.append(
+            [
+                "Transaction",
+                "Field",
+                "Value",
+                "OCR confidence",
+                "Source line",
+                "Source image reference",
+                "Backend verification status",
+            ]
+        )
         for index, item in enumerate(data["rows"]):
             fields = item.get("fields")
             if fields is None:
-                fields = [{"label": k, "value": item.get(k, ""), "source_line": item.get("source_line")} for k in ["reference", "customer", "account", "details"]]
+                fields = [
+                    {"label": k, "value": item.get(k, ""), "source_line": item.get("source_line")}
+                    for k in ["reference", "customer", "account", "details"]
+                ]
             for field in fields:
                 source = field.get("source_line")
                 confidence = field.get("confidence")
-                sheet.append([str(index + 1), field["label"], field["value"], str(confidence) if confidence is not None else "", str(source + 1) if source is not None else "Manual", f"capture-{row.id}", row.status])
+                sheet.append(
+                    [
+                        str(index + 1),
+                        field["label"],
+                        field["value"],
+                        str(confidence) if confidence is not None else "",
+                        str(source + 1) if source is not None else "Manual",
+                        f"capture-{row.id}",
+                        row.status,
+                    ]
+                )
     else:
-        sheet.append(["Transaction reference", "Customer", "Account / MSISDN", "Details", "Source line", "Source image reference", "AI extraction status", "Backend verification status"])
+        sheet.append(
+            [
+                "Transaction reference",
+                "Customer",
+                "Account / MSISDN",
+                "Details",
+                "Source line",
+                "Source image reference",
+                "AI extraction status",
+                "Backend verification status",
+            ]
+        )
         for item in data["rows"]:
             source = item.get("source_line")
-            sheet.append([item["reference"], item["customer"], item["account"], item["details"], str(source + 1) if source is not None else "Manual", f"capture-{row.id}.{'jpg' if row.image_type == 'image/jpeg' else 'png'}", "EXTRACTED", row.status if row.status in {"VERIFIED", "REJECTED"} else "PENDING"])
+            sheet.append(
+                [
+                    item["reference"],
+                    item["customer"],
+                    item["account"],
+                    item["details"],
+                    str(source + 1) if source is not None else "Manual",
+                    f"capture-{row.id}.{'jpg' if row.image_type == 'image/jpeg' else 'png'}",
+                    "EXTRACTED",
+                    row.status if row.status in {"VERIFIED", "REJECTED"} else "PENDING",
+                ]
+            )
     for cells in sheet.iter_rows():
         for cell in cells:
             cell.data_type = "s"
@@ -541,6 +750,7 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
         cell.font = Font(color="FFFFFF", bold=True)
         cell.fill = PatternFill("solid", fgColor="761B3A")
     from openpyxl.utils import get_column_letter
+
     for col in range(1, sheet.max_column + 1):
         sheet.column_dimensions[get_column_letter(col)].width = 48 if col == 3 else 28
     meta = workbook.create_sheet("Provenance")
@@ -597,3 +807,117 @@ def process_capture():
             )
         record(db, row, user, "KYC OCR " + row.status, data=data)
         db.commit()
+
+
+class ActivationBody(VersionBody):
+    outcome: Literal["ACTIVATED", "FAILED"]
+    reference: str = Field(min_length=3, max_length=100)
+    reason: str = Field(min_length=5, max_length=300)
+
+
+@router.post("/{capture_id}/activation")
+def complete_activation(
+    capture_id: str,
+    body: ActivationBody,
+    request: Request,
+    user=Depends(principal),
+    db=Depends(get_db),
+):
+    require(db, user, "compliance.write")
+    require(db, user, "ekyc.write")
+    row = get_capture(db, user, capture_id, True)
+    version_check(row, body)
+    data = payload(row)
+    if data.get("document_kind") != "PAYMENT_CONFIRMATION" or row.status != "VERIFIED":
+        raise HTTPException(409, "Verify the payment submission before recording activation")
+    if (data.get("activation") or {}).get("status") == "ACTIVATED":
+        raise HTTPException(409, "Activation is already recorded")
+    if len(body.reference.strip()) < 3 or len(body.reason.strip()) < 5:
+        raise HTTPException(422, "Enter the activation reference and completion note")
+    intake = data.get("intake") or {}
+    sim = db.scalar(
+        select(Sim)
+        .where(
+            (Sim.iccid == intake.get("sim_identifier"))
+            | (Sim.serial == intake.get("sim_identifier"))
+        )
+        .with_for_update()
+    )
+    if sim and (
+        sim.agent_id != row.agent_id
+        or sim.status not in {"AVAILABLE", "ASSIGNED TO AGENT", "RESERVED"}
+    ):
+        raise HTTPException(
+            409, "SIM ownership or status changed. Resolve inventory before activation."
+        )
+    order = db.get(Order, data.get("order_id")) if data.get("order_id") else None
+    if order is None:
+        customer = Customer(
+            agent_id=row.agent_id,
+            name=intake["name"],
+            mobile=intake["msisdn"],
+            nationality=intake["nationality"],
+        )
+        db.add(customer)
+        db.flush()
+        suffix = row.id.replace("-", "")[:24]
+        order = Order(
+            reference="PAY-" + suffix,
+            request_id="REQ-" + suffix,
+            sr_id="SR-" + suffix,
+            operation_id="payment-" + row.id,
+            agent_id=row.agent_id,
+            customer_id=customer.id,
+            plan_id=intake["plan_id"],
+            msisdn=intake["msisdn"],
+            sim_id=sim.id if sim else None,
+            status=body.outcome,
+            draft={"capture_id": row.id},
+        )
+        db.add(order)
+        db.flush()
+        data["order_id"] = order.id
+    order.status, order.updated_at = body.outcome, now()
+    activation = db.scalar(select(Activation).where(Activation.order_id == order.id))
+    if activation is None:
+        activation = Activation(
+            order_id=order.id, provider_reference=body.reference.strip(), status=body.outcome
+        )
+        db.add(activation)
+    else:
+        activation.status, activation.provider_reference = body.outcome, body.reference.strip()
+    db.add(
+        OrderEvent(order_id=order.id, actor=user.name, action="Backend recorded " + body.outcome)
+    )
+    if sim and body.outcome == "ACTIVATED":
+        previous = sim.status
+        sim.status, sim.activated_at = "ACTIVATED", now()
+        db.add(
+            Movement(
+                sim_id=sim.id,
+                agent_id=row.agent_id,
+                user_id=user.id,
+                old_status=previous,
+                new_status=sim.status,
+                reason=body.reason.strip(),
+            )
+        )
+        audit(
+            db,
+            user,
+            "SIM Activated",
+            sim.id,
+            row.agent_id,
+            new={"status": sim.status},
+            request=request,
+        )
+    data["activation"] = {
+        "status": body.outcome,
+        "reference": body.reference.strip(),
+        "reason": body.reason.strip(),
+        "actor": user.name,
+        "at": now().isoformat(),
+    }
+    record(db, row, user, "Backend activation " + body.outcome, request, data)
+    db.commit()
+    return view(row)

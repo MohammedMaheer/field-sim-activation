@@ -1,3 +1,7 @@
+# Latest owner workflow - 28 September 2026
+
+This clarification supersedes earlier payment exclusions and Etisalat receipt-upload steps. Relay collects identity/document capture (selfie optional), SIM barcode, subscriber plan, phone and signature, then uploads payment confirmation. No Etisalat activation receipt upload is required for new submissions. The animated payment invoice appears only after an uploaded payment image has been stored, with Pending verification status. Payment successful is the owner-requested acknowledgement heading for uploaded payment confirmation, not gateway authorization. Paid amount and tax are never inferred from plan price. Missing values are Not recorded. Independent authorized staff verify evidence; backend staff record external activation completion with a reference and note. No simulated carrier or biometric approval. Historical activation-receipt records remain unchanged.
+
 # Relay client proposal workspace
 
 The maintained product is `client-version/`: FastAPI/PostgreSQL, React/TypeScript and Flutter share one API. The source of scope is `docs/SCOPE.md`; the current workflow is documented in `docs/KYC-TRANSACTION-FLOW.md`.
@@ -5,8 +9,8 @@ The maintained product is `client-version/`: FastAPI/PostgreSQL, React/TypeScrip
 - Update web and mobile together for changes to shared workflows and field names.
 - Teams belong to branches. Intersect branch filters with the authenticated user's authorized agents; never broaden access through a UI filter.
 - Location, territory and geofencing are excluded. Do not add location permissions, collection, maps or geofence reports to the client edition.
-- Owner clarification on 28 September: collect identity details from ID/passport capture, optional selfie, SIM barcode/plan/phone and signature in Relay. Activation stays external in Etisalat. Then upload the activation receipt . Authorized independent staff verify the original, extracted rows before confirmation. Never simulate carrier activation or biometric approval; preserve historical records.
-- Latest owner clarification removes payment verification from all clients. Retain synthetic records but remove demo and technical UI paragraphs.
+- Current flow: identity capture, SIM/plan/phone/signature, payment-confirmation image upload, independent review, then externally completed activation recorded by backend staff. Preserve historical activation-receipt records. No simulated carrier or biometric approval.
+- Retain synthetic records; keep demo and technical paragraphs out of client-facing screens.
 - Use synthetic demo data. Keep secrets, device credentials, captured customer images, database snapshots and generated binaries outside Git.
 - Run relevant backend, web and Flutter tests. Visually inspect changed desktop/mobile screens and preserve evidence outside Git.
 - Repository: `https://github.com/MohammedMaheer/field-sim-activation`. The owner requests that completed changes be committed and pushed here. Check for remote changes first, use meaningful commits, and never force-push or overwrite work from another computer.

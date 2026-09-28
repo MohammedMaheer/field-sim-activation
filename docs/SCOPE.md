@@ -1,44 +1,25 @@
-## Latest owner clarification — 28 September 2026
+# Relay client edition scope
 
-Relay generates a printable receipt before independent review, marked Final review pending. The actual backend VERIFIED decision changes the receipt to success. Receipt printing does not perform Etisalat activation or remove authentication. Payment verification remains excluded.
+The final field-sales proposal and the owner's 28 September 2026 clarification govern `client-version/`. The earlier full edition is independent. The maintained stack is React/TypeScript, Flutter and FastAPI/PostgreSQL through one API.
 
-Administrators have a central master-data workspace for branches, teams, outlets, agents, customers, SIM stock, tasks and incentives, alongside plan management and receipt review. Unused master records can be deleted; linked history, captures, audits, stock movements and completed operational evidence remain protected. Corrections are recorded with a reason. Step 3 has a brief receipt paper-feed animation on web, Flutter and phone preview.
+## Field workflow
 
-# Approved client scope
+1. Capture an Emirates ID or passport. Server extraction can prefill fields; the agent checks and corrects them. Selfie capture is optional. No liveness or authenticity approval is simulated.
+2. Scan or enter the SIM serial, choose an administrator-configured subscriber plan, allocate a phone number and capture the customer's signature. Every required field is saved as a recoverable draft.
+3. Photograph or upload the payment confirmation. After the server stores the image, show an animated, printable payment invoice. The requested heading is `Payment successful`; `Pending verification` remains visible until an independent staff member checks the evidence. The upload is not a payment-gateway authorization.
+4. Authorized independent staff compare the original image, extracted fields, customer document and signature, correct or reject the submission, and record a reason. Backend staff then perform activation externally and record its outcome and reference. The app does not call or simulate carrier activation.
 
-## Current owner clarification — 28 September 2026
-
-Three stages: identity capture and extracted details, SIM/plan/phone and signature, then external Etisalat receipt upload and independent staff review. Payment verification has been explicitly removed by the owner. Preserve historical payment evidence but do not require or collect new payment verification. Selfie is optional; carrier activation stays external. No location or geofencing. Keep synthetic records, remove demo/technical paragraphs from customer-facing screens. Apply the same concise, colorful presentation to web, Flutter and the isolated phone preview.
-
-### Verification boundary
-
-Receipt OCR extracts printed text; unknown identity layouts require manual correction. Selfie capture is optional and does not verify liveness. Browser barcode scanning depends on BarcodeDetector support, with manual serial entry available; native Flutter uses the device barcode scanner. Real-world document and kiosk-provider validation require human review; no provider integration is claimed.
-
-
-The source of scope is the final `Field_Sales_Proposal_KYC_Incentives_150Users_AED6000.pdf`, clarified by the owner on 24 September 2026. This document governs `client-version/`.
+The invoice is projected from saved data. The chosen plan's price is distinct from the amount actually evidenced by payment confirmation. Unknown amount, tax, payment method, optional selfie or other unrecorded values read `Not recorded`. Corrections, review and activation update the same invoice through polling/live refresh. Generated PDF uses the same projection and masks identity numbers. Historical activation-receipt records remain readable and their original lifecycle is unchanged.
 
 ## Included
 
-- Web management: live field activity, branch teams and outlets, agent productivity, audited administrator creation of branches, team-leader accounts, outlets and agent accounts, plus target/assignment controls, sales targets, customer and historical order records, SIM inventory and allocation, KYC transaction tracking, compliance review, immutable audit history, CSV/PDF reports.
-- Incentives: authorized manual entry, validated CSV/XLSX import, history and CSV export. Payroll execution is excluded.
-- Flutter field app: dashboard/targets, shift and branch/team assignment, tasks, customer search, stock balances and own-SIM return/damage reporting, daily report, support, sync and KYC capture/review/status.
-- KYC stages: (1) Emirates ID and source OCR, (2) customer information, (3) plan information, (4) order and customer details, (5) completed screenshot capture, server OCR, editable rows, Excel and image handoff, (6) authorized backend verification and live status.
-- Supporting services: authentication, role-scoped access, PostgreSQL, audit events, encrypted capture storage, live web updates and encrypted offline mobile drafts.
+- Web operations dashboard, live field activity, branch teams/outlets, agent and target monitoring, administrator management of branches, teams, outlets, agents, customers, plans, stock, tasks and incentives.
+- Mobile field dashboard, assignment, tasks, customer search, own SIM stock, return/damage reporting, daily reports, support, offline drafts, synchronization and the three-stage transaction flow.
+- Payment confirmation extraction into flexible labelled rows, editable with an audited reason; original-image comparison; scoped CSV/XLSX/PDF export, compliance review and immutable audit events.
+- Role and branch scoped access, encrypted capture storage, PostgreSQL, live updates and synthetic example records.
 
-Stages 1-4 happen in Etisalat's external software. Relay's guide does not enter data into that system or claim identity authenticity, face matching, liveness or carrier activation. The Qanawat sample informs the broad identity → allocation → completion sequence and presentation. The final proposal controls functional scope. Sample identity data and third-party branding are not copied.
+## Excluded or external
 
-## Excluded by the owner
+Location, territory and geofencing are excluded. Etisalat activation and payment-provider authorization are external. No live biometric verification, carrier activation, payroll execution or real customer identity data is claimed. The separate phone-framed browser experience is an isolated synthetic demonstration of the mobile screens; the installed APK uses the shared backend.
 
-Location, territories, GPS collection, maps, geofence alerts and geofence reports are removed from the client edition. The mobile dependency/permissions and API collection routes are disabled. Legacy database fields remain inaccessible for historical compatibility; immutable audit history is preserved.
-
-Third-party AI/biometric services, SMS/WhatsApp/email gateways, BI/ERP/billing integrations, real carrier access, infrastructure costs and ongoing maintenance require separate inputs. The proposal's 150-user sizing is not a performance certification.
-
-All seed records are synthetic. See [setup](../client-version/README.md) and [workflow](KYC-TRANSACTION-FLOW.md). The earlier full Relay demonstration is preserved locally and is outside the GitHub handoff.
-
-## Owner-approved reference demo extension — 26 September 2026
-
-The owner explicitly selected the full ZIP flow, labelled demo: identity/eKYC → SIM/plan allocation → activation/receipt. See KYC-TRANSACTION-FLOW.md for the current three-stage contract. Real carrier/identity operations remain external; screenshot OCR and human backend review remain available independently. Location and geofencing remain excluded.
-
-## Current owner clarification — 27 September 2026
-
-This supersedes the reference demo extension above. Activation occurs in Etisalat. Relay accepts the completed activation receipt as an image, performs VPS OCR, supports correction/validation and Excel generation, and submits the receipt and rows for backend verification with synchronized status. Both web and mobile start at receipt capture; simulated identity, allocation, carrier activation and generated activation receipts are not part of the active client journey.
+The earlier receipt-upload and payment-excluded flows are historical decisions superseded by this document. See `docs/KYC-TRANSACTION-FLOW.md` for current API states and review controls.

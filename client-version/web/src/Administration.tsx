@@ -7,37 +7,387 @@ import { Context } from "./App";
 import { DataTable, Drawer, ErrorState, Loading } from "./components";
 import OrganizationSetup from "./OrganizationSetup";
 
-const sections: Record<string, string> = {branches:"Branches",teams:"Teams",outlets:"Outlets",agents:"Agents",customers:"Customers",inventory:"SIM stock",tasks:"Tasks",incentives:"Incentives"};
-const fields: Record<string, string[]> = {agents:["name","email","employee_id","target"],branches:["name"], teams:["name","email","branch_id"],outlets:["name","area","branch_id"],customers:["name","arabic_name","mobile","nationality","agent_id"],inventory:["iccid","serial","sim_type","outlet_id","agent_id"],tasks:["title","note","due_date","agent_id"],incentives:["period","amount","note","agent_id"]};
-const labels: Record<string,string> = {name:"Name",title:"Title",note:"Note",area:"Area",nationality:"Nationality",target:"Daily target",employee_id:"Employee ID",branch_id:"Branch",outlet_id:"Outlet",agent_id:"Agent",sim_type:"SIM type",iccid:"ICCID",serial:"SIM serial",arabic_name:"Arabic name",mobile:"Phone number",due_date:"Due date",email:"Sign-in email",amount:"Amount (AED)",period:"Month"};
+const sections: Record<string, string> = {
+  branches: "Branches",
+  teams: "Teams",
+  outlets: "Outlets",
+  agents: "Agents",
+  customers: "Customers",
+  inventory: "SIM stock",
+  tasks: "Tasks",
+  incentives: "Incentives",
+};
+const fields: Record<string, string[]> = {
+  agents: ["name", "email", "employee_id", "target"],
+  branches: ["name"],
+  teams: ["name", "email", "branch_id"],
+  outlets: ["name", "area", "branch_id"],
+  customers: ["name", "arabic_name", "mobile", "nationality", "agent_id"],
+  inventory: ["iccid", "serial", "sim_type", "outlet_id", "agent_id"],
+  tasks: ["title", "note", "due_date", "agent_id"],
+  incentives: ["period", "amount", "note", "agent_id"],
+};
+const labels: Record<string, string> = {
+  name: "Name",
+  title: "Title",
+  note: "Note",
+  area: "Area",
+  nationality: "Nationality",
+  target: "Daily target",
+  employee_id: "Employee ID",
+  branch_id: "Branch",
+  outlet_id: "Outlet",
+  agent_id: "Agent",
+  sim_type: "SIM type",
+  iccid: "ICCID",
+  serial: "SIM serial",
+  arabic_name: "Arabic name",
+  mobile: "Phone number",
+  due_date: "Due date",
+  email: "Sign-in email",
+  amount: "Amount (AED)",
+  period: "Month",
+};
 export default function Administration() {
- const {user,notify}=useContext(Context), cache=useQueryClient();
- const [kind,setKind]=useState("branches"), [editing,setEditing]=useState<Row|null>(null), [removing,setRemoving]=useState<Row|null>(null), [setup,setSetup]=useState(false), [busy,setBusy]=useState(false), [error,setError]=useState("");
- const allowed=user.role==="Administrator";
- const q=useQuery<Row[]>({queryKey:["administration",kind],queryFn:()=>api(`/administration/${kind}`),enabled:allowed});
- const dir=useQuery<Row>({queryKey:["organization"],queryFn:()=>api("/organization"),enabled:allowed});
- const agents=useQuery<Row[]>({queryKey:["agents"],queryFn:()=>api("/resources/agents"),enabled:allowed});
- const label=(row:Row)=>row.name||row.title||row.iccid||`${row.period} · AED ${row.amount}`;
- const start=(row:Row)=>{setError("");setEditing(row);};
- const options=(key:string)=>key==="branch_id"?dir.data?.branches:key==="outlet_id"?dir.data?.outlets:key==="agent_id"?agents.data:null;
- async function save(e:React.FormEvent<HTMLFormElement>) {
-  e.preventDefault();setBusy(true);setError("");
-  const values=Object.fromEntries(new FormData(e.currentTarget)); const reason=values.reason;delete values.reason;
-  const expected=Object.fromEntries(Object.keys(values).map(k=>[k,editing?.[k]??""]));
-  try {await api(`/administration/${kind}${editing?.id?`/${editing.id}`:""}`,{method:editing?.id?"PATCH":"POST",body:JSON.stringify({values,expected,reason})}); await cache.invalidateQueries();notify("Changes saved");setEditing(null);}catch(e:any){setError(e.message);}finally{setBusy(false);}
- }
- if(!allowed)return <section className="panel">Administrator access required.</section>;
- return <>
-  <header className="page-header"><div><span className="eyebrow">ADMINISTRATION</span><h1>Manage workspace</h1></div><Link className="button" to="/kyc-capture">Review receipts</Link></header>
-  <div className="admin-sections" role="group" aria-label="Manage records">{Object.entries(sections).map(([id,name])=><button key={id} aria-pressed={id===kind} onClick={()=>setKind(id)}>{name}</button>)}<Link to="/plans">Subscriber plans →</Link></div>
-  <section className="panel"><div className="admin-toolbar"><h2>{sections[kind]}</h2><button className="primary" onClick={()=>["branches","teams","outlets","agents"].includes(kind)?setSetup(true):start({})}><Plus size={17}/> Add {kind==="inventory"?"SIM":(kind==="branches"?"branch":sections[kind].replace(/s$/,"").toLowerCase())}</button></div>
-   {q.isPending?<Loading/>:q.error?<ErrorState error={q.error} retry={q.refetch}/>:<DataTable rows={q.data} columns={[{key:"name",label:"Record",render:r=><strong>{label(r)}</strong>},{key:"status",label:"Status",render:r=>r.status||"Active"},{key:"action",label:"Actions",render:r=><div className="admin-row-actions">{kind==="agents"&&<button onClick={()=>start(r)}><Pencil size={16}/> Edit profile</button>}{["agents","inventory"].includes(kind)?<Link to={`/${kind}?selected=${r.id}`}><Settings2 size={16}/> Manage</Link>:<button onClick={()=>start(r)}><Pencil size={16}/> Edit</button>}{!["tasks","incentives","inventory"].includes(kind)&&<button aria-label={`Delete ${label(r)}`} onClick={()=>{setRemoving(r);setError("");}}><Trash2 size={16}/> Delete</button>}</div>}]} />}
-  </section>
-  {setup&&<OrganizationSetup initial={kind as "branches"|"teams"|"outlets"|"agents"} onClose={()=>setSetup(false)}/>}
-  {editing&&<Drawer title={`${editing.id?"Edit":"Add"} ${kind==="inventory"?"SIM":(kind==="branches"?"branch":sections[kind].replace(/s$/,"").toLowerCase())}`} onClose={()=>!busy&&setEditing(null)}><form className="plan-editor" onSubmit={save}>
-   {(fields[kind]||[]).map(key=><label key={key} className={key==="note"||fields[kind]?.length===1?"plan-editor-wide":""}>{labels[key]||key.replaceAll("_"," ")}{options(key)?<select name={key} required={key!=="agent_id"||kind!=="inventory"} defaultValue={editing[key]||""}><option value="">Select {labels[key]}</option>{options(key)?.map((r:Row)=><option key={r.id} value={r.id}>{r.name||r.agent}</option>)}</select>:key==="sim_type"?<select name={key} defaultValue={editing[key]||"Physical"}><option>Physical</option><option>eSIM</option></select>:<input name={key} type={key==="due_date"?"date":key==="period"?"month":["amount","target"].includes(key)?"number":key==="email"?"email":"text"} step={key==="amount"?"0.01":undefined} min={key==="amount"?"0.01":undefined} maxLength={key==="note"?500:180} required={!["note","area","arabic_name","nationality"].includes(key)} defaultValue={editing[key]??""}/>}</label>)}
-   <label className="plan-editor-wide">Reason for change<input name="reason" required minLength={5} maxLength={300}/></label>{error&&<p className="plan-editor-wide" role="alert">{error}</p>}<button className="primary plan-editor-wide" disabled={busy}>{busy?"Saving…":"Save changes"}</button>
-  </form></Drawer>}
-  {removing&&<Drawer title="Delete record" onClose={()=>!busy&&setRemoving(null)}><h2>{label(removing)}</h2><p>Linked records and history are protected.</p><form className="plan-editor" onSubmit={async e=>{e.preventDefault();setBusy(true);setError("");const reason=new FormData(e.currentTarget).get("reason");try{await api(`/administration/${kind}/${removing.id}`,{method:"DELETE",body:JSON.stringify({values:{},expected:removing,reason})});await cache.invalidateQueries();setRemoving(null);notify("Record deleted");}catch(e:any){setError(e.message);}finally{setBusy(false);}}}><label className="plan-editor-wide">Reason for deletion<input name="reason" required minLength={5} maxLength={300}/></label>{error&&<p className="plan-editor-wide" role="alert">{error}</p>}<button className="primary" disabled={busy}>{busy?"Deleting…":"Delete record"}</button></form></Drawer>}
- </>;
+  const { user, notify } = useContext(Context),
+    cache = useQueryClient();
+  const [kind, setKind] = useState("branches"),
+    [editing, setEditing] = useState<Row | null>(null),
+    [removing, setRemoving] = useState<Row | null>(null),
+    [setup, setSetup] = useState(false),
+    [busy, setBusy] = useState(false),
+    [error, setError] = useState("");
+  const allowed = user.role === "Administrator";
+  const q = useQuery<Row[]>({
+    queryKey: ["administration", kind],
+    queryFn: () => api(`/administration/${kind}`),
+    enabled: allowed,
+  });
+  const dir = useQuery<Row>({
+    queryKey: ["organization"],
+    queryFn: () => api("/organization"),
+    enabled: allowed,
+  });
+  const agents = useQuery<Row[]>({
+    queryKey: ["agents"],
+    queryFn: () => api("/resources/agents"),
+    enabled: allowed,
+  });
+  const label = (row: Row) =>
+    row.name || row.title || row.iccid || `${row.period} · AED ${row.amount}`;
+  const start = (row: Row) => {
+    setError("");
+    setEditing(row);
+  };
+  const options = (key: string) =>
+    key === "branch_id"
+      ? dir.data?.branches
+      : key === "outlet_id"
+        ? dir.data?.outlets
+        : key === "agent_id"
+          ? agents.data
+          : null;
+  async function save(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const values = Object.fromEntries(new FormData(e.currentTarget));
+    const reason = values.reason;
+    delete values.reason;
+    const expected = Object.fromEntries(
+      Object.keys(values).map((k) => [k, editing?.[k] ?? ""]),
+    );
+    try {
+      await api(
+        `/administration/${kind}${editing?.id ? `/${editing.id}` : ""}`,
+        {
+          method: editing?.id ? "PATCH" : "POST",
+          body: JSON.stringify({ values, expected, reason }),
+        },
+      );
+      await cache.invalidateQueries();
+      notify("Changes saved");
+      setEditing(null);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (!allowed)
+    return <section className="panel">Administrator access required.</section>;
+  return (
+    <>
+      <header className="page-header">
+        <div>
+          <span className="eyebrow">ADMINISTRATION</span>
+          <h1>Manage workspace</h1>
+        </div>
+        <Link className="button" to="/kyc-capture">
+          Review submissions
+        </Link>
+      </header>
+      <div className="admin-groups">
+        {[
+          {
+            title: "Field network",
+            items: ["branches", "teams", "outlets", "agents"],
+          },
+          { title: "Customer & stock", items: ["customers", "inventory"] },
+          { title: "Daily work", items: ["tasks", "incentives"] },
+        ].map((group) => (
+          <section key={group.title}>
+            <h2>{group.title}</h2>
+            <div
+              className="admin-sections"
+              role="group"
+              aria-label={group.title}
+            >
+              {group.items.map((id) => (
+                <button
+                  key={id}
+                  aria-pressed={id === kind}
+                  onClick={() => setKind(id)}
+                >
+                  {sections[id]}
+                </button>
+              ))}
+            </div>
+          </section>
+        ))}
+        <Link className="button" to="/plans">
+          Subscriber plans →
+        </Link>
+      </div>
+      <section className="panel">
+        <div className="admin-toolbar">
+          <h2>{sections[kind]}</h2>
+          <button
+            className="primary"
+            onClick={() =>
+              ["branches", "teams", "outlets", "agents"].includes(kind)
+                ? setSetup(true)
+                : start({})
+            }
+          >
+            <Plus size={17} /> Add{" "}
+            {kind === "inventory"
+              ? "SIM"
+              : kind === "branches"
+                ? "branch"
+                : sections[kind].replace(/s$/, "").toLowerCase()}
+          </button>
+        </div>
+        {q.isPending ? (
+          <Loading />
+        ) : q.error ? (
+          <ErrorState error={q.error} retry={q.refetch} />
+        ) : (
+          <DataTable
+            rows={q.data}
+            columns={[
+              {
+                key: "name",
+                label: "Record",
+                render: (r) => <strong>{label(r)}</strong>,
+              },
+              {
+                key: "context",
+                label:
+                  kind === "agents"
+                    ? "Employee / daily target"
+                    : kind === "branches"
+                      ? "Created"
+                      : kind === "inventory"
+                        ? "SIM type / status"
+                        : kind === "customers"
+                          ? "Phone number"
+                          : "Assignment",
+                render: (r) =>
+                  kind === "agents"
+                    ? `${r.employee_id} · ${r.target} / day`
+                    : kind === "inventory"
+                      ? `${r.sim_type} · ${r.status}`
+                      : kind === "customers"
+                        ? r.mobile
+                        : kind === "branches"
+                          ? r.created_at
+                            ? new Date(r.created_at).toLocaleDateString()
+                            : "Not recorded"
+                          : dir.data?.branches?.find(
+                              (b: Row) => b.id === r.branch_id,
+                            )?.name ||
+                            agents.data?.find((a: Row) => a.id === r.agent_id)
+                              ?.name ||
+                            "Not recorded",
+              },
+              {
+                key: "action",
+                label: "Actions",
+                render: (r) => (
+                  <div className="admin-row-actions">
+                    {kind === "agents" && (
+                      <button onClick={() => start(r)}>
+                        <Pencil size={16} /> Edit profile
+                      </button>
+                    )}
+                    {["agents", "inventory"].includes(kind) ? (
+                      <Link to={`/${kind}?selected=${r.id}`}>
+                        <Settings2 size={16} /> Manage
+                      </Link>
+                    ) : (
+                      <button onClick={() => start(r)}>
+                        <Pencil size={16} /> Edit
+                      </button>
+                    )}
+                    {!["tasks", "incentives", "inventory"].includes(kind) && (
+                      <button
+                        aria-label={`Delete ${label(r)}`}
+                        onClick={() => {
+                          setRemoving(r);
+                          setError("");
+                        }}
+                      >
+                        <Trash2 size={16} /> Delete
+                      </button>
+                    )}
+                  </div>
+                ),
+              },
+            ]}
+          />
+        )}
+      </section>
+      {setup && (
+        <OrganizationSetup
+          initial={kind as "branches" | "teams" | "outlets" | "agents"}
+          onClose={() => setSetup(false)}
+        />
+      )}
+      {editing && (
+        <Drawer
+          title={`${editing.id ? "Edit" : "Add"} ${kind === "inventory" ? "SIM" : kind === "branches" ? "branch" : sections[kind].replace(/s$/, "").toLowerCase()}`}
+          onClose={() => !busy && setEditing(null)}
+        >
+          <form className="plan-editor" onSubmit={save}>
+            {(fields[kind] || []).map((key) => (
+              <label
+                key={key}
+                className={
+                  key === "note" || fields[kind]?.length === 1
+                    ? "plan-editor-wide"
+                    : ""
+                }
+              >
+                {labels[key] || key.replaceAll("_", " ")}
+                {options(key) ? (
+                  <select
+                    name={key}
+                    required={key !== "agent_id" || kind !== "inventory"}
+                    defaultValue={editing[key] || ""}
+                  >
+                    <option value="">Select {labels[key]}</option>
+                    {options(key)?.map((r: Row) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name || r.agent}
+                      </option>
+                    ))}
+                  </select>
+                ) : key === "sim_type" ? (
+                  <select name={key} defaultValue={editing[key] || "Physical"}>
+                    <option>Physical</option>
+                    <option>eSIM</option>
+                  </select>
+                ) : (
+                  <input
+                    name={key}
+                    type={
+                      key === "due_date"
+                        ? "date"
+                        : key === "period"
+                          ? "month"
+                          : ["amount", "target"].includes(key)
+                            ? "number"
+                            : key === "email"
+                              ? "email"
+                              : "text"
+                    }
+                    step={key === "amount" ? "0.01" : undefined}
+                    min={key === "amount" ? "0.01" : undefined}
+                    maxLength={key === "note" ? 500 : 180}
+                    required={
+                      !["note", "area", "arabic_name", "nationality"].includes(
+                        key,
+                      )
+                    }
+                    defaultValue={editing[key] ?? ""}
+                  />
+                )}
+              </label>
+            ))}
+            <label className="plan-editor-wide">
+              Reason for change
+              <input name="reason" required minLength={5} maxLength={300} />
+            </label>
+            {error && (
+              <p className="plan-editor-wide" role="alert">
+                {error}
+              </p>
+            )}
+            <button className="primary plan-editor-wide" disabled={busy}>
+              {busy ? "Saving…" : "Save changes"}
+            </button>
+          </form>
+        </Drawer>
+      )}
+      {removing && (
+        <Drawer
+          title="Delete record"
+          onClose={() => !busy && setRemoving(null)}
+        >
+          <h2>{label(removing)}</h2>
+          <p>Linked records and history are protected.</p>
+          <form
+            className="plan-editor"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError("");
+              const reason = new FormData(e.currentTarget).get("reason");
+              try {
+                await api(`/administration/${kind}/${removing.id}`, {
+                  method: "DELETE",
+                  body: JSON.stringify({
+                    values: {},
+                    expected: removing,
+                    reason,
+                  }),
+                });
+                await cache.invalidateQueries();
+                setRemoving(null);
+                notify("Record deleted");
+              } catch (e: any) {
+                setError(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <label className="plan-editor-wide">
+              Reason for deletion
+              <input name="reason" required minLength={5} maxLength={300} />
+            </label>
+            {error && (
+              <p className="plan-editor-wide" role="alert">
+                {error}
+              </p>
+            )}
+            <button className="primary" disabled={busy}>
+              {busy ? "Deleting…" : "Delete record"}
+            </button>
+          </form>
+        </Drawer>
+      )}
+    </>
+  );
 }

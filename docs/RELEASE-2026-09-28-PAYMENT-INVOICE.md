@@ -1,0 +1,11 @@
+# Payment invoice release — 28 September 2026
+
+Client edition only: `https://relay-client.187-127-162-233.sslip.io/`. The phone-framed experience is at `/mobile-demo/?v=33`; the Android package is at `/downloads/relay-client-scope.apk?v=33`.
+
+This release changes the active transaction path to identity capture, SIM/plan/phone/signature, payment-confirmation image upload, an animated payment invoice, independent evidence review, and backend recording of an externally completed carrier activation. The new invoice updates with extracted fields and later decisions; missing known values show `Not recorded`. Plan price is not used as proof of paid amount. Existing activation-receipt records retain their historical behavior.
+
+Admin review has separate pending, ready-for-activation and completed queues. The reviewer compares the encrypted original image and extracted rows, with customer document and signature available in the record. An authorized backoffice operator records the external activation reference and note; a matching assigned SIM receives an audited movement and the order/dashboard update.
+
+Release backup (database dump, manifest, files, prior image): `/opt/relay-client/backups/connected-receipt-before-20260928T141329Z`. Migration stayed at `008 (head)`; no schema change. Rollback uses that backup and the preserved previous client API image. Only `/opt/relay-client` was updated; adjacent containers were checked unchanged.
+
+APK SHA-256: `24c6416c5d2caaf75de9c2bb1e3dc56c64dddd7419e6b81ca4e0f76ae56a22b6`, matched locally and on the server. Backend: 54 tests passed and Ruff passed. Flutter analyze and 16 widget/unit tests passed; native APK and browser preview builds succeeded. Hosted Playwright flow tests passed for identity/signature gating, payment review and activation, historical receipt review, phone preview, and admin navigation. Screenshots remain in ignored `client-version/output/qa/`. One hosted phone-preview navigation transiently hit `ERR_NO_BUFFER_SPACE`; the isolated rerun passed. The connected Android device rejected both streamed and pushed APK installation with `INSTALL_FAILED_USER_RESTRICTED`, so this final build was not physically installed or tested on the phone.

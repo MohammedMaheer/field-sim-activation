@@ -137,7 +137,7 @@ const navigation = [
     items: [
       ["activations", "Activations", Zap],
 
-      ["kyc-capture", "Activation receipts", ScanFace],
+      ["kyc-capture", "Transactions & review", ScanFace],
 
       ["inventory", "SIM inventory", Layers3],
       ["incentives", "Incentives", Coins],

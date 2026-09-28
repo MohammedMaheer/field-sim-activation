@@ -1170,3 +1170,81 @@ def test_admin_task_and_incentive_edits(client):
         changed = client.patch("/api/administration/" + kind + "/" + row["id"], json={"values": {key: revised}, "expected": {key: row[key]}, "reason": "Corrected synthetic administration record"})
         assert changed.status_code == 200, changed.text
         assert str(changed.json()[key]) == revised
+
+
+def test_payment_invoice_review_and_backend_activation(client, monkeypatch):
+    from uuid import uuid4
+    from PIL import Image
+    from app.db import KycCapture
+    from app.captures import store
+    from pypdf import PdfReader
+    login(client, "agent1")
+    agent = client.get("/api/resources/agents").json()[0]
+    plan = client.get("/api/resources/plans").json()[0]
+    image = io.BytesIO()
+    Image.new("RGB", (200, 200), "white").save(image, format="PNG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    from app.db import Sim, Agent, Movement
+    stock_serial = "PAY-QA-" + str(uuid4())[:12]
+    with DB() as db:
+        item = Sim(iccid=stock_serial, serial=stock_serial, sim_type="PHYSICAL", status="AVAILABLE", agent_id=agent["id"], outlet_id=db.get(Agent, agent["id"]).outlet_id)
+        db.add(item)
+        db.commit()
+        stock_id = item.id
+    intake = {"name":"Synthetic Payment Customer", "document_number":"SAMPLE-ID-9090", "nationality":"Synthetic", "birth_date":"1990-01-01", "expiry_date":"2090-12-31", "document_image":encoded, "sim_identifier":stock_serial, "plan_id":plan["id"], "msisdn":"SAMPLE-PHONE", "signature":[[[i/10,0.5] for i in range(8)]]}
+    body = {"document_kind":"PAYMENT_CONFIRMATION", "agent_id":agent["id"], "operation_id":str(uuid4()), "image_base64":encoded}
+    assert client.post("/api/kyc-captures",json=body).status_code == 422
+    body["intake"] = intake
+    made = client.post("/api/kyc-captures",json=body)
+    assert made.status_code == 201, made.text
+    row = made.json()
+    path = "/api/kyc-captures/" + row["id"]
+    assert row["invoice"]["heading"] == "Payment successful"
+    fields = {f["label"]:f["value"] for section in row["invoice"]["sections"] for f in section["fields"]}
+    assert fields["Total paid"] == fields["Selfie"] == fields["Payment reference"] == "Not recorded"
+    assert fields["Plan price"] == f"AED {plan['monthly_cost']:.2f}"
+    assert fields["Document number"] == "**** 9090"
+    assert client.post("/api/kyc-captures",json=body).json()["id"] == row["id"]
+    login(client)
+    action = {"version":row["version"],"outcome":"ACTIVATED","reference":"EXT-SAMPLE-99","reason":"Completed by carrier team"}
+    assert client.post(path+"/activation",json=action).status_code == 409
+    with DB() as db:
+        item = db.get(KycCapture,row["id"])
+        from app.captures import payload
+        data = payload(item)
+        data["lines"] = []
+        data["rows"] = [{"fields":[{"label":"Total paid","value":"AED 350.00"}]}]
+        store(item,data)
+        item.status = "EXTRACTED"
+        db.commit()
+    login(client,"agent1")
+    current = client.get(path).json()
+    saved = client.patch(path+"/rows",json={"version":current["version"],"rows":current["rows"],"reason":"Checked payment confirmation"})
+    assert saved.status_code == 200, saved.text
+    submitted = client.post(path+"/submit",json={"version":saved.json()["version"]}).json()
+    login(client,"compliance")
+    verified = client.post(path+"/review",json={"version":submitted["version"],"outcome":"VERIFIED","reason":"Compared original and customer details"})
+    assert verified.status_code == 200, verified.text
+    assert any(item["id"] == row["id"] for item in client.get("/api/kyc-captures?stage=READY").json())
+    action["version"] = verified.json()["version"]
+    assert client.post(path+"/activation",json=action).status_code == 403
+    login(client,"agent1")
+    assert client.post(path+"/activation",json=action).status_code == 403
+    login(client,"ops")
+    completed = client.post(path+"/activation",json=action)
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["activation"]["status"] == "ACTIVATED"
+    assert all(item["id"] != row["id"] for item in client.get("/api/kyc-captures?stage=READY").json())
+    assert any(item["id"] == row["id"] for item in client.get("/api/kyc-captures?stage=COMPLETED").json())
+    assert any(o["id"] == completed.json()["order_id"] and o["status"] == "ACTIVATED" for o in client.get("/api/resources/activations").json())
+    action["version"] = completed.json()["version"]
+    assert client.post(path+"/activation",json=action).status_code == 409
+    pdf = client.get(path+"/receipt")
+    text = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf.content)).pages)
+    assert "PAYMENT INVOICE" in text and "Not recorded" in text and "350.00" in text
+    assert "SAMPLE-ID-9090" not in text
+    with DB() as db:
+        assert db.scalar(select(Order).where(Order.id == completed.json()["order_id"])).status == "ACTIVATED"
+    with DB() as db:
+        assert db.get(Sim, stock_id).status == "ACTIVATED"
+        assert db.scalar(select(Movement).where(Movement.sim_id == stock_id)).new_status == "ACTIVATED"

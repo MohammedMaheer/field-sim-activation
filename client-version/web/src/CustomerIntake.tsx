@@ -213,7 +213,7 @@ export default function CustomerIntake({
   return (
     <section className="customer-intake">
       <ol className="transaction-stages">
-        {["Identity", "SIM & plan", "Receipt"].map((s, i) => (
+        {["Identity", "SIM & plan", "Payment"].map((s, i) => (
           <li
             key={s}
             className={i === step ? "active" : i < step ? "complete" : ""}

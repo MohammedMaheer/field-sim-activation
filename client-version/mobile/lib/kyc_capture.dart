@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'receipt_reveal.dart';
+import 'payment_invoice.dart';
 import 'customer_intake.dart';
 import 'kyc_journey.dart';
 import 'dart:async';
@@ -175,7 +176,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   }
 
   Future<void> upload() async {
-    if (bytes == null || source.text.trim().length < 2 || busy) return;
+    if (bytes == null || busy) return;
     await act(() async {
       pending = true;
       await saveDraft();
@@ -186,6 +187,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           data: {
             'agent_id': s.user!['agent_id'],
             'source_reference': source.text.trim(),
+            'document_kind': 'PAYMENT_CONFIRMATION',
             'operation_id': operation,
             'image_base64': base64Encode(bytes!),
             'intake': intake,
@@ -280,7 +282,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Future<void> export(String type) async {
     await act(() async {
       if (capture == null) {
-        throw StateError('Upload the activation receipt first.');
+        throw StateError('Upload payment confirmation first.');
       }
       final id = capture!['id'];
       final service = ref.read(serviceProvider);
@@ -300,10 +302,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           files: [
             XFile.fromData(
               Uint8List.fromList(response.data!),
-              name: 'receipt-$id.$ext',
+              name:
+                  '${type == 'receipt' && capture?['document_kind'] == 'PAYMENT_CONFIRMATION' ? 'invoice' : 'receipt'}-$id.$ext',
             ),
           ],
-          fileNameOverrides: ['receipt-$id.$ext'],
+          fileNameOverrides: [
+            '${type == 'receipt' && capture?['document_kind'] == 'PAYMENT_CONFIRMATION' ? 'invoice' : 'receipt'}-$id.$ext',
+          ],
         ),
       );
     });
@@ -473,6 +478,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     final receipt = capture;
     final verified = receipt?['intake'] != null;
     final receiptSuccess = receipt?['status'] == 'VERIFIED';
+    final payment = receipt?['document_kind'] == 'PAYMENT_CONFIRMATION';
+    final invoice = payment
+        ? (receipt?['invoice'] as Map? ?? paymentInvoice(receipt!))
+        : null;
     final verifiedReceiptFields = <Json>[];
     if (verified) {
       for (final row in rows) {
@@ -507,7 +516,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: const WorkspaceBackButton(),
-        title: const Text('Receipt'),
+        title: Text(payment ? 'Invoice' : 'Receipt'),
         actions: [
           if (capture != null)
             TextButton(
@@ -603,7 +612,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                           ),
                           SizedBox(height: 8),
                           Text(
-                            receiptSuccess
+                            payment
+                                ? invoice!['heading']
+                                : receiptSuccess
                                 ? 'SUCCESS - RECEIPT VERIFIED'
                                 : receipt['status'] == 'REJECTED'
                                 ? 'CORRECTION REQUIRED'
@@ -616,7 +627,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             ),
                           ),
                           Text(
-                            receiptSuccess
+                            payment
+                                ? invoice!['status']
+                                : receiptSuccess
                                 ? 'Receipt confirmed'
                                 : 'Receipt saved',
                             style: TextStyle(color: Color(0xff087756)),
@@ -628,7 +641,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       padding: const EdgeInsets.all(18),
                       child: Column(
                         children: [
-                          const Row(
+                          Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
@@ -640,7 +653,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                 ),
                               ),
                               Text(
-                                'ACTIVATION RECEIPT',
+                                payment
+                                    ? 'PAYMENT INVOICE'
+                                    : 'ACTIVATION RECEIPT',
                                 style: TextStyle(
                                   fontSize: 10,
                                   letterSpacing: 1,
@@ -650,62 +665,75 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             ],
                           ),
                           const Divider(height: 24),
-                          _ReceiptLine(
-                            'Invoice / reference',
-                            receipt['source_reference'],
-                          ),
-                          _ReceiptLine('Customer', receipt['intake']['name']),
-                          _ReceiptLine('ID number', maskedCustomerId),
-                          _ReceiptLine(
-                            'Phone number',
-                            receipt['intake']['msisdn'],
-                          ),
-                          _ReceiptLine(
-                            'SIM type',
-                            receipt['intake']['sim_type'] == 'ESIM'
-                                ? 'eSIM'
-                                : 'Physical SIM',
-                          ),
-                          _ReceiptLine('Plan', receipt['intake']['plan_name']),
-                          _ReceiptLine(
-                            'SIM serial',
-                            receipt['intake']['sim_identifier'],
-                          ),
-                          _ReceiptLine(
-                            receiptSuccess ? 'Verified' : 'Date',
-                            receiptDate(
-                              receipt['review']?['at'] ?? receipt['updated_at'],
+                          if (payment)
+                            PaymentInvoiceSections(invoice: invoice!)
+                          else ...[
+                            _ReceiptLine(
+                              'Invoice / reference',
+                              receipt['source_reference'],
                             ),
-                          ),
-                          if (verifiedReceiptFields.isNotEmpty) ...[
-                            const Divider(height: 22),
-                            const Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Text(
-                                  'RECEIPT DETAILS',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                Text(
-                                  'VALUE',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
+                            _ReceiptLine('Customer', receipt['intake']['name']),
+                            _ReceiptLine('ID number', maskedCustomerId),
+                            _ReceiptLine(
+                              'Phone number',
+                              receipt['intake']['msisdn'],
                             ),
-                            for (final field in verifiedReceiptFields)
-                              _ReceiptLine(field['label'], field['value']),
+                            _ReceiptLine(
+                              'SIM type',
+                              receipt['intake']['sim_type'] == 'ESIM'
+                                  ? 'eSIM'
+                                  : 'Physical SIM',
+                            ),
+                            _ReceiptLine(
+                              'Plan',
+                              receipt['intake']['plan_name'],
+                            ),
+                            _ReceiptLine(
+                              'SIM serial',
+                              receipt['intake']['sim_identifier'],
+                            ),
+                            _ReceiptLine(
+                              receiptSuccess ? 'Verified' : 'Date',
+                              receiptDate(
+                                receipt['review']?['at'] ??
+                                    receipt['updated_at'],
+                              ),
+                            ),
+                            if (verifiedReceiptFields.isNotEmpty) ...[
+                              const Divider(height: 22),
+                              const Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'RECEIPT DETAILS',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  Text(
+                                    'VALUE',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              for (final field in verifiedReceiptFields)
+                                _ReceiptLine(field['label'], field['value']),
+                            ],
                           ],
                           const SizedBox(height: 12),
                           OutlinedButton.icon(
                             onPressed: busy ? null : () => export('receipt'),
                             icon: const Icon(Icons.picture_as_pdf_outlined),
-                            label: const Text('Download / share receipt'),
+                            label: Text(
+                              payment
+                                  ? 'Download / share invoice'
+                                  : 'Download / share receipt',
+                            ),
                           ),
                           const SizedBox(height: 10),
                           FilledButton(
@@ -730,7 +758,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Upload Etisalat receipt',
+                      'Upload payment confirmation',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
@@ -747,7 +775,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       maxLength: 120,
                       enabled: !busy && !pending,
                       decoration: const InputDecoration(
-                        labelText: 'Source transaction reference',
+                        labelText: 'Payment reference (optional)',
                       ),
                       onChanged: (_) {
                         saveDraft();
@@ -827,16 +855,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       gap(),
                     ],
                     FilledButton(
-                      onPressed:
-                          busy || bytes == null || source.text.trim().length < 2
-                          ? null
-                          : upload,
+                      onPressed: busy || bytes == null ? null : upload,
                       child: Text(
                         busy
                             ? 'Working…'
                             : pending
                             ? 'Retry queued upload'
-                            : 'Upload receipt',
+                            : 'Upload payment confirmation',
                       ),
                     ),
                     if (pending)

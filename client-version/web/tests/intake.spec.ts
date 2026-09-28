@@ -112,7 +112,7 @@ test("identity and signature gate receipt submission", async ({ page }) => {
   await page.getByLabel("Phone number", { exact: true }).fill("SAMPLE-PHONE");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(
-    page.getByLabel("Source transaction reference", { exact: true }),
+    page.getByLabel("Payment reference (optional)", { exact: true }),
   ).toBeVisible();
   await expect(page.getByLabel("Kiosk reference", { exact: true })).toHaveCount(
     0,

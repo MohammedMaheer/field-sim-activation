@@ -44,7 +44,7 @@ void main() {
           [
             'Identity',
             'SIM & plan',
-            'Receipt',
+            'Payment',
           ][entry.value],
         ),
         findsOneWidget,
