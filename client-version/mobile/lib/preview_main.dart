@@ -217,12 +217,30 @@ Uint8List previewWorkbook(List rows) {
   }
 
   String escape(Object? v) => const HtmlEscape().convert(v?.toString() ?? '');
-  final values = [
-    ['Reference', 'Customer', 'Account', 'Details'],
-    ...rows.map(
-      (r) => [r['reference'], r['customer'], r['account'], r['details']],
-    ),
-  ];
+  final dynamicFields = rows.any((r) => r['fields'] is List);
+  final values = dynamicFields
+      ? <List<dynamic>>[
+          ['Transaction', 'Field', 'Value'],
+          for (final entry in rows.asMap().entries)
+            for (final field
+                in (entry.value['fields'] as List? ??
+                    [
+                      for (final key in [
+                        'reference',
+                        'customer',
+                        'account',
+                        'details',
+                      ])
+                        {'label': key, 'value': entry.value[key]},
+                    ]))
+              ['${entry.key + 1}', field['label'], field['value']],
+        ]
+      : [
+          ['Reference', 'Customer', 'Account', 'Details'],
+          ...rows.map(
+            (r) => [r['reference'], r['customer'], r['account'], r['details']],
+          ),
+        ];
   // Inline string cells intentionally preserve text and prevent formula execution.
   // ignore: prefer_interpolation_to_compose_strings
   final xml = values

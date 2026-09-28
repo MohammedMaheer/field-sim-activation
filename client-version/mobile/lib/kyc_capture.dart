@@ -285,6 +285,84 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     });
   }
 
+  List<Widget> receiptFields(Json row, bool editable) {
+    final fields = row['fields'] as List;
+    return [
+      const Text(
+        'Fields from this receipt. Correct or add details before validating.',
+      ),
+      gap(),
+      ...fields.map(
+        (field) => Padding(
+          key: ObjectKey(field),
+          padding: const EdgeInsets.only(bottom: 20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextFormField(
+                initialValue: field['label'],
+                readOnly: !editable,
+                enabled: !busy,
+                maxLength: 120,
+                decoration: const InputDecoration(labelText: 'Field name'),
+                onChanged: (v) => setState(() {
+                  field['label'] = v;
+                  dirty = true;
+                }),
+              ),
+              TextFormField(
+                initialValue: field['value'],
+                readOnly: !editable,
+                enabled: !busy,
+                maxLength: 1000,
+                minLines: 1,
+                maxLines: 4,
+                decoration: const InputDecoration(labelText: 'Value'),
+                onChanged: (v) => setState(() {
+                  field['value'] = v;
+                  dirty = true;
+                }),
+              ),
+              Text(
+                field['source_line'] == null
+                    ? 'Manual field'
+                    : 'OCR line ${field['source_line'] + 1}${field['confidence'] == null ? '' : ' · ${field['confidence']}% confidence'}',
+              ),
+              if (editable)
+                TextButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () => setState(() {
+                          fields.remove(field);
+                          dirty = true;
+                        }),
+                  icon: const Icon(Icons.remove_circle_outline),
+                  label: const Text('Remove field'),
+                ),
+            ],
+          ),
+        ),
+      ),
+      if (editable)
+        OutlinedButton.icon(
+          onPressed: busy || fields.length >= 100
+              ? null
+              : () => setState(() {
+                  fields.add({
+                    'label': '',
+                    'value': '',
+                    'source_line': null,
+                    'confidence': null,
+                  });
+                  dirty = true;
+                }),
+          icon: const Icon(Icons.add),
+          label: const Text('Add field'),
+        ),
+      gap(),
+    ];
+  }
+
   Widget gap() => const SizedBox(height: 16);
   @override
   Widget build(BuildContext context) {
@@ -532,10 +610,15 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                   : () {
                                       setState(() {
                                         rows.add({
-                                          'reference': '',
-                                          'customer': '',
-                                          'account': '',
-                                          'details': entry.value['text'],
+                                          'fields': [
+                                            {
+                                              'label': 'Receipt text',
+                                              'value': entry.value['text'],
+                                              'source_line': entry.key,
+                                              'confidence':
+                                                  entry.value['confidence'],
+                                            },
+                                          ],
                                           'source_line': entry.key,
                                         });
                                         dirty = true;
@@ -565,37 +648,40 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     children: [
                       Text('Transaction ${i + 1}'),
                       gap(),
-                      ...['reference', 'customer', 'account', 'details'].map(
-                        (field) => Padding(
-                          padding: const EdgeInsets.only(bottom: 12),
-                          child: TextFormField(
-                            initialValue: r[field],
-                            enabled: !busy,
-                            readOnly: !editable,
-                            maxLength: field == 'details'
-                                ? 1000
-                                : field == 'account'
-                                ? 80
-                                : 120,
-                            maxLines: field == 'details' ? 3 : 1,
-                            decoration: InputDecoration(
-                              counterText: editable ? null : '',
-                              labelText: {
-                                'reference': 'Transaction reference',
-                                'customer': 'Customer',
-                                'account': 'Account / MSISDN',
-                                'details': 'Transaction details',
-                              }[field],
+                      if (r['fields'] is List)
+                        ...receiptFields(r, editable)
+                      else
+                        ...['reference', 'customer', 'account', 'details'].map(
+                          (field) => Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: TextFormField(
+                              initialValue: r[field],
+                              enabled: !busy,
+                              readOnly: !editable,
+                              maxLength: field == 'details'
+                                  ? 1000
+                                  : field == 'account'
+                                  ? 80
+                                  : 120,
+                              maxLines: field == 'details' ? 3 : 1,
+                              decoration: InputDecoration(
+                                counterText: editable ? null : '',
+                                labelText: {
+                                  'reference': 'Transaction reference',
+                                  'customer': 'Customer',
+                                  'account': 'Account / MSISDN',
+                                  'details': 'Transaction details',
+                                }[field],
+                              ),
+                              onChanged: (value) {
+                                setState(() {
+                                  rows[i][field] = value;
+                                  dirty = true;
+                                });
+                              },
                             ),
-                            onChanged: (value) {
-                              setState(() {
-                                rows[i][field] = value;
-                                dirty = true;
-                              });
-                            },
                           ),
                         ),
-                      ),
                       if (editable)
                         TextButton(
                           onPressed: () {
@@ -618,10 +704,14 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     : () {
                         setState(() {
                           rows.add({
-                            'reference': '',
-                            'customer': '',
-                            'account': '',
-                            'details': '',
+                            'fields': [
+                              {
+                                'label': '',
+                                'value': '',
+                                'source_line': null,
+                                'confidence': null,
+                              },
+                            ],
                             'source_line': null,
                           });
                           dirty = true;
@@ -635,12 +725,23 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     ? null
                     : () => act(() async {
                         if (rows.any(
-                          (r) =>
-                              r['reference'].toString().trim().length < 2 ||
-                              r['details'].toString().trim().length < 2,
+                          (r) => r['fields'] is List
+                              ? ((r['fields'] as List).isEmpty ||
+                                    (r['fields'] as List).any(
+                                      (f) =>
+                                          f['label'].toString().trim().isEmpty,
+                                    ) ||
+                                    !(r['fields'] as List).any(
+                                      (f) => f['value']
+                                          .toString()
+                                          .trim()
+                                          .isNotEmpty,
+                                    ))
+                              : (r['reference'].toString().trim().length < 2 ||
+                                    r['details'].toString().trim().length < 2),
                         )) {
                           throw Exception(
-                            'Each row needs a reference and transaction details.',
+                            'Check field names and enter at least one value per transaction.',
                           );
                         }
                         final result = await ref

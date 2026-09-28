@@ -11,10 +11,13 @@ test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',
  await expect(page.locator('.transaction-stages [aria-current="step"]')).toContainText('Review details');
  await page.getByText(/Extracted text ·/).click();
  await expect(page.locator('.ocr-lines')).toContainText('Jordan Demo');
- if(!await page.getByLabel('Transaction reference',{exact:true}).count()) await page.getByRole('button',{name:'Add OCR line 2',exact:true}).click();
- await page.getByLabel('Transaction reference',{exact:true}).first().fill('DEMO-TXN-001');
- await page.getByLabel('Customer',{exact:true}).first().fill('Jordan Demo');
- await page.getByLabel('Account / MSISDN',{exact:true}).first().fill('0000123');
+ await expect(page.locator('.receipt-field').first()).toBeVisible();
+ await page.getByLabel('Field name 1.1',{exact:true}).fill('Receipt identifier');
+ await page.getByLabel('Value 1.1',{exact:true}).fill('0000123');
+ await page.getByRole('button',{name:'Add field',exact:true}).first().click();
+ const last=page.locator('.capture-rows fieldset').first().locator('.receipt-field').last();
+ await last.locator('input').fill('Custom promotion');
+ await last.locator('textarea').fill('Summer demo');
  await page.getByRole('button',{name:'Save & validate rows',exact:true}).click();
  await expect(page.locator('.capture-detail .badge').first()).toHaveText('validated');
  const dl=page.waitForEvent('download');await page.getByRole('button',{name:'Generate Excel',exact:true}).click();expect((await dl).suggestedFilename()).toMatch(/\.xlsx$/);
@@ -25,5 +28,5 @@ test('real screenshot upload, VPS OCR, editable rows, Excel and backend status',
  const list=await (await request.get('/api/kyc-captures',{headers})).json();const capture=list.find((r:any)=>r.source_reference===reference);expect(capture).toBeTruthy();
  const reviewed=await request.post('/api/kyc-captures/'+capture.id+'/review',{headers,data:{version:capture.version,outcome:'VERIFIED',reason:'Screenshot matches reviewed transaction row'}});expect(reviewed.ok()).toBeTruthy();
  await expect(page.locator('.capture-detail .badge').first()).toHaveText('verified',{timeout:15000});
- for(const width of [1440,768,390]){await page.setViewportSize({width,height:1000});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:'../output/qa/capture-web-'+width+'.png',fullPage:true});}
+ for(const width of [1440,768,390]){await page.setViewportSize({width,height:1000});await page.waitForTimeout(500);if(width<800 && await page.locator('.sidebar.open').count()) await page.getByRole('button',{name:'Close menu',exact:true}).click();expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();await page.evaluate(()=>window.scrollTo(0,0));await page.screenshot({path:'../output/qa/capture-web-'+width+'.png',fullPage:true});}
 });

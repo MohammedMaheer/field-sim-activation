@@ -383,7 +383,8 @@ def test_team_kpis_are_weighted_by_actual_records(client):
             )
 
 
-def test_capture_lifecycle_access_and_excel(client, monkeypatch):
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_capture_lifecycle_access_and_excel(client, monkeypatch, dynamic):
     import base64
     import io
     from PIL import Image
@@ -434,13 +435,10 @@ def test_capture_lifecycle_access_and_excel(client, monkeypatch):
             "source_line": 0,
         }
     ]
-    assert (
-        client.patch(
-            path + "/rows",
-            json={"version": row["version"], "rows": items + items, "reason": "Reviewed image"},
-        ).status_code
-        == 422
-    )
+    if dynamic:
+        items = [{"fields": [{"label": "New arbitrary field", "value": "=HYPERLINK(1)", "source_line": 0}, {"label": "Account", "value": "0000123"}, {"label": "Fee", "value": "10"}, {"label": "Fee", "value": "20"}], "source_line": 0}]
+    invalid = [{"fields": [{"label": " ", "value": "x"}]}] if dynamic else items + items
+    assert client.patch(path + "/rows", json={"version": row["version"], "rows": invalid, "reason": "Reviewed image"}).status_code == 422
     saved = client.patch(
         path + "/rows", json={"version": row["version"], "rows": items, "reason": "Reviewed image"}
     )
@@ -454,7 +452,12 @@ def test_capture_lifecycle_access_and_excel(client, monkeypatch):
     )
     row = saved.json()
     sheet = load_workbook(io.BytesIO(client.get(path + "/excel").content)).active
-    assert sheet["A2"].data_type == "s" and sheet["C2"].value == "0000123"
+    if dynamic:
+        assert sheet["C2"].data_type == "s" and sheet["C2"].value == "=HYPERLINK(1)"
+        assert sheet["C3"].value == "0000123"
+        assert sheet["B4"].value == sheet["B5"].value == "Fee"
+    else:
+        assert sheet["A2"].data_type == "s" and sheet["C2"].value == "0000123"
     row = client.post(path + "/submit", json={"version": row["version"]}).json()
     assert row["status"] == "SUBMITTED"
     assert (
@@ -509,10 +512,13 @@ def test_capture_label_mapping_does_not_invent_fields():
         ]
     ]
     rows = organize_lines(lines)
-    assert len(rows) == 2
-    assert rows[0]["account"] == "0000123" and rows[0]["customer"] == "Jordan Demo"
-    assert rows[1]["reference"] == "DEMO-02" and rows[1]["account"] == ""
-    assert organize_lines([{"text": "Unrecognized layout"}]) == []
+    assert len(rows) == 1
+    assert rows[0]["fields"][2]["value"] == "0000123"
+    assert rows[0]["fields"][3]["label"] == "Plan"
+    assert len(rows[0]["fields"]) == len(lines)
+    assert organize_lines([{"text": "Unrecognized layout"}])[0]["fields"][0]["value"] == "Unrecognized layout"
+    repeated = organize_lines([{"text": "Transaction ID: 1"}, {"text": "VAT: 5"}, {"text": "Transaction ID: 2"}])
+    assert len(repeated) == 2
 
 
 def test_admin_management_validation_conflicts_and_permissions(client):

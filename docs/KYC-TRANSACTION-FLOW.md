@@ -36,3 +36,11 @@ Use `client-version/web/tests/capture.spec.ts` against a running API with Tesser
 ## Focused workspace (26 September 2026)
 
 The web page shows one capture or review workspace. Capture history/search lives in a drawer. Selecting a record hides the upload form; New transaction capture starts a separate capture and confirms before discarding unsaved row edits. OCR text, file integrity and lifecycle history expand on demand. The Flutter app uses a compact current-stage header, hides its upload form during review and keeps history below the active transaction. Both editions retain the same saved-state transitions and server OCR API.
+
+## Receipt-specific fields — 28 September 2026
+
+New OCR results contain transaction rows with an ordered `fields` list: label, value, source_line and confidence. Labels come from the receipt, not a fixed customer/account/plan schema. Repeated labels remain separate; no field is silently overwritten. Colon-labelled content is recognized in English or Arabic; unclassified lines remain editable Receipt text entries. Reviewers must compare with the original: OCR does not guarantee recognition of arbitrary receipt layouts or tables.
+
+Web and Flutter allow editing field names/values, adding/removing fields and adding/removing transactions. A transaction needs at least one nonblank value and every field needs a name. The API bounds labels, values, field count and source indices, preserves version conflicts, audit revisions, encryption and scoped access. Legacy four-column records stay readable/exportable. Older apps cannot replace flexible rows with their fixed format.
+
+Dynamic Excel exports use one row per receipt field (transaction, field, value, confidence and provenance), preserving repeated labels, leading zeros and formula-like text safely. No database migration is required because the existing encrypted JSON payload holds the schema. APK build 22 is required to edit new captures. The separate mobile browser preview uses the same fields with explicitly synthetic extraction.

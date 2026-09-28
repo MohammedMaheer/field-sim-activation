@@ -22,6 +22,9 @@ test('isolated Flutter phone preview',async({page})=>{
  await page.getByRole('button',{name:'Upload',exact:true}).click();
  await page.getByRole('button',{name:'Upload & run VPS OCR',exact:true}).click();
  await expect(page.getByText('Transaction rows',{exact:true})).toBeVisible();
+ await expect(page.getByRole('textbox',{name:'Field name'}).first()).toBeAttached();
+ await page.waitForTimeout(800);
+ await page.mouse.wheel(0,420);await page.waitForTimeout(250);
  await page.screenshot({path:'../output/qa/phone-preview-receipt.png',fullPage:true});
  async function reveal(name:string){
   const button=page.getByRole('button',{name,exact:true});

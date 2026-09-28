@@ -348,3 +348,9 @@ button.primary:hover:not(:disabled) { background: linear-gradient(110deg, #a02a6
   background: #08765e;
   color: #fff;
 }
+
+.receipt-fields {grid-column:1/-1;display:grid;gap:16px}
+.receipt-field {display:grid;grid-template-columns:minmax(140px,1fr) minmax(180px,2fr);gap:10px 16px;padding:16px;border:1px solid #dfd6ef;border-radius:12px;background:#f9f7fd}
+.receipt-field small {color:#526078}
+.receipt-field button {justify-self:end}
+@media(max-width:600px){.receipt-field{grid-template-columns:1fr}.receipt-field button{justify-self:start}}

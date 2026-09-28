@@ -82,14 +82,10 @@ void main() {
       await reveal(find.text('Transaction 1'));
       await tester.enterText(
         find.byType(TextFormField).at(0),
-        'DEMO-PHONE-TXN',
+        'Receipt identifier',
       );
-      await tester.enterText(find.byType(TextFormField).at(1), 'Jordan Demo');
-      await tester.enterText(find.byType(TextFormField).at(2), '0000123');
-      await tester.enterText(
-        find.byType(TextFormField).at(3),
-        'Essential Data 125',
-      );
+      await tester.enterText(find.byType(TextFormField).at(1), '0000123');
+      await binding.takeScreenshot('capture-dynamic-fields');
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pump(const Duration(milliseconds: 300));
       await tap('Save & validate rows');
@@ -98,6 +94,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       final all = (await service.dio.get('/kyc-captures')).data as List;
       final row = all.firstWhere((r) => r['source_reference'] == reference);
+      expect((row['rows'][0]['fields'] as List).first['value'], '0000123');
       final excel = await service.dio.get<List<int>>(
         '/kyc-captures/${row['id']}/excel',
         options: Options(responseType: ResponseType.bytes),

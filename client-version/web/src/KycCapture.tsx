@@ -369,10 +369,7 @@ export default function KycCapture() {
                                       setRows([
                                         ...rows,
                                         {
-                                          reference: "",
-                                          customer: "",
-                                          account: "",
-                                          details: line.text,
+                                          fields: [{label: "Receipt text", value: line.text, source_line: i, confidence: line.confidence}],
                                           source_line: i,
                                         },
                                       ]);
@@ -389,7 +386,7 @@ export default function KycCapture() {
                       )}
                       {(editable || rows.length > 0) && (
                         <section className="capture-rows">
-                          <h2>Transaction rows</h2>
+                          <h2>Transaction rows</h2><p>Fields follow the receipt. Correct labels and values, or add missing fields before validating.</p>
                           {rows.length === 0 && (
                             <p>Select an OCR line above or add a row below.</p>
                           )}
@@ -401,6 +398,15 @@ export default function KycCapture() {
                                   ? " · OCR line " + (r.source_line + 1)
                                   : " · Manual entry"}
                               </legend>
+                              {Array.isArray(r.fields) ? <div className="receipt-fields">
+                                {r.fields.map((field: Row, fi: number) => <div className="receipt-field" key={fi}>
+                                  <label>Field name<input aria-label={`Field name ${i+1}.${fi+1}`} maxLength={120} disabled={!editable} value={field.label} onChange={e => {change(i, "fields", r.fields.map((f: Row,n: number)=>n===fi?{...f,label:e.target.value}:f));}} /></label>
+                                  <label>Value<textarea aria-label={`Value ${i+1}.${fi+1}`} dir="auto" maxLength={1000} disabled={!editable} value={field.value} onChange={e=>change(i,"fields",r.fields.map((f: Row,n: number)=>n===fi?{...f,value:e.target.value}:f))} /></label>
+                                  <small>{field.source_line != null ? `OCR line ${field.source_line+1}` : "Manual field"}{field.confidence != null ? ` · ${field.confidence}% OCR confidence` : ""}</small>
+                                  {editable && <button aria-label={`Remove field ${i+1}.${fi+1}`} onClick={()=>change(i,"fields",r.fields.filter((_: Row,n: number)=>n!==fi))}><Trash2 size={15}/>Remove field</button>}
+                                </div>)}
+                                {editable && <button disabled={r.fields.length>=100} onClick={()=>change(i,"fields",[...r.fields,{label:"",value:"",source_line:null,confidence:null}])}><Plus size={16}/>Add field</button>}
+                              </div> : <>
                               <label>
                                 Transaction reference
                                 <input
@@ -449,6 +455,7 @@ export default function KycCapture() {
                                   }
                                 />
                               </label>
+                              </>}
                               {editable && (
                                 <button
                                   onClick={() => {
@@ -470,10 +477,7 @@ export default function KycCapture() {
                                   setRows([
                                     ...rows,
                                     {
-                                      reference: "",
-                                      customer: "",
-                                      account: "",
-                                      details: "",
+                                      fields: [{label: "", value: "", source_line: null, confidence: null}],
                                       source_line: null,
                                     },
                                   ]);
@@ -500,8 +504,7 @@ export default function KycCapture() {
                                   reason.trim().length < 3 ||
                                   rows.some(
                                     (r) =>
-                                      r.reference.trim().length < 2 ||
-                                      r.details.trim().length < 2,
+                                      Array.isArray(r.fields) ? (!r.fields.length || r.fields.some((f: Row)=>!f.label.trim()) || !r.fields.some((f: Row)=>f.value.trim())) : (r.reference.trim().length < 2 || r.details.trim().length < 2),
                                   )
                                 }
                                 onClick={() =>

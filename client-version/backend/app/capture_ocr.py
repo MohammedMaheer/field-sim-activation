@@ -32,36 +32,22 @@ def inspect_image(data):
 
 
 def organize_lines(lines):
-    """Conservative label mapping; unknown layouts remain OCR lines for manual review."""
-    rows = []
-    current = None
-    for index, line in enumerate(lines):
+    """Preserve arbitrary receipt labels, repeated fields and unclassified text."""
+    rows, fields = [], []
+    for index, line in enumerate(lines[:200]):
         text = line["text"].strip()
-        reference = re.match(
-            r"^(?:Transaction\s+(?:Reference|ID|Number)|Request\s+ID|Order\s+(?:ID|Number)|SR\s+ID)\s*[:#]\s*(.+)$",
-            text,
-            re.I,
-        )
-        if reference:
-            current = {
-                "reference": reference[1][:120],
-                "customer": "",
-                "account": "",
-                "details": text[:1000],
-                "source_line": index,
-            }
-            rows.append(current)
-        elif current:
-            label = re.match(
-                r"^(Customer(?:\s+Name)?|Account|MSISDN|Mobile(?:\s+Number)?)\s*:\s*(.+)$",
-                text,
-                re.I,
-            )
-            if label:
-                key = "customer" if label[1].lower().startswith("customer") else "account"
-                current[key] = label[2][: 120 if key == "customer" else 80]
-            else:
-                current["details"] = (current["details"] + "\n" + text)[:1000]
+        if not text:
+            continue
+        match = re.match(r"^([^:：]{1,120})[:：]\s*(.*)$", text)
+        label, value = (match[1].strip(), match[2].strip()) if match else ("Receipt text", text)
+        primary = re.fullmatch(r"Transaction\s+(?:Reference|ID|Number)", label, re.I)
+        if fields and ((primary and any(f["label"].casefold() == label.casefold() for f in fields)) or len(fields) >= 100):
+            rows.append({"fields": fields, "source_line": fields[0]["source_line"]})
+            fields = []
+        fields.append({"label": label, "value": value[:1000], "source_line": index,
+                       "confidence": line.get("confidence")})
+    if fields:
+        rows.append({"fields": fields, "source_line": fields[0]["source_line"]})
     return rows[:100]
 
 

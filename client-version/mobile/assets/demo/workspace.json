@@ -549,7 +549,39 @@
           "customer": "Jordan Demo",
           "account": "DEMO-050-0001",
           "details": "Everyday 200 plan. Activation completed externally.",
-          "source_line": 0
+          "source_line": 0,
+          "fields": [
+            {
+              "label": "Order ID",
+              "value": "DEMO-RECEIPT-001",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Customer name",
+              "value": "Jordan Demo",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Mobile number",
+              "value": "DEMO-050-0001",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Plan",
+              "value": "Everyday 200 plan. Activation completed externally.",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "VAT",
+              "value": "AED 10.00",
+              "source_line": null,
+              "confidence": null
+            }
+          ]
         }
       ],
       "lines": [
@@ -581,7 +613,39 @@
           "customer": "Jordan Demo",
           "account": "DEMO-050-0001",
           "details": "Everyday 200 plan. Activation completed externally.",
-          "source_line": 0
+          "source_line": 0,
+          "fields": [
+            {
+              "label": "Order ID",
+              "value": "DEMO-RECEIPT-002",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Customer name",
+              "value": "Jordan Demo",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Mobile number",
+              "value": "DEMO-050-0001",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Plan",
+              "value": "Everyday 200 plan. Activation completed externally.",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "VAT",
+              "value": "AED 10.00",
+              "source_line": null,
+              "confidence": null
+            }
+          ]
         }
       ],
       "lines": [
@@ -613,7 +677,39 @@
           "customer": "Jordan Demo",
           "account": "DEMO-050-0001",
           "details": "Everyday 200 plan. Activation completed externally.",
-          "source_line": 0
+          "source_line": 0,
+          "fields": [
+            {
+              "label": "Order ID",
+              "value": "DEMO-RECEIPT-003",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Customer name",
+              "value": "Jordan Demo",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Mobile number",
+              "value": "DEMO-050-0001",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "Plan",
+              "value": "Everyday 200 plan. Activation completed externally.",
+              "source_line": 0,
+              "confidence": 97.2
+            },
+            {
+              "label": "VAT",
+              "value": "AED 10.00",
+              "source_line": null,
+              "confidence": null
+            }
+          ]
         }
       ],
       "lines": [

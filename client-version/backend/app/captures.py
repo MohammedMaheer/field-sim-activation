@@ -7,7 +7,7 @@ import json
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
@@ -91,7 +91,7 @@ def record(db, row, user, action, request=None, data=None):
 class CaptureBody(BaseModel):
     agent_id: str
     operation_id: str = Field(min_length=16, max_length=80)
-    source_reference: str = Field(min_length=2, max_length=120)
+    source_reference: str = Field(default="", max_length=120)
     image_base64: str = Field(max_length=5_333_336)
 
 
@@ -192,11 +192,28 @@ def version_check(row, body):
         raise HTTPException(409, "This capture changed. Reload it before saving.")
 
 
+class ReceiptField(BaseModel):
+    label: str = Field(min_length=1, max_length=120)
+    value: str = Field(max_length=1000)
+    source_line: int | None = Field(default=None, ge=0, le=199)
+    confidence: float | None = Field(default=None, ge=0, le=100)
+
+
 class TransactionRow(BaseModel):
-    reference: str = Field(min_length=2, max_length=120)
+    reference: str = Field(default="", max_length=120)
     customer: str = Field(default="", max_length=120)
     account: str = Field(default="", max_length=80)
-    details: str = Field(min_length=2, max_length=1000)
+    details: str = Field(default="", max_length=1000)
+    fields: list[ReceiptField] | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def validate_content(self):
+        if self.fields is not None:
+            if any(not f.label.strip() for f in self.fields) or not any(f.value.strip() for f in self.fields):
+                raise ValueError("Each field needs a label and the transaction needs a value")
+        elif len(self.reference.strip()) < 2 or len(self.details.strip()) < 2:
+            raise ValueError("Legacy rows need a reference and details")
+        return self
     source_line: int | None = Field(default=None, ge=0, le=199)
 
 
@@ -215,16 +232,16 @@ def save_rows(
     if row.status not in {"EXTRACTED", "VALIDATED", "REJECTED"}:
         raise HTTPException(409, "Rows cannot be edited at this stage")
     rows = [r.model_dump() for r in body.rows]
-    refs = [r["reference"].strip().casefold() for r in rows]
-    if any(not r["reference"].strip() or not r["details"].strip() for r in rows) or len(
-        set(refs)
-    ) != len(refs):
-        raise HTTPException(422, "Each row needs a unique reference and transaction details")
+    legacy = [r for r in rows if r.get("fields") is None]
+    refs = [r["reference"].strip().casefold() for r in legacy]
+    if len(set(refs)) != len(refs):
+        raise HTTPException(422, "Legacy transaction references must be unique")
     data = payload(row)
-    if any(
-        r["source_line"] is not None and r["source_line"] >= len(data.get("lines", []))
-        for r in rows
-    ):
+    if any(r.get("fields") is not None for r in data.get("rows", [])) and any(r.get("fields") is None for r in rows):
+        raise HTTPException(409, "This receipt uses dynamic fields. Update the app before editing it.")
+    sources = [r["source_line"] for r in rows]
+    sources += [f["source_line"] for r in rows for f in (r.get("fields") or [])]
+    if any(n is not None and n >= len(data.get("lines", [])) for n in sources):
         raise HTTPException(422, "Invalid source line")
     data.setdefault("revisions", []).append(
         {
@@ -319,39 +336,33 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Transactions"
-    sheet.append(
-        [
-            "Transaction reference",
-            "Customer",
-            "Account / MSISDN",
-            "Details",
-            "Source line",
-            "Source image reference",
-            "AI extraction status",
-            "Backend verification status",
-        ]
-    )
-    for item in data["rows"]:
-        values = [
-            item["reference"],
-            item["customer"],
-            item["account"],
-            item["details"],
-            str(item["source_line"] + 1) if item["source_line"] is not None else "Manual",
-            f"capture-{row.id}.{'jpg' if row.image_type == 'image/jpeg' else 'png'}",
-            "EXTRACTED",
-            row.status if row.status in {"VERIFIED", "REJECTED"} else "PENDING",
-        ]
-        sheet.append(values)
-        for cell in sheet[sheet.max_row]:
-            cell.data_type = "s"  # User-entered text must never become a spreadsheet formula.
+    dynamic = any(r.get("fields") is not None for r in data["rows"])
+    if dynamic:
+        sheet.append(["Transaction", "Field", "Value", "OCR confidence", "Source line", "Source image reference", "Backend verification status"])
+        for index, item in enumerate(data["rows"]):
+            fields = item.get("fields")
+            if fields is None:
+                fields = [{"label": k, "value": item.get(k, ""), "source_line": item.get("source_line")} for k in ["reference", "customer", "account", "details"]]
+            for field in fields:
+                source = field.get("source_line")
+                confidence = field.get("confidence")
+                sheet.append([str(index + 1), field["label"], field["value"], str(confidence) if confidence is not None else "", str(source + 1) if source is not None else "Manual", f"capture-{row.id}", row.status])
+    else:
+        sheet.append(["Transaction reference", "Customer", "Account / MSISDN", "Details", "Source line", "Source image reference", "AI extraction status", "Backend verification status"])
+        for item in data["rows"]:
+            source = item.get("source_line")
+            sheet.append([item["reference"], item["customer"], item["account"], item["details"], str(source + 1) if source is not None else "Manual", f"capture-{row.id}.{'jpg' if row.image_type == 'image/jpeg' else 'png'}", "EXTRACTED", row.status if row.status in {"VERIFIED", "REJECTED"} else "PENDING"])
+    for cells in sheet.iter_rows():
+        for cell in cells:
+            cell.data_type = "s"
     sheet.freeze_panes = "A2"
     sheet.auto_filter.ref = sheet.dimensions
     for cell in sheet[1]:
         cell.font = Font(color="FFFFFF", bold=True)
         cell.fill = PatternFill("solid", fgColor="761B3A")
-    for col, width in zip("ABCDEFGH", [28, 28, 28, 70, 16, 48, 24, 28]):
-        sheet.column_dimensions[col].width = width
+    from openpyxl.utils import get_column_letter
+    for col in range(1, sheet.max_column + 1):
+        sheet.column_dimensions[get_column_letter(col)].width = 48 if col == 3 else 28
     meta = workbook.create_sheet("Provenance")
     for key, value in [
         ("Capture", row.id),
