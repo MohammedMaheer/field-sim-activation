@@ -581,7 +581,7 @@ export default function TransactionJourney() {
                           <b>{p.name}</b>
                           <strong>
                             AED {p.monthly_cost}
-                            <small> / month</small>
+                            {p.name !== "Tourist Prepaid" && <small> / month</small>}
                           </strong>
                           <span>
                             {p.data_gb} GB · {p.speed} · {p.contract}

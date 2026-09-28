@@ -39,8 +39,9 @@ ROLE_PERMISSIONS = {
     ],
     "Compliance Officer": ["read", "report.read", "audit.read", "compliance.write"],
     "Inventory Manager": ["read", "report.read", "audit.read", "inventory.write"],
-    "Administrator": [
-        "read",
+        "Administrator": [
+            "read",
+            "settings.write",
         "task.write",
         "incentive.write",
         "inventory.write",

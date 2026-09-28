@@ -1243,3 +1243,230 @@ button:active:not(:disabled) {
     padding: 8px;
   }
 }
+
+/* Keep the identity choices grouped and centered without squeezing labels. */
+.identity-capture-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  margin: 14px auto 18px;
+}
+.identity-capture-actions .intake-choice {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.identity-capture-actions button {
+  min-height: 44px;
+  padding: 9px 15px;
+  white-space: nowrap;
+}
+@media (max-width: 520px) {
+  .identity-capture-actions {
+    gap: 9px;
+  }
+  .identity-capture-actions .intake-choice {
+    width: 100%;
+  }
+}
+
+/* Keep the agent credentials aligned as one responsive pair. */
+.credential-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+  min-width: 0;
+}
+.credential-fields label {
+  align-self: start;
+  min-width: 0;
+  margin: 0;
+}
+.credential-fields input {
+  box-sizing: border-box;
+  width: 100%;
+}
+.credential-fields small {
+  display: block;
+  line-height: 1.45;
+}
+@media (max-width: 600px) {
+  .credential-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plan-page-header {
+  align-items: center;
+}
+.plan-page-header p {
+  margin: 5px 0 0;
+}
+.plan-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+.plan-summary-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid #e3daef;
+  border-radius: 12px;
+  background: linear-gradient(120deg, #fbf7ff, #f0f8ff);
+  color: #55406d;
+  font-weight: 700;
+}
+.plan-management-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.managed-plan {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid #e7dfef;
+  background: linear-gradient(145deg, #fff, #fbf8ff 68%, #f4fbfa);
+}
+.managed-plan.inactive {
+  background: #f7f7f9;
+  opacity: .78;
+}
+.managed-plan-top,
+.managed-plan-actions,
+.managed-plan-price {
+  display: flex;
+  align-items: center;
+}
+.managed-plan-top {
+  justify-content: space-between;
+}
+.managed-plan-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 12px;
+  background: linear-gradient(140deg, #f0e3ff, #e4f4ff);
+  color: #7541b0;
+}
+.managed-plan h2 {
+  margin: 14px 0 8px;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.managed-plan-price {
+  gap: 7px;
+  color: #7d2050;
+  font-size: 20px;
+  font-weight: 800;
+}
+.managed-plan-price small {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 500;
+}
+.managed-plan > p {
+  min-height: 40px;
+  color: #58647b;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.managed-plan-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin: 12px 0 18px;
+}
+.managed-plan-meta span {
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: #f0ebf7;
+  color: #55406d;
+  font-size: 12px;
+  font-weight: 650;
+}
+.managed-plan-actions {
+  justify-content: space-between;
+  gap: 10px;
+  border-top: 1px solid #eee8f2;
+  padding-top: 14px;
+}
+.managed-plan-actions button,
+.plan-editor-actions button {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+}
+.managed-plan-actions .plan-remove {
+  color: #a62d42;
+}
+.managed-plan-actions .plan-restore {
+  color: #08765a;
+}
+.plans-empty,
+.plans-no-access {
+  padding: 24px;
+}
+.plan-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+}
+.plan-editor label {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  color: #3d4551;
+  font-size: 13px;
+  font-weight: 650;
+}
+.plan-editor input:not([type="checkbox"]) {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+}
+.plan-editor-wide {
+  grid-column: 1 / -1;
+}
+.plan-editor .plan-active-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f3f9f6;
+}
+.plan-editor .plan-active-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: #12815e;
+}
+.plan-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .plan-management-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 520px) {
+  .plan-editor {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .plan-editor-wide {
+    grid-column: auto;
+  }
+}

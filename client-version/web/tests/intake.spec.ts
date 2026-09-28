@@ -24,6 +24,9 @@ test("identity and signature gate receipt submission", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Continue", exact: true }),
   ).toBeEnabled({ timeout: 60000 });
+  await page.locator(".identity-capture-actions").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "../output/qa/web-intake-identity-controls-390.png" });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
   await page.getByLabel("Full name", { exact: true }).fill("Alex Sample");
   await page
     .getByLabel("Document number", { exact: true })

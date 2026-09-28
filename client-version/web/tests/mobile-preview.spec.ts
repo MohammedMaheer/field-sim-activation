@@ -7,6 +7,17 @@ test("isolated Flutter phone preview", async ({ page }) => {
   page.on("request", (r) => {
     if (r.url().includes("/api/")) apiCalls.push(r.url());
   });
+  await page.route("**/api/public/plans", (route) =>
+    route.fulfill({
+      contentType: "application/json",
+      json: [
+        { id: "p1", name: "5G Unlimited Ultra", monthly_cost: 399, promotion: "Unlimited 5G Data + 1500 Flexi Mins", data_gb: 0, speed: "5G", active: true, vat: 5 },
+        { id: "p2", name: "Flexi Postpaid", monthly_cost: 250, promotion: "100GB 5G Data + 500 Local Mins", data_gb: 100, speed: "5G", active: true, vat: 5 },
+        { id: "p3", name: "Tourist Prepaid", monthly_cost: 199, promotion: "50GB High Speed + Free Roaming", data_gb: 50, speed: "5G", active: true, vat: 5 },
+        { id: "p4", name: "Enterprise M2M", monthly_cost: 85, promotion: "Telemetry VPN + Fixed IP", data_gb: 0, speed: "5G", active: true, vat: 5 },
+      ],
+    }),
+  );
   await page.goto(
     process.env.MOBILE_PREVIEW_URL || "http://127.0.0.1:5188/mobile-demo/",
   );
@@ -52,6 +63,9 @@ test("isolated Flutter phone preview", async ({ page }) => {
     await expect(card).toBeVisible();
     await expect(card).toContainText(detail);
   }
+  await expect(
+    page.getByRole("button", { name: /5G Unlimited Ultra/ }).first(),
+  ).toContainText("AED 399");
   const touristPlan = page.getByRole("button", { name: /Tourist Prepaid/ }).first();
   await expect(touristPlan).toContainText("AED 199");
   await expect(touristPlan).not.toContainText("month");
@@ -186,6 +200,6 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page.getByRole("button", { name: "↗ Expand app", exact: true }).click();
   await expect(page.locator("body")).toHaveClass("expanded");
   await page.getByRole("button", { name: "Exit expanded view" }).click();
-  expect(apiCalls).toEqual([]);
+  expect(apiCalls).toEqual(["http://127.0.0.1:5188/api/public/plans"]);
   expect(errors).toEqual([]);
 });

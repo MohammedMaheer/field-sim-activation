@@ -89,6 +89,70 @@ def test_qanawat_subscriber_plans_are_available_to_field_agents(client):
     }
 
 
+def test_admin_can_manage_plans_and_changes_reach_the_shared_catalog(client):
+    login(client)
+    current = client.get("/api/admin/plans")
+    assert current.status_code == 200
+    assert len(current.json()) == 4
+    body = {
+        "name": "QA Flexible Plan",
+        "monthly_cost": 129.5,
+        "data_gb": 30,
+        "speed": "5G",
+        "roaming": "1 GB",
+        "contract": "12 months",
+        "promotion": "30 GB data + 300 minutes",
+        "advance": 0,
+        "vat": 5,
+        "active": True,
+    }
+    created = client.post("/api/plans", json=body)
+    assert created.status_code == 201, created.text
+    plan_id = created.json()["id"]
+    assert any(p["id"] == plan_id for p in client.get("/api/resources/plans").json())
+    assert client.post("/api/plans", json=body).status_code == 409
+
+    body.update(name="QA Flexible Plus", monthly_cost=149.5)
+    changed = client.patch(f"/api/plans/{plan_id}", json=body)
+    assert changed.status_code == 200
+    assert changed.json()["name"] == "QA Flexible Plus"
+    assert changed.json()["monthly_cost"] == 149.5
+    assert any(
+        p["name"] == "QA Flexible Plus" for p in client.get("/api/resources/plans").json()
+    )
+
+    body["active"] = False
+    removed = client.patch(f"/api/plans/{plan_id}", json=body)
+    assert removed.status_code == 200 and removed.json()["active"] is False
+    assert all(p["id"] != plan_id for p in client.get("/api/resources/plans").json())
+    assert any(p["id"] == plan_id for p in client.get("/api/admin/plans").json())
+
+    body["active"] = True
+    assert client.patch(f"/api/plans/{plan_id}", json=body).json()["active"] is True
+    with DB() as db:
+        actions = [a.action for a in db.scalars(select(Audit).where(Audit.entity == plan_id))]
+    assert "Plan Created" in actions
+    assert "Plan Changed" in actions
+    assert "Plan Removed" in actions
+    assert "Plan Restored" in actions
+
+
+def test_plan_management_is_restricted_to_administrators(client):
+    login(client, "agent1")
+    assert client.get("/api/admin/plans").status_code == 403
+    assert client.post(
+        "/api/plans",
+        json={"name": "No access", "monthly_cost": 1, "data_gb": 0},
+    ).status_code == 403
+
+
+def test_public_plans_catalog_is_read_only_and_requires_no_account(client):
+    response = client.get("/api/public/plans")
+    assert response.status_code == 200
+    assert len(response.json()) == 4
+    assert client.post("/api/public/plans", json={}).status_code == 405
+
+
 def test_proposal_tasks_are_scoped_audited_and_transition_once(client):
     login(client)
     agent = next(
@@ -291,7 +355,6 @@ def test_agent_can_report_own_stock_but_not_reassign_or_change_others(client):
     [
         "/api/orders/draft",
         "/api/orders/x/submit",
-        "/api/plans/x",
         "/api/roles",
         "/api/resources/orders",
     ],
@@ -326,7 +389,7 @@ def test_readonly_records_and_api_contract(client):
     r = client.get("/api/activations/" + row["id"])
     assert r.status_code == 200 and r.json()["events"]
     paths = client.get("/openapi.json").json()["paths"]
-    assert not any("/orders" in p or "/plans" in p or "/roles" in p for p in paths)
+    assert not any("/orders" in p or "/roles" in p for p in paths)
 
 
 def test_location_collection_is_removed(client):

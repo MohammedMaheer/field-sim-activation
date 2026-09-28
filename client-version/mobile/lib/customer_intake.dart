@@ -1,5 +1,6 @@
 import 'scan_surface.dart';
 import 'experience.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -158,6 +159,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   List<Json> plans = [];
   int step = 0, version = 0, revision = 0;
   bool busy = true, reading = false;
+  Timer? planRefresh;
   String? error;
   final Set<String> missing = {};
   final Map<String, GlobalKey> fieldAnchors = {};
@@ -167,6 +169,21 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   void initState() {
     super.initState();
     load();
+    planRefresh = Timer.periodic(
+      const Duration(seconds: 20),
+      (_) => refreshPlans(),
+    );
+  }
+
+  Future<void> refreshPlans() async {
+    try {
+      final updated = await ref.read(serviceProvider).list('plans');
+      if (mounted && jsonEncode(updated) != jsonEncode(plans)) {
+        setState(() => plans = updated);
+      }
+    } catch (_) {
+      // Preserve the last loaded catalog while the device is offline.
+    }
   }
 
   Future<void> load() async {
@@ -206,6 +223,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
 
   @override
   void dispose() {
+    planRefresh?.cancel();
     for (final focus in fieldFocus.values) {
       focus.dispose();
     }
@@ -636,7 +654,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text('AED ${p['monthly_cost']}${p['name'] == 'Tourist Prepaid' ? '' : ' / month'}'),
+                        Text(
+                          'AED ${p['monthly_cost']}${p['name'] == 'Tourist Prepaid' ? '' : ' / month'}',
+                        ),
                         if ((p['promotion'] ?? '').toString().isNotEmpty)
                           Text(
                             p['promotion'],

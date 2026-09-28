@@ -184,7 +184,7 @@ export default function OrganizationSetup({
               </>
             )}
             {["agents", "teams"].includes(kind) && (
-              <>
+              <div className="credential-fields wide">
                 <label>
                   Sign-in email
                   <input
@@ -209,7 +209,7 @@ export default function OrganizationSetup({
                     At least 10 characters. Share securely with the employee.
                   </small>
                 </label>
-              </>
+              </div>
             )}
             {error && (
               <p role="alert" className="wide">

@@ -240,28 +240,30 @@ export default function CustomerIntake({
       {step === 0 ? (
         <>
           <h2>Customer identity</h2>
-          <div className="intake-choice">
-            <button
-              className={value.document_type !== "Passport" ? "primary" : ""}
-              onClick={() => set("document_type", "National ID")}
-            >
-              Emirates ID
-            </button>
-            <button
-              className={value.document_type === "Passport" ? "primary" : ""}
-              onClick={() => set("document_type", "Passport")}
-            >
-              Passport
-            </button>
-          </div>
-          <div className="intake-choice">
-            <button onClick={() => setCamera("document_image")}>
-              <Camera size={18} />
-              Scan document
-            </button>
-            <button onClick={() => setCamera("selfie_image")}>
-              Selfie · optional
-            </button>
+          <div className="identity-capture-actions">
+            <div className="intake-choice" role="group" aria-label="Document type">
+              <button
+                className={value.document_type !== "Passport" ? "primary" : ""}
+                onClick={() => set("document_type", "National ID")}
+              >
+                Emirates ID
+              </button>
+              <button
+                className={value.document_type === "Passport" ? "primary" : ""}
+                onClick={() => set("document_type", "Passport")}
+              >
+                Passport
+              </button>
+            </div>
+            <div className="intake-choice" role="group" aria-label="Document capture">
+              <button onClick={() => setCamera("document_image")}>
+                <Camera size={18} />
+                Scan document
+              </button>
+              <button onClick={() => setCamera("selfie_image")}>
+                Selfie · optional
+              </button>
+            </div>
           </div>
           <div
             data-intake-field="document_image"

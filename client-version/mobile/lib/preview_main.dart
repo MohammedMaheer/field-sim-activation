@@ -48,6 +48,12 @@ class PreviewStore extends OfflineStore {
 class PreviewService extends RelayService {
   final Json data;
   final memory = PreviewStore();
+  final publicApi = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 5),
+      receiveTimeout: const Duration(seconds: 6),
+    ),
+  );
   @override
   OfflineStore get store => memory;
   @override
@@ -165,6 +171,13 @@ class PreviewService extends RelayService {
       };
     }
     if (path == '/resources/plans') {
+      try {
+        final url = Uri.base.resolve('/api/public/plans').toString();
+        final response = await publicApi.get<List<dynamic>>(url);
+        return response.data ?? const <Json>[];
+      } on DioException {
+        // Keep the preview usable offline; online edits come from the shared catalog.
+      }
       return [
         {
           'id': 'zip-5g-unlimited',

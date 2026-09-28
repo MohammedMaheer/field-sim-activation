@@ -678,7 +678,7 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       subtitle: Text(
-                        '${p['data_gb']} GB · ${p['speed']}\nAED ${p['monthly_cost']} / month',
+                        '${p['data_gb']} GB · ${p['speed']}\nAED ${p['monthly_cost']}${p['name'] == 'Tourist Prepaid' ? '' : ' / month'}',
                       ),
                       trailing: Icon(
                         plan == p['id']

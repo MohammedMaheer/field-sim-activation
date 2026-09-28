@@ -1,5 +1,6 @@
 import OrganizationSetup from "./OrganizationSetup";
 import AgentManagement from "./AgentManagement";
+import PlanManagement from "./PlanManagement";
 import KycCapture from "./KycCapture";
 import { FieldTasks, Incentives, Support } from "./ProposalOperations";
 
@@ -149,6 +150,10 @@ const navigation = [
       ["compliance", "Compliance", ShieldCheck],
       ["audit", "Audit log", History],
     ],
+  },
+  {
+    label: "ADMINISTRATION",
+    items: [["plans", "Subscriber plans", Settings]],
   },
 ];
 
@@ -423,6 +428,11 @@ export default function App() {
                       path !== "audit" ||
                       user.permissions.includes("audit.read"),
                   )
+                  .filter(
+                    ([path]) =>
+                      path !== "plans" ||
+                      user.permissions.includes("settings.write"),
+                  )
                   .map(([path, label, Icon]: any) => (
                     <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
                       <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
@@ -558,6 +568,7 @@ export default function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/live" element={<LiveOperations />} />
                 <Route path="/reports" element={<Reports />} />
+                <Route path="/plans" element={<PlanManagement />} />
                 {[
                   "agents",
                   "customers",

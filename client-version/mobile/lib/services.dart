@@ -357,7 +357,13 @@ class RelayService extends ChangeNotifier {
       await proposalList('field-tasks');
       await proposalList('incentives');
       await proposalList('support-tickets');
-      for (final name in ['agents', 'activations', 'inventory', 'ekyc']) {
+      for (final name in [
+        'agents',
+        'activations',
+        'inventory',
+        'ekyc',
+        'plans',
+      ]) {
         await list(name);
       }
       online = true;

@@ -1,3 +1,14 @@
+## Administrator plan catalog and form alignment — 28 September 2026, build 28
+
+- Added administrator-only Subscriber plans management. Administrators can add and edit plan names, prices, data allowance, speed, roaming, contract, advance payment, VAT and details. Removal archives a plan from new transactions; restoring it makes it selectable again, while historical transaction references remain intact. Plan changes are audited.
+- The field app reads the active catalog from the shared API during sync, and the interactive phone demo reads the same read-only catalog. The phone demo retains its bundled synthetic catalog if the API is unavailable. A migration grants the existing Administrator role the plan-settings permission; other roles do not receive catalog write access.
+- Improved the identity-document type and capture action grouping on narrow web layouts. Aligned agent email/password fields on desktop and stacked them cleanly on mobile. Tourist Prepaid continues to display its one-time AED 199 price without a monthly suffix.
+- Verification: backend suite 48 passed; Ruff passed; migration 008 upgrade/downgrade/re-upgrade passed locally; web production build passed; Flutter analysis clean and 14 tests passed (one skipped); three focused Playwright checks passed for plan create/edit/archive/restore, synced catalog pricing, mobile preview pricing, responsive layout and capture controls. Desktop and phone screenshots are saved in `output/qa` outside Git. APK build 28 targets the hosted client API. Physical-phone installation was not available in this release check.
+- APK SHA-256: `25518b6b0b447e73ab2e8e5ac8bbc977b0e2736d86fb929b4c758bf453d94b09`.
+- Web: https://relay-client.187-127-162-233.sslip.io/plans
+- Interactive phone demo: https://relay-client.187-127-162-233.sslip.io/mobile-demo/
+- Android APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=28
+
 ## Qanawat plans and transaction spacing — 28 September 2026, build 27
 
 - Added the four Qanawat ZIP plans to the active catalog: 5G Unlimited Ultra (AED 350/month), Flexi Postpaid (AED 250/month), Tourist Prepaid (AED 199), and Enterprise M2M (AED 85/month), with the supplied plan descriptions. Updated the API catalog, web transaction screen, Flutter app and phone-sized interactive demo together. Tourist Prepaid is displayed at AED 199 without an unsupported monthly suffix.

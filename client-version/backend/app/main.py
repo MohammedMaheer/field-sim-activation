@@ -975,6 +975,54 @@ class PlanBody(BaseModel):
     vat: float = Field(default=5, ge=0, le=100)
 
 
+@app.get("/api/public/plans")
+def public_plans(db=Depends(get_db)):
+    """Public read-only catalog for the credential-free interactive phone demo."""
+    return [
+        raw(plan)
+        for plan in db.scalars(
+            select(Plan)
+            .where(Plan.active.is_(True))
+            .order_by(Plan.monthly_cost.desc(), Plan.name)
+        )
+    ]
+
+
+@app.get("/api/admin/plans")
+def admin_plans(user=Depends(principal), db=Depends(get_db)):
+    require(db, user, "settings.write")
+    return [
+        raw(plan)
+        for plan in db.scalars(select(Plan).order_by(Plan.active.desc(), Plan.name))
+    ]
+
+
+@app.post("/api/plans", status_code=201)
+def create_plan(body: PlanBody, request: Request, user=Depends(principal), db=Depends(get_db)):
+    require(db, user, "settings.write")
+    name = body.name.strip()
+    if len(name) < 3:
+        raise HTTPException(422, "Plan name must contain at least 3 characters")
+    product = db.scalar(select(Product).order_by(Product.created_at, Product.name))
+    if not product:
+        raise HTTPException(409, "Create a product before adding a plan")
+    duplicate = db.scalar(
+        select(Plan.id).where(
+            Plan.product_id == product.id, Plan.name.ilike(name)
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "A plan with this name already exists")
+    values = body.model_dump()
+    values["name"] = name
+    plan = Plan(product_id=product.id, **values)
+    db.add(plan)
+    db.flush()
+    audit(db, user, "Plan Created", plan.id, new=values, request=request)
+    db.commit()
+    return raw(plan)
+
+
 @app.patch("/api/plans/{plan_id}")
 def edit_plan(
     plan_id: str, body: PlanBody, request: Request, user=Depends(principal), db=Depends(get_db)
@@ -983,11 +1031,27 @@ def edit_plan(
     plan = db.get(Plan, plan_id)
     if not plan:
         raise HTTPException(404, "Plan not found")
-    old = body.model_dump()
-    old = {k: getattr(plan, k) for k in old}
-    for k, v in body.model_dump().items():
+    normalized_name = body.name.strip()
+    if len(normalized_name) < 3:
+        raise HTTPException(422, "Plan name must contain at least 3 characters")
+    duplicate = db.scalar(
+        select(Plan.id).where(
+            Plan.product_id == plan.product_id,
+            Plan.id != plan.id,
+            Plan.name.ilike(normalized_name),
+        )
+    )
+    if duplicate:
+        raise HTTPException(409, "A plan with this name already exists")
+    values = body.model_dump()
+    values["name"] = normalized_name
+    old = {k: getattr(plan, k) for k in values}
+    for k, v in values.items():
         setattr(plan, k, v)
-    audit(db, user, "Plan Changed", plan.id, old=old, new=body.model_dump(), request=request)
+    action = "Plan Removed" if old["active"] and not plan.active else "Plan Changed"
+    if not old["active"] and plan.active:
+        action = "Plan Restored"
+    audit(db, user, action, plan.id, old=old, new=values, request=request)
     db.commit()
     return raw(plan)
 
