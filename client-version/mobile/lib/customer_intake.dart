@@ -4,6 +4,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
 import 'package:dio/dio.dart';
@@ -32,20 +33,30 @@ bool looksLikeDocument(Uint8List bytes) {
 }
 
 class IntakeCamera extends StatefulWidget {
-  final bool selfie;
+  final bool selfie, embedded;
+  final String document;
   final Future<Json?> Function(Uint8List)? onAutoDetect;
-  const IntakeCamera({super.key, this.selfie = false, this.onAutoDetect});
+  final void Function(DocumentScanResult)? onResult;
+  const IntakeCamera({
+    super.key,
+    this.selfie = false,
+    this.embedded = false,
+    this.document = 'Emirates ID',
+    this.onAutoDetect,
+    this.onResult,
+  });
   @override
   State<IntakeCamera> createState() => _IntakeCameraState();
 }
 
 class _IntakeCameraState extends State<IntakeCamera>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   CameraController? controller;
   String? error;
-  bool taking = false;
-  bool checking = false;
+  bool taking = false, checking = false, finished = false;
   Timer? autoScan;
+  bool expanded = false;
+  StateSetter? refreshExpanded;
   late final AnimationController scan = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 2),
@@ -53,12 +64,20 @@ class _IntakeCameraState extends State<IntakeCamera>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     start();
+  }
+
+  void refresh() {
+    if (!mounted) return;
+    setState(() {});
+    refreshExpanded?.call(() {});
   }
 
   Future<void> start() async {
     try {
       final cameras = await availableCameras();
+      if (!mounted || finished) return;
       final camera = cameras.firstWhere(
         (c) =>
             c.lensDirection ==
@@ -74,168 +93,301 @@ class _IntakeCameraState extends State<IntakeCamera>
       );
       controller = next;
       await next.initialize();
-      if (mounted) setState(() {});
+      if (!mounted || controller != next) {
+        await next.dispose();
+        return;
+      }
+      error = null;
+      refresh();
       if (!widget.selfie && widget.onAutoDetect != null) {
+        autoScan?.cancel();
         autoScan = Timer.periodic(
           const Duration(milliseconds: 3200),
           (_) => scanFrame(),
         );
       }
-    } catch (e) {
-      if (mounted) setState(() => error = 'Camera unavailable');
+    } catch (_) {
+      error = 'Allow camera access or upload photo';
+      refresh();
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.paused) {
+      autoScan?.cancel();
+      final active = controller;
+      controller = null;
+      active?.dispose();
+    } else if (state == AppLifecycleState.resumed &&
+        controller == null &&
+        !finished) {
+      start();
+    }
+  }
+
+  void complete(DocumentScanResult result) {
+    if (finished || !mounted) return;
+    finished = true;
+    autoScan?.cancel();
+    collapse();
+    if (widget.onResult != null) {
+      widget.onResult!(result);
+    } else {
+      Navigator.pop(context, result);
     }
   }
 
   Future<void> scanFrame() async {
     final active = controller;
-    if (!mounted || checking || taking || active?.value.isInitialized != true) {
+    if (!mounted ||
+        finished ||
+        checking ||
+        taking ||
+        active?.value.isInitialized != true) {
       return;
     }
-    setState(() => checking = true);
+    checking = true;
+    refresh();
     try {
       final frame = await active!.takePicture();
       final bytes = await frame.readAsBytes();
       final fields = await widget.onAutoDetect?.call(bytes);
-      if (mounted && fields != null) {
-        autoScan?.cancel();
-        Navigator.pop(context, DocumentScanResult(bytes, fields));
-        return;
+      if (mounted && controller == active && fields != null) {
+        complete(DocumentScanResult(bytes, fields));
       }
     } catch (_) {
-      // Motion and unreadable frames are normal while positioning a document.
+      // Continue scanning an unreadable or moving document.
     } finally {
-      if (mounted) setState(() => checking = false);
+      checking = false;
+      refresh();
     }
   }
 
+  Future<void> capture() async {
+    if (taking || checking || controller?.value.isInitialized != true) return;
+    taking = true;
+    refresh();
+    try {
+      final image = await controller!.takePicture();
+      complete(DocumentScanResult(await image.readAsBytes()));
+    } catch (_) {
+      error = 'Could not capture photo';
+    } finally {
+      taking = false;
+      refresh();
+    }
+  }
+
+  Future<void> expand() async {
+    if (expanded) return;
+    setState(() => expanded = true);
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (routeContext) => StatefulBuilder(
+          builder: (_, update) {
+            refreshExpanded = update;
+            return Scaffold(
+              appBar: AppBar(
+                leading: BackButton(onPressed: () => Navigator.of(routeContext).pop()),
+                title: Text(widget.document),
+              ),
+              body: Column(
+                children: [
+                  Expanded(child: surface(full: true)),
+                  Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: captureButton(),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    refreshExpanded = null;
+    if (mounted) setState(() => expanded = false);
+  }
+
+  void collapse() {
+    if (expanded && mounted) {
+      refreshExpanded = null;
+      Navigator.of(context).pop();
+      expanded = false;
+    }
+  }
+
+  Widget captureButton() => FilledButton.icon(
+    onPressed: taking || checking || controller?.value.isInitialized != true
+        ? null
+        : capture,
+    icon: const Icon(Icons.camera_alt),
+    label: const Text('Capture photo'),
+  );
+  Widget livePreview() {
+    final size = controller!.value.previewSize!;
+    final portrait =
+        !kIsWeb && MediaQuery.orientationOf(context) == Orientation.portrait;
+    return ClipRect(
+      child: FittedBox(
+        fit: BoxFit.cover,
+        child: SizedBox(
+          width: portrait ? size.height : size.width,
+          height: portrait ? size.width : size.height,
+          child: CameraPreview(controller!),
+        ),
+      ),
+    );
+  }
+
+  Widget surface({bool full = false}) => ClipRRect(
+    borderRadius: BorderRadius.circular(full ? 0 : 20),
+    child: ColoredBox(
+      color: const Color(0xff11233a),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (controller?.value.isInitialized == true && (full || !expanded))
+            livePreview()
+          else if (error == null)
+            const Center(
+              child: CircularProgressIndicator(color: Color(0xff56efd2)),
+            ),
+          if (error != null)
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.white),
+                ),
+              ),
+            ),
+          IgnorePointer(
+            child: Center(
+              child: AspectRatio(
+                aspectRatio: widget.document == 'Passport' ? 1.4 : 1.58,
+                child: Container(
+                  margin: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: const Color(0xff63f3d6),
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: AnimatedBuilder(
+                    animation: scan,
+                    builder: (_, child) => Align(
+                      alignment: Alignment(
+                        0,
+                        MediaQuery.disableAnimationsOf(context)
+                            ? 0
+                            : scan.value * 1.7 - .85,
+                      ),
+                      child: Container(
+                        height: 2,
+                        decoration: const BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [
+                              Color(0x002df3d2),
+                              Color(0xffbdfff0),
+                              Color(0xff2df3d2),
+                              Color(0x002df3d2),
+                            ],
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Color(0xff3cf6d7),
+                              blurRadius: 14,
+                              spreadRadius: 2,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            right: 12,
+            bottom: 12,
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xe6142538),
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: Text(
+                  checking
+                      ? 'Reading document…'
+                      : 'Position ${widget.document.toLowerCase()}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (widget.embedded && !full)
+            Positioned.fill(
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: expand,
+                  child: const Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Icon(Icons.fullscreen, color: Colors.white),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     autoScan?.cancel();
+    refreshExpanded = null;
     scan.dispose();
     controller?.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: Text(widget.selfie ? 'Selfie' : 'Scan document')),
-    body: Column(
-      children: [
-        Expanded(
-          child: error != null
-              ? Center(child: Text(error!))
-              : controller?.value.isInitialized != true
-              ? const Center(child: CircularProgressIndicator())
-              : Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    CameraPreview(controller!),
-                    Center(
-                      child: AspectRatio(
-                        aspectRatio: 1.58,
-                        child: Container(
-                          margin: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            border: Border.all(
-                              color: Colors.tealAccent,
-                              width: 3,
-                            ),
-                            borderRadius: BorderRadius.circular(18),
-                          ),
-                          child: AnimatedBuilder(
-                            animation: scan,
-                            builder: (_, child) => Align(
-                              alignment: Alignment(
-                                0,
-                                MediaQuery.disableAnimationsOf(context)
-                                    ? 0
-                                    : scan.value * 2 - 1,
-                              ),
-                              child: Container(
-                                height: 4,
-                                decoration: const BoxDecoration(
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      Color(0x002df3d2),
-                                      Color(0xffbdfff0),
-                                      Color(0xff2df3d2),
-                                      Color(0x002df3d2),
-                                    ],
-                                  ),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: Color(0xff3cf6d7),
-                                      blurRadius: 18,
-                                      spreadRadius: 3,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (!widget.selfie)
-                      Positioned(
-                        left: 24,
-                        right: 24,
-                        bottom: 20,
-                        child: Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 9,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xe6142538),
-                              borderRadius: BorderRadius.circular(30),
-                            ),
-                            child: Text(
-                              checking
-                                  ? 'Reading document…'
-                                  : 'Hold document inside frame',
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(24),
-          child: FilledButton.icon(
-            onPressed:
-                taking || checking || controller?.value.isInitialized != true
-                ? null
-                : () async {
-                    setState(() => taking = true);
-                    try {
-                      final image = await controller!.takePicture();
-                      final bytes = await image.readAsBytes();
-                      if (context.mounted) {
-                        Navigator.pop(context, DocumentScanResult(bytes));
-                      }
-                    } catch (e) {
-                      if (mounted) {
-                        setState(() {
-                          taking = false;
-                          error = 'Could not capture photo';
-                        });
-                      }
-                    }
-                  },
-            icon: const Icon(Icons.camera_alt),
-            label: const Text('Capture'),
+  Widget build(BuildContext context) => widget.embedded
+      ? SizedBox(height: 190, child: surface())
+      : Scaffold(
+          appBar: AppBar(
+            title: Text(widget.selfie ? 'Selfie' : 'Scan document'),
           ),
-        ),
-      ],
-    ),
-  );
+          body: Column(
+            children: [
+              Expanded(child: surface(full: true)),
+              Padding(
+                padding: const EdgeInsets.all(24),
+                child: captureButton(),
+              ),
+            ],
+          ),
+        );
 }
 
 class CustomerIntakeScreen extends ConsumerStatefulWidget {
@@ -253,6 +405,8 @@ class CustomerIntakeScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
+  final scannerKey = GlobalKey<_IntakeCameraState>();
+  bool scannerPaused = false;
   Json data = {};
   List<Json> plans = [];
   int step = 0, version = 0, revision = 0;
@@ -362,12 +516,46 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     }
   }
 
-  Future<void> photo(String key, bool gallery) async {
+  Future<Json?> autoRead(Uint8List frame) async {
+    if (ref.read(serviceProvider).isPreview || !looksLikeDocument(frame)) {
+      return null;
+    }
+    try {
+      final response = await ref
+          .read(serviceProvider)
+          .dio
+          .post(
+            '/kyc-captures/read-document',
+            data: {'image_base64': encodeDocument(frame)},
+            options: Options(receiveTimeout: const Duration(seconds: 7)),
+          );
+      final fields = Map<String, dynamic>.from(response.data);
+      return fields['name'] != null && fields['document_number'] != null
+          ? fields
+          : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> photo(
+    String key,
+    bool gallery, {
+    DocumentScanResult? captured,
+  }) async {
     Uint8List? bytes;
     Json? scannedFields;
     final service = ref.read(serviceProvider);
+    if (captured == null && mounted) {
+      setState(() => scannerPaused = true);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    if (!mounted) return;
     try {
-      if (service.isPreview && gallery) {
+      if (captured != null) {
+        bytes = captured.image;
+        scannedFields = captured.fields;
+      } else if (service.isPreview && gallery) {
         bytes = await service.previewReceipt();
       } else if (gallery) {
         final f = await ImagePicker().pickImage(
@@ -383,28 +571,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           MaterialPageRoute(
             builder: (_) => IntakeCamera(
               selfie: key == 'selfie_image',
-              onAutoDetect: key == 'document_image' && !service.isPreview
-                  ? (frame) async {
-                      try {
-                        if (!looksLikeDocument(frame)) return null;
-                        final image = encodeDocument(frame);
-                        final response = await service.dio.post(
-                          '/kyc-captures/read-document',
-                          data: {'image_base64': image},
-                          options: Options(
-                            receiveTimeout: const Duration(seconds: 7),
-                          ),
-                        );
-                        final fields = Map<String, dynamic>.from(response.data);
-                        return fields['name'] != null &&
-                                fields['document_number'] != null
-                            ? fields
-                            : null;
-                      } catch (_) {
-                        return null;
-                      }
-                    }
-                  : null,
+              onAutoDetect: key == 'document_image' ? autoRead : null,
             ),
           ),
         );
@@ -446,6 +613,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         setState(() {
           busy = false;
           reading = false;
+          scannerPaused = false;
         });
       }
     }
@@ -859,21 +1027,42 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               onSelectionChanged: (v) => set('document_type', v.first),
             ),
             const SizedBox(height: 10),
-            ScanSurface(
-              image: data['document_image'],
-              reading: reading,
-              illustration: ref.read(serviceProvider).isPreview,
-              document: data['document_type'] == 'Passport'
-                  ? 'Passport'
-                  : 'Emirates ID',
-            ),
+            if (data['document_image'] == null && !reading && !scannerPaused)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: IntakeCamera(
+                  key: scannerKey,
+                  embedded: true,
+                  document: data['document_type'] == 'Passport'
+                      ? 'Passport'
+                      : 'Emirates ID',
+                  onAutoDetect: autoRead,
+                  onResult: (result) =>
+                      photo('document_image', false, captured: result),
+                ),
+              )
+            else
+              ScanSurface(
+                image: data['document_image'],
+                reading: reading,
+                illustration: ref.read(serviceProvider).isPreview,
+                document: data['document_type'] == 'Passport'
+                    ? 'Passport'
+                    : 'Emirates ID',
+              ),
             Row(
               children: [
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: busy
                         ? null
-                        : () => photo('document_image', false),
+                        : () {
+                            if (scannerKey.currentState != null) {
+                              scannerKey.currentState!.expand();
+                            } else {
+                              setState(() => data.remove('document_image'));
+                            }
+                          },
                     icon: const Icon(Icons.document_scanner),
                     label: const Text('Scan document', maxLines: 1),
                     style: FilledButton.styleFrom(

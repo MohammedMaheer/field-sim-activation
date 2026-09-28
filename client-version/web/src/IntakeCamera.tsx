@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 export default function IntakeCamera({
   selfie = false,
   barcode = false,
+  embedded = false,
   onPhoto,
   onDetect,
   onCode,
@@ -9,6 +10,7 @@ export default function IntakeCamera({
 }: {
   selfie?: boolean;
   barcode?: boolean;
+  embedded?: boolean;
   onPhoto: (file: File) => void;
   onDetect?: (file: File) => Promise<boolean>;
   onCode: (code: string) => void;
@@ -19,6 +21,7 @@ export default function IntakeCamera({
     [ready, setReady] = useState(false),
     [checking, setChecking] = useState(false);
   const checkingRef = useRef(false);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     let closed = false,
       stream: MediaStream | undefined,
@@ -120,16 +123,17 @@ export default function IntakeCamera({
     }
   }
   return (
-    <section className="intake-camera" aria-label="Camera">
+    <section className={`intake-camera ${embedded ? "camera-embedded" : ""} ${expanded ? "camera-expanded" : ""}`} aria-label="Camera">
       <video ref={video} autoPlay playsInline muted />
       {!selfie && <div className="camera-scan-frame"><div className="camera-scan-line" /></div>}
       {onDetect && !selfie && <span className="camera-scan-status" role="status">{checking ? "Reading document…" : "Hold document inside frame"}</span>}
       {error && <p role="alert">{error}</p>}
+      {embedded && <button className="camera-expand" type="button" aria-label={expanded ? "Minimize scanner" : "Expand scanner"} onClick={() => setExpanded(!expanded)}>{expanded ? "↙" : "⛶"}</button>}
       <div>
-        <button type="button" onClick={onClose}>
+        {!embedded && <button type="button" onClick={onClose}>
           Close camera
-        </button>
-        {!barcode && (
+        </button>}
+        {!barcode && (!embedded || expanded || error) && (
           <button
             type="button"
             className="primary"

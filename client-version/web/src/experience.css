@@ -994,6 +994,15 @@ button.primary:hover:not(:disabled) {
   font-weight: 700;
   white-space: nowrap;
 }
+.camera-embedded { max-width: 580px; padding: 0; border: 2px solid #34bde8; }
+.camera-embedded video { height: 220px; min-height: 220px; border-radius: 14px; }
+.camera-embedded .camera-scan-frame { top: 10%; height: 75%; }
+.camera-embedded .camera-scan-status { bottom: 14px; font-size: 12px; }
+.camera-expand { position: absolute; top: 10px; right: 10px; color: white; background: #122b46bb; border: 0; width: 38px; height: 38px; padding: 0; font-size: 24px; }
+.camera-expanded { position: fixed; inset: 76px 20px 84px; max-width: none; margin: 0; z-index: 120; box-shadow: 0 0 0 100vmax #111b35bb; }
+.camera-expanded video { height: calc(100% - 64px); max-height: none; }
+.camera-expanded .camera-scan-status { bottom: 74px; }
+.camera-expanded > div:last-child { padding: 0 16px 12px; }
 .intake-camera > div:last-child {
   display: flex;
   gap: 12px;

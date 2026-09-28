@@ -259,7 +259,14 @@ export default function CustomerIntake({
               </button>
             </div>
             <div className="intake-choice" role="group" aria-label="Document capture">
-              <button onClick={() => setCamera("document_image")}>
+              <button onClick={() => {
+                if (value.document_image) {
+                  onChange({...value, document_image: undefined});
+                  setScanImage("");
+                } else {
+                  document.querySelector<HTMLButtonElement>(".camera-expand")?.click();
+                }
+              }}>
                 <Camera size={18} />
                 Scan document
               </button>
@@ -268,15 +275,24 @@ export default function CustomerIntake({
               </button>
             </div>
           </div>
-          {camera && camera !== "barcode" && (
+          {camera === "selfie_image" && (
             <IntakeCamera
               selfie={camera === "selfie_image"}
               onPhoto={(f) => photo(f, camera)}
-              onDetect={camera === "document_image" ? detectDocument : undefined}
               onCode={() => {}}
               onClose={() => setCamera("")}
             />
           )}
+          {loaded && !value.document_image && !reading && camera !== "selfie_image" && (
+            <IntakeCamera
+              embedded
+              onPhoto={(file) => photo(file, "document_image")}
+              onDetect={detectDocument}
+              onCode={() => {}}
+              onClose={() => setCamera("")}
+            />
+          )}
+          {(value.document_image || reading) && (
           <div
             data-intake-field="document_image"
             className={`document-scan ${reading ? "reading" : value.document_image ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
@@ -309,6 +325,7 @@ export default function CustomerIntake({
                   : "Position document"}
             </span>
           </div>
+          )}
           <div className="intake-photos">
             {[
               ["document_image", "Identity document"],
