@@ -12,7 +12,7 @@ from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
-from .db import KycCapture, DB, User, get_db, now
+from .db import KycCapture, CaptureDraft, Plan, DB, User, get_db, now
 from .security import principal, permissions, require, assert_agent, visible_agents, cipher
 from .services import audit
 from .capture_ocr import extractor, inspect_image
@@ -89,11 +89,115 @@ def record(db, row, user, action, request=None, data=None):
     )
 
 
+class Intake(BaseModel):
+    document_type: Literal["National ID", "Passport"] = "National ID"
+    name: str = Field(default="", max_length=120)
+    document_number: str = Field(default="", max_length=80)
+    nationality: str = Field(default="", max_length=80)
+    birth_date: str = Field(default="", max_length=10)
+    expiry_date: str = Field(default="", max_length=10)
+    document_image: str = Field(default="", max_length=1_333_336)
+    selfie_image: str = Field(default="", max_length=1_333_336)
+    sim_type: Literal["PHYSICAL", "ESIM"] = "PHYSICAL"
+    sim_identifier: str = Field(default="", max_length=100)
+    plan_id: str = Field(default="", max_length=100)
+    plan_name: str = Field(default="", max_length=160)
+    msisdn: str = Field(default="", max_length=40)
+    signature: list[list[tuple[float, float]]] = Field(default_factory=list, max_length=100)
+    kiosk_reference: str = Field(default="", max_length=120)
+    payment_image: str = Field(default="", max_length=1_333_336)
+    payment_on_receipt: bool = False
+    step: int = Field(default=0, ge=0, le=2)
+
+    @model_validator(mode="after")
+    def safe_data(self):
+        import math
+        if sum(len(stroke) for stroke in self.signature) > 3000 or any(not math.isfinite(n) or n < 0 or n > 1 for stroke in self.signature for point in stroke for n in point):
+            raise ValueError("Invalid signature")
+        for image in [self.document_image, self.selfie_image, self.payment_image]:
+            if image:
+                inspect_image(base64.b64decode(image, validate=True))
+        from datetime import date
+        for value in [self.birth_date, self.expiry_date]:
+            if value:
+                date.fromisoformat(value)
+        return self
+
+    def complete(self):
+        from datetime import date
+        required = [self.name,self.document_number,self.nationality,self.birth_date,self.expiry_date,self.document_image,self.sim_identifier,self.plan_id,self.msisdn]
+        if not all(v.strip() for v in required) or sum(len(s) for s in self.signature) < 8:
+            raise HTTPException(422, "Complete customer details, SIM, plan and signature first")
+        if date.fromisoformat(self.expiry_date) < date.today() or date.fromisoformat(self.birth_date) >= date.today():
+            raise HTTPException(422, "Check the document expiry and date of birth")
+
+
+class IntakeDraftBody(BaseModel):
+    version: int = Field(ge=0)
+    data: Intake
+
+
+@router.get("/draft")
+def read_draft(user=Depends(principal), db=Depends(get_db)):
+    access(db,user,True)
+    row = db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id == user.id))
+    return {"version": row.version, "data": payload(row)} if row else {"version":0,"data":{}}
+
+
+@router.put("/draft")
+def save_draft(body:IntakeDraftBody, user=Depends(principal), db=Depends(get_db)):
+    access(db,user,True)
+    # Serialize first creation as well as updates for the same user.
+    db.scalar(select(User).where(User.id==user.id).with_for_update())
+    row = db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id==user.id).with_for_update())
+    if (row.version if row else 0) != body.version:
+        raise HTTPException(409,"Your draft changed on another device. Reload before continuing.")
+    if row is None:
+        row=CaptureDraft(creator_id=user.id,version=0);db.add(row)
+    row.version += 1
+    store(row,body.data.model_dump(mode="json"));db.commit()
+    return {"version":row.version,"data":payload(row)}
+
+
+class IdentityImage(BaseModel):
+    image_base64:str=Field(max_length=1_333_336)
+
+
+@router.post("/read-document")
+def read_document(body:IdentityImage,user=Depends(principal),db=Depends(get_db)):
+    access(db,user,True)
+    try:
+        result=extractor.extract(base64.b64decode(body.image_base64,validate=True))
+    except Exception:
+        raise HTTPException(422,"Could not read this image. Enter the details or use a clearer photo.")
+    aliases={"full name":"name","full legal name":"name","name":"name","customer name":"name","nationality":"nationality","document number":"document_number","id number":"document_number","identity number":"document_number","id no":"document_number","passport no":"document_number","passport number":"document_number","date of birth":"birth_date","expiry date":"expiry_date","date of expiry":"expiry_date"}
+    fields={}
+    for line in result.get("lines",[]):
+        label,sep,value=line["text"].partition(":")
+        key=aliases.get(label.strip().lower())
+        if sep and key and value.strip():
+            value=value.strip()
+            if key.endswith("date"):
+                parsed=None
+                for fmt in ("%Y-%m-%d","%d/%m/%Y","%d-%m-%Y","%d %b %Y","%d %B %Y"):
+                    try:
+                        parsed=datetime.strptime(value,fmt).date().isoformat()
+                        break
+                    except ValueError:
+                        pass
+                if not parsed:
+                    continue
+                value=parsed
+            fields[key]=value[:80 if key in {"document_number","nationality"} else 120]
+    return fields
+
+
 class CaptureBody(BaseModel):
     agent_id: str
     operation_id: str = Field(min_length=16, max_length=80)
     source_reference: str = Field(default="", max_length=120)
     image_base64: str = Field(max_length=5_333_336)
+    intake: Intake | None = None
 
 
 @router.post("", status_code=201)
@@ -105,6 +209,12 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         image_type = inspect_image(data)
     except (ValueError, TypeError) as exc:
         raise HTTPException(422, str(exc))
+    if body.intake:
+        body.intake.complete()
+        plan=db.get(Plan,body.intake.plan_id)
+        if not plan or not plan.active:
+            raise HTTPException(422,"Select an available plan")
+        body.intake.plan_name=plan.name
     digest = hashlib.sha256(data).hexdigest()
     existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
 
@@ -114,6 +224,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
             or row.image_hash != digest
             or row.agent_id != body.agent_id
             or row.source_reference != body.source_reference.strip()
+            or payload(row).get("intake") != (body.intake.model_dump(mode="json") if body.intake else None)
         ):
             raise HTTPException(409, "This upload identifier was already used for another capture")
         return view(row)
@@ -141,7 +252,17 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     db.add(row)
     try:
         db.flush()
-        record(db, row, user, "KYC Screenshot Captured", request)
+        content={"rows":[],"lines":[],"history":[]}
+        if body.intake:
+            content["intake"]=body.intake.model_dump(mode="json")
+        draft=db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id==user.id).with_for_update())
+        if draft and body.intake:
+            draft_data=payload(draft)
+            keys=["name","document_number","document_image","sim_identifier","plan_id","signature"]
+            if all(draft_data.get(k)==content["intake"].get(k) for k in keys):
+                store(draft,{})
+                draft.version+=1
+        record(db, row, user, "Receipt uploaded", request, content)
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -232,7 +353,7 @@ def save_rows(
     version_check(row, body)
     if row.status not in {"EXTRACTED", "VALIDATED", "REJECTED"}:
         raise HTTPException(409, "Rows cannot be edited at this stage")
-    rows = [r.model_dump() for r in body.rows]
+    rows = [r.model_dump(mode="json") for r in body.rows]
     legacy = [r for r in rows if r.get("fields") is None]
     refs = [r["reference"].strip().casefold() for r in legacy]
     if len(set(refs)) != len(refs):
@@ -297,6 +418,8 @@ def review(
     if row.creator_id == user.id:
         raise HTTPException(403, "Another authorized reviewer must verify this capture")
     data = payload(row)
+    if body.outcome == "VERIFIED" and data.get("intake"):
+        Intake.model_validate(data["intake"]).complete()
     data["review"] = {
         "outcome": body.outcome,
         "reason": body.reason,
@@ -414,7 +537,7 @@ def process_capture():
         except Exception:
             row.status, row.error = (
                 "OCR_FAILED",
-                "VPS extraction could not complete. Retry or contact operations.",
+                "Could not read the receipt. Try again or contact your team.",
             )
         record(db, row, user, "KYC OCR " + row.status, data=data)
         db.commit()

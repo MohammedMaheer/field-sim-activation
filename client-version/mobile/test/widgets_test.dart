@@ -8,7 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/main.dart';
 
 void main() {
-  testWidgets('capture progress follows real status including rejection', (
+  testWidgets('receipt review remains in the third intake stage', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(320, 900);
@@ -16,12 +16,12 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     for (final entry in <String?, int>{
-      null: 0,
-      'QUEUED': 0,
-      'OCR_FAILED': 0,
-      'EXTRACTED': 1,
-      'VALIDATED': 1,
-      'REJECTED': 1,
+      null: 2,
+      'QUEUED': 2,
+      'OCR_FAILED': 2,
+      'EXTRACTED': 2,
+      'VALIDATED': 2,
+      'REJECTED': 2,
       'SUBMITTED': 2,
       'VERIFIED': 2,
     }.entries) {
@@ -42,9 +42,9 @@ void main() {
       expect(
         find.text(
           [
-            'Upload receipt',
-            'Review details',
-            'Submit & track',
+            'Identity',
+            'SIM & plan',
+            'Receipt',
           ][entry.value],
         ),
         findsOneWidget,

@@ -316,6 +316,13 @@ class SupportTicket(Entity):
     response: Mapped[str] = mapped_column(String(1000), default="")
 
 
+class CaptureDraft(Entity):
+    __tablename__ = "capture_drafts"
+    creator_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
+    payload_encrypted: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
 engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///./relay.db"), pool_pre_ping=True)
 if engine.dialect.name == "sqlite":
     from sqlalchemy import event

@@ -1,3 +1,4 @@
+import 'customer_intake.dart';
 import 'kyc_journey.dart';
 import 'dart:async';
 import 'dart:convert';
@@ -25,6 +26,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   String operation = const Uuid().v4();
   List<Json> captures = [], rows = [];
   Json? capture;
+  Json intake = {};
+  bool intakeReady = false;
   String? error;
   bool busy = false, pending = false, dirty = false, loading = true;
   Timer? timer;
@@ -56,6 +59,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       final saved = await ref.read(serviceProvider).store.get(key);
       if (saved != null && mounted) {
         source.text = saved['reference'] ?? '';
+        intake = Map<String, dynamic>.from(saved['intake'] ?? {});
+        intakeReady = saved['intakeReady'] == true;
         bytes = saved['image'] == null ? null : base64Decode(saved['image']);
         operation = saved['operation'];
         pending = saved['pending'] == true;
@@ -69,6 +74,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Future<void> saveDraft() async {
     await ref.read(serviceProvider).store.put(key, {
       'reference': source.text,
+      'intake': intake,
+      'intakeReady': intakeReady,
       'image': bytes == null ? null : base64Encode(bytes!),
       'operation': operation,
       'pending': pending,
@@ -136,7 +143,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         if (!mounted) return;
         setState(() {
           bytes = sample;
-          source.text = "DEMO-RECEIPT-NEW";
+          source.text = "RCP-NEW";
           pending = false;
         });
         await saveDraft();
@@ -177,6 +184,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             'source_reference': source.text.trim(),
             'operation_id': operation,
             'image_base64': base64Encode(bytes!),
+            'intake': intake,
           },
         );
         await s.store.remove(key);
@@ -287,10 +295,28 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
 
   List<Widget> receiptFields(Json row, bool editable) {
     final fields = row['fields'] as List;
+    if (!editable) {
+      return fields
+          .map<Widget>(
+            (f) => ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(
+                f['label'],
+                style: const TextStyle(fontSize: 13, color: Color(0xff6c6380)),
+              ),
+              subtitle: Text(
+                f['value'],
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600,
+                  color: Color(0xff302541),
+                ),
+              ),
+            ),
+          )
+          .toList();
+    }
     return [
-      const Text(
-        'Fields from this receipt. Correct or add details before validating.',
-      ),
       gap(),
       ...fields.map(
         (field) => Padding(
@@ -304,7 +330,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 readOnly: !editable,
                 enabled: !busy,
                 maxLength: 120,
-                decoration: const InputDecoration(labelText: 'Field name'),
+                decoration: const InputDecoration(
+                  labelText: 'Field name',
+                  counterText: '',
+                ),
                 onChanged: (v) => setState(() {
                   field['label'] = v;
                   dirty = true;
@@ -317,17 +346,16 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 maxLength: 1000,
                 minLines: 1,
                 maxLines: 4,
-                decoration: const InputDecoration(labelText: 'Value'),
+                decoration: const InputDecoration(
+                  labelText: 'Value',
+                  counterText: '',
+                ),
                 onChanged: (v) => setState(() {
                   field['value'] = v;
                   dirty = true;
                 }),
               ),
-              Text(
-                field['source_line'] == null
-                    ? 'Manual field'
-                    : 'OCR line ${field['source_line'] + 1}${field['confidence'] == null ? '' : ' · ${field['confidence']}% confidence'}',
-              ),
+
               if (editable)
                 TextButton.icon(
                   onPressed: busy
@@ -369,10 +397,60 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     final editable =
         capture != null &&
         ['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(capture!['status']);
+    if (!loading && capture == null && !intakeReady) {
+      return CustomerIntakeScreen(
+        initial: intake,
+        onReady: (value) {
+          setState(() {
+            intake = Map<String, dynamic>.from(value);
+            intakeReady = true;
+          });
+          saveDraft();
+        },
+        onHistory: () async {
+          final selected = await showModalBottomSheet<Json>(
+            context: context,
+            builder: (c) => SafeArea(
+              child: ListView(
+                children: [
+                  const ListTile(title: Text('Transaction history')),
+                  if (captures.isEmpty)
+                    const ListTile(title: Text('No transactions yet')),
+                  for (final item in captures)
+                    ListTile(
+                      title: Text(item['source_reference'] ?? ''),
+                      subtitle: Text(item['status'] ?? ''),
+                      onTap: () => Navigator.pop(c, item),
+                    ),
+                ],
+              ),
+            ),
+          );
+          if (selected != null) {
+            await act(() async {
+              final r = await ref
+                  .read(serviceProvider)
+                  .dio
+                  .get('/kyc-captures/${selected['id']}');
+              if (mounted) {
+                setState(() {
+                  capture = Map<String, dynamic>.from(r.data);
+                  rows = List<Json>.from(
+                    (capture!['rows'] as List).map(
+                      (r) => Map<String, dynamic>.from(r),
+                    ),
+                  );
+                });
+              }
+            });
+          }
+        },
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         leading: const WorkspaceBackButton(),
-        title: const Text('Activation receipt'),
+        title: const Text('Receipt'),
         actions: [
           if (capture != null)
             TextButton(
@@ -402,11 +480,16 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       if (!mounted) return;
                       setState(() {
                         capture = null;
+                        intake = {};
+                        intakeReady = false;
+                        source.clear();
+                        bytes = null;
+                        operation = const Uuid().v4();
                         rows = [];
                         dirty = false;
                       });
                     },
-              child: const Text('New capture'),
+              child: const Text('New'),
             ),
           IconButton(
             onPressed: busy ? null : refresh,
@@ -418,13 +501,6 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           KycJourneyGuide(status: capture?['status']),
-          if (ref.read(serviceProvider).isPreview)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'INTERACTIVE PREVIEW: buttons load a synthetic receipt. OCR, backend approval and synchronization are simulated. No files leave this browser.',
-              ),
-            ),
           gap(),
           if (error != null)
             Card(
@@ -536,7 +612,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         ),
                       ),
                       gap(),
-                      const Text('Screenshot saved encrypted on this device.'),
+                      const Text('Receipt saved.'),
                       gap(),
                     ],
                     FilledButton(
@@ -549,15 +625,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             ? 'Working…'
                             : pending
                             ? 'Retry queued upload'
-                            : 'Upload & run VPS OCR',
+                            : 'Upload receipt',
                       ),
                     ),
                     if (pending)
                       const Padding(
                         padding: EdgeInsets.only(top: 10),
-                        child: Text(
-                          'Upload queued locally. Automatic retry while this screen is open; reopen it after restarting to resume.',
-                        ),
+                        child: Text('Saved offline · upload pending'),
                       ),
                   ],
                 ),
@@ -572,19 +646,17 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
             gap(),
             Text(
-              'Status: ${capture!['status']}',
+              'Status: ${capture!['status'] == 'OCR_FAILED' ? 'Needs another image' : capture!['status']}',
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             gap(),
             if (capture!['status'] == 'QUEUED')
-              const Text(
-                'Image saved. VPS OCR is processing. You can return later.',
-              ),
+              const Text('Preparing receipt…'),
             if (capture!['status'] == 'OCR_FAILED') ...[
               Text(capture!['error']),
               TextButton(
                 onPressed: busy ? null : () => command('retry'),
-                child: const Text('Retry VPS OCR'),
+                child: const Text('Try again'),
               ),
             ],
             OutlinedButton(
@@ -593,15 +665,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
             if ((capture!['lines'] as List? ?? []).isNotEmpty)
               ExpansionTile(
-                title: const Text('Extracted OCR lines'),
+                title: const Text('Receipt text'),
                 initiallyExpanded: rows.isEmpty,
                 children: [
                   ...(capture!['lines'] as List).asMap().entries.map(
                     (entry) => ListTile(
                       title: Text(entry.value['text']),
-                      subtitle: Text(
-                        'Line ${entry.key + 1} · ${entry.value['confidence']}% confidence',
-                      ),
+                      subtitle: Text('Line ${entry.key + 1}'),
                       trailing: editable
                           ? IconButton(
                               icon: const Icon(Icons.add),
@@ -763,7 +833,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                           });
                         }
                       }),
-                child: const Text('Save & validate rows'),
+                child: const Text('Save details'),
               ),
             ],
             if ((capture!['rows'] as List? ?? []).isNotEmpty &&
@@ -771,13 +841,43 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
               gap(),
               OutlinedButton(
                 onPressed: busy || dirty ? null : () => export('excel'),
-                child: const Text('Generate / share Excel'),
+                child: const Text('Share Excel'),
               ),
             ],
             if (capture!['status'] == 'VALIDATED')
               FilledButton(
                 onPressed: busy || dirty ? null : () => command('submit'),
-                child: const Text('Submit to backend team'),
+                child: const Text('Submit for review'),
+              ),
+            if (capture!['status'] == 'VERIFIED' && capture!['intake'] != null)
+              Card(
+                color: const Color(0xffe5f7f1),
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.check_circle,
+                        color: Colors.teal,
+                        size: 42,
+                      ),
+                      const Text(
+                        'Activation confirmed',
+                        style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const Text('Receipt verified'),
+                      const SizedBox(height: 16),
+                      Text('Reference: ${capture!['source_reference']}'),
+                      Text('Customer: ${capture!['intake']['name']}'),
+                      Text('Phone: ${capture!['intake']['msisdn']}'),
+                      Text('Plan: ${capture!['intake']['plan_name']}'),
+                    ],
+                  ),
+                ),
               ),
             if (capture!['review'] != null)
               Padding(
@@ -794,7 +894,12 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ...(capture!['history'] as List? ?? []).map(
               (event) => ListTile(
                 contentPadding: EdgeInsets.zero,
-                title: Text(event['action']),
+                title: Text(
+                  event['action']
+                      .toString()
+                      .replaceAll('KYC', 'Receipt')
+                      .replaceAll('OCR', 'Details'),
+                ),
                 subtitle: Text('${event['actor']} · ${event['at']} UTC'),
               ),
             ),

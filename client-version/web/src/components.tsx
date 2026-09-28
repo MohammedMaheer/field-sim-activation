@@ -52,7 +52,7 @@ export function Badge({ value }: { value: string }) {
   return (
     <span className={"badge " + tone}>
       <i />
-      {value?.replaceAll("_", " ").toLowerCase()}
+      {value === "OCR_FAILED" ? "Needs another image" : value?.replaceAll("_", " ").toLowerCase()}
     </span>
   );
 }

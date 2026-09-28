@@ -71,18 +71,18 @@ class EnterSurface extends StatelessWidget {
 /// Matching web and mobile brand roles; status colours remain semantic.
 abstract final class RelayPalette {
   static const brand = Color(0xFF8B2452);
-  static const plum = Color(0xFF7541B0);
+  static const plum = Color(0xFF7439C7);
   static const teal = Color(0xFF087E6A);
   static const ink = Color(0xFF242B42);
-  static const canvas = Color(0xFFF7F5FA);
+  static const canvas = Color(0xFFF3F1FC);
   static const hero = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF8B2452), Color(0xFF693879)],
+    colors: [Color(0xFFAE316B), Color(0xFF7541C2)],
   );
   static const soft = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFF9E2ED), Color(0xFFEEE6FA), Color(0xFFE2F5EE)],
+    colors: [Color(0xFFFAD7E9), Color(0xFFE7DCFF), Color(0xFFD6F3EC)],
   );
 }

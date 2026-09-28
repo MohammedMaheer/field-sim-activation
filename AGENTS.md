@@ -5,7 +5,8 @@ The maintained product is `client-version/`: FastAPI/PostgreSQL, React/TypeScrip
 - Update web and mobile together for changes to shared workflows and field names.
 - Teams belong to branches. Intersect branch filters with the authenticated user's authorized agents; never broaden access through a UI filter.
 - Location, territory and geofencing are excluded. Do not add location permissions, collection, maps or geofence reports to the client edition.
-- Owner clarification on 27 September supersedes the ZIP activation demo: activation happens externally in Etisalat. The active web/mobile journey is upload or photograph the Etisalat activation receipt, VPS OCR, row review, Excel generation, backend verification and status synchronization. Do not restore simulated identity, SIM allocation or carrier activation as the main journey. Preserve historical records.
+- Owner clarification on 28 September: collect identity details from ID/passport capture, optional selfie, SIM barcode/plan/phone and signature in Relay. Activation stays external in Etisalat. Then upload the activation receipt . Authorized independent staff verify the original, extracted rows before confirmation. Never simulate carrier activation or biometric approval; preserve historical records.
+- Latest owner clarification removes payment verification from all clients. Retain synthetic records but remove demo and technical UI paragraphs.
 - Use synthetic demo data. Keep secrets, device credentials, captured customer images, database snapshots and generated binaries outside Git.
 - Run relevant backend, web and Flutter tests. Visually inspect changed desktop/mobile screens and preserve evidence outside Git.
 - Repository: `https://github.com/MohammedMaheer/field-sim-activation`. The owner requests that completed changes be committed and pushed here. Check for remote changes first, use meaningful commits, and never force-push or overwrite work from another computer.

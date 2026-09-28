@@ -1,11 +1,7 @@
 import 'package:flutter/material.dart';
 import 'experience.dart';
 
-int captureStage(String? status) {
-  if (['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(status)) return 1;
-  if (['SUBMITTED', 'VERIFIED'].contains(status)) return 2;
-  return 0;
-}
+int captureStage(String? status) => 2;
 
 class KycJourneyGuide extends StatelessWidget {
   final String? status;
@@ -13,16 +9,7 @@ class KycJourneyGuide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final step = captureStage(status);
-    const titles = ['Upload receipt', 'Review details', 'Submit & track'];
-    final messages = [
-      'Photograph or upload the Etisalat activation receipt. OCR extracts its details on the VPS.',
-      status == 'REJECTED'
-          ? 'Review the backend feedback, correct the details and validate before resubmitting.'
-          : 'Check the extracted details against the original receipt, make corrections and validate the rows.',
-      status == 'VERIFIED'
-          ? 'Backend verification is complete. The result is synchronized with your transaction history.'
-          : 'The original receipt and validated rows are submitted. Track the backend team’s verification here.',
-    ];
+    const titles = ['Identity', 'SIM & plan', 'Receipt'];
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Container(
@@ -72,18 +59,7 @@ class KycJourneyGuide extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            Text(messages[step], style: const TextStyle(height: 1.5)),
-            if (status == null) ...[
-              const SizedBox(height: 10),
-              const Text(
-                'Activation happens in Etisalat. Relay records the receipt and tracks backend review; it does not activate a SIM.',
-                style: TextStyle(
-                  fontSize: 13,
-                  height: 1.5,
-                  color: Color(0xFF59677C),
-                ),
-              ),
-            ],
+
           ],
         ),
       ),

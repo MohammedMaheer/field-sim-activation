@@ -60,15 +60,21 @@ void main() {
         'operation': 'phone-${DateTime.now().microsecondsSinceEpoch}',
         'pending': false,
       });
+      final draftKey='kyc-draft-${service.user!['id']}';
+      final prepared=await service.store.get(draftKey);
+      final plans=await service.list('plans');
+      prepared!['intakeReady']=true;
+      prepared['intake']={'name':'Alex Sample','document_number':'SAMPLE-PHONE-ID','nationality':'Sample','birth_date':'1990-01-01','expiry_date':'2030-01-01','document_image':prepared['image'],'sim_identifier':'SAMPLE-SIM','plan_id':plans.first['id'],'msisdn':'SAMPLE-PHONE','signature':[List.generate(10,(i)=>[i/10,.5])]};
+      await service.store.put(draftKey,prepared);
       app.router.push('/screenshot-capture');
       await wait(find.byType(KycCaptureScreen));
-      await wait(find.text('Screenshot saved encrypted on this device.'));
+      await wait(find.text('Receipt saved.'));
       await binding.convertFlutterSurfaceToImage();
       await tester.pump();
       await binding.takeScreenshot('capture-local-draft');
       final apiBase = service.dio.options.baseUrl;
       service.dio.options.baseUrl = 'http://127.0.0.1:1/api';
-      await tap('Upload & run VPS OCR');
+      await tap('Upload receipt');
       await wait(find.text('Retry queued upload'));
       final queued = await service.store.get(
         'kyc-draft-${service.user!['id']}',
@@ -88,12 +94,13 @@ void main() {
       await binding.takeScreenshot('capture-dynamic-fields');
       FocusManager.instance.primaryFocus?.unfocus();
       await tester.pump(const Duration(milliseconds: 300));
-      await tap('Save & validate rows');
+      await tap('Save details');
       await tester.pump(const Duration(seconds: 2));
-      await tap('Submit to backend team');
+      await tap('Submit for review');
       await tester.pump(const Duration(seconds: 2));
       final all = (await service.dio.get('/kyc-captures')).data as List;
-      final row = all.firstWhere((r) => r['source_reference'] == reference);
+      final summary = all.firstWhere((r) => r['source_reference'] == reference);
+      final row = (await service.dio.get('/kyc-captures/${summary['id']}')).data;
       expect((row['rows'][0]['fields'] as List).first['value'], '0000123');
       final excel = await service.dio.get<List<int>>(
         '/kyc-captures/${row['id']}/excel',

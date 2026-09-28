@@ -15,12 +15,14 @@ test('isolated Flutter phone preview',async({page})=>{
  await page.getByRole('tab',{name:'Profile',exact:true}).click();
  await expect(page.getByText('My workspace',{exact:true})).toBeVisible();
  await page.getByRole('tab',{name:'Receipts',exact:true}).click();
- await expect(page.getByRole('heading',{name:'Activation receipt'})).toBeVisible();
- const host=await page.locator('#flutter-host').boundingBox();
- await page.mouse.move(host!.x+host!.width/2,host!.y+host!.height/2);
- await page.mouse.wheel(0,420);await page.waitForTimeout(300);
- await page.getByRole('button',{name:'Upload',exact:true}).click();
- await page.getByRole('button',{name:'Upload & run VPS OCR',exact:true}).click();
+ await expect(page.getByRole('heading',{name:'New transaction'})).toBeVisible();
+ await page.getByRole('button',{name:'Scan document',exact:true}).click();await page.waitForTimeout(800);
+ await(await reveal('Continue')).click();await page.getByRole('button',{name:'Scan SIM barcode',exact:true}).click();await page.waitForTimeout(300);const phone=page.getByRole('textbox',{name:'Phone number',exact:true});await phone.click();await page.keyboard.type('SAMPLE-PHONE');await page.getByText(/Connect Plus/).click();await page.waitForTimeout(300);
+ const pad=page.getByText('Customer signature',{exact:true});const bounds=await pad.boundingBox();expect(bounds).toBeTruthy();await page.mouse.move(bounds!.x+20,bounds!.y+40);await page.mouse.down();for(let i=1;i<15;i++)await page.mouse.move(bounds!.x+20+i*8,bounds!.y+40+i%3*10);await page.mouse.up();await(await reveal('Continue')).click();
+
+ const host=await page.locator('#flutter-host').boundingBox();await page.waitForTimeout(300);
+ await(await reveal('Upload')).click();
+ await page.getByRole('button',{name:'Upload receipt',exact:true}).click();
  await expect(page.getByText('Transaction rows',{exact:true})).toBeVisible();
  await expect(page.getByRole('textbox',{name:'Field name'}).first()).toBeAttached();
  await page.waitForTimeout(800);
@@ -36,12 +38,12 @@ test('isolated Flutter phone preview',async({page})=>{
   return button;
  }
  await page.waitForTimeout(800);
- await (await reveal('Save & validate rows')).click();
+ await (await reveal('Save details')).click();
  const download=page.waitForEvent('download');
- await (await reveal('Generate / share Excel')).click();
+ await (await reveal('Share Excel')).click();
  expect((await download).suggestedFilename()).toMatch(/xlsx$/);
- await (await reveal('Submit to backend team')).click();
- await expect(page.getByText(/VERIFIED: Simulated reviewer approval/)).toBeAttached({timeout:20000});
+ await (await reveal('Submit for review')).click();
+ await page.mouse.move(host!.x+host!.width/2,host!.y+host!.height/2);await page.mouse.wheel(0,-5000);await page.waitForTimeout(400);await expect(page.getByText(/Status: SUBMITTED/)).toBeAttached({timeout:10000});
  await page.getByRole('button',{name:'Back',exact:true}).click();
  await page.getByRole('tab',{name:'Home',exact:true}).click();
  for(const [button,heading] of [['Customers','Customer directory'],['Daily report','Daily report'],['Incentives','My incentives'],['Need field support?','Support']] as const){
@@ -51,7 +53,7 @@ test('isolated Flutter phone preview',async({page})=>{
   await page.screenshot({path:`../output/qa/phone-preview-${button.replace(/[^a-z]/gi,'')}.png`,fullPage:true});
   await page.getByRole('button',{name:'Back',exact:true}).click();
  }
- page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'↻ Reset demo',exact:true}).click();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'↻ Start over',exact:true}).click();
  await expect(page.getByText('Your day, at a glance',{exact:true})).toBeVisible({timeout:30000});
  await page.setViewportSize({width:390,height:844});
  await page.locator('.phone').scrollIntoViewIfNeeded();

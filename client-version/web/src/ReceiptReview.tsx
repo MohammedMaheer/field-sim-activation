@@ -232,7 +232,7 @@ export default function ReceiptReview({
               aria-selected={tab === "ocr"}
               onClick={() => setTab("ocr")}
             >
-              Raw OCR ({capture.lines?.length || 0})
+              Receipt text ({capture.lines?.length || 0})
             </button>
           </div>
           <div
@@ -256,12 +256,7 @@ export default function ReceiptReview({
                       ).map((field: Row, n: number) => (
                         <div key={n}>
                           <dt>{field.label}</dt>
-                          <dd dir="auto">
-                            {field.value || "—"}
-                            {field.confidence != null && (
-                              <small>{field.confidence}% OCR confidence</small>
-                            )}
-                          </dd>
+                          <dd dir="auto">{field.value || "—"}</dd>
                         </div>
                       ))}
                     </dl>
@@ -275,7 +270,6 @@ export default function ReceiptReview({
                 {capture.lines?.map((line: Row, i: number) => (
                   <li key={i}>
                     <p dir="auto">{line.text}</p>
-                    <small>{line.confidence}% OCR confidence</small>
                   </li>
                 ))}
               </ol>
@@ -283,15 +277,36 @@ export default function ReceiptReview({
           </div>
         </section>
       </div>
+      {capture.intake && (
+        <section className="panel intake-review">
+          <h3>Customer details</h3>
+          <dl className="intake-grid">
+            {[
+              ["Customer", capture.intake.name],
+              [
+                "Document",
+                capture.intake.document_type +
+                  " · " +
+                  String(capture.intake.document_number || "").slice(-4),
+              ],
+              ["SIM", capture.intake.sim_identifier],
+              ["Plan", capture.intake.plan_name],
+              ["Phone", capture.intake.msisdn],
+            ].map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
       <section className="review-decision" aria-label="Verification decision">
         {eligible ? (
           <>
             <div>
               <h3>Review decision</h3>
-              <p>
-                Confirm the receipt matches the submitted fields. Send
-                corrections back to the agent if needed.
-              </p>
+
               <label className="review-check">
                 <input
                   type="checkbox"
@@ -361,12 +376,16 @@ export default function ReceiptReview({
         )}
       </section>
       <details className="review-history">
-        <summary>Audit history & file integrity</summary>
-        <p className="capture-hash">SHA-256: {capture.image_hash}</p>
+        <summary>Review history</summary>
+
         <ol className="capture-timeline">
           {capture.history?.map((event: Row, i: number) => (
             <li key={i}>
-              <b>{event.action}</b>
+              <b>
+                {event.action
+                  .replace(/KYC/g, "Receipt")
+                  .replace(/OCR/g, "Details")}
+              </b>
               <span>
                 {event.actor} · {new Date(event.at + "Z").toLocaleString()}
               </span>

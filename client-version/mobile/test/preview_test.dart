@@ -48,7 +48,7 @@ void main() {
     await s.dio.post('/kyc-captures/$id/submit');
     expect(capture['status'], 'SUBMITTED');
     await Future<void>.delayed(const Duration(milliseconds: 3200));
-    expect(capture['status'], 'VERIFIED');
+    expect(capture['status'], 'SUBMITTED');
     await s.logout();
     expect(s.user, isNull);
     await s.login('', '');

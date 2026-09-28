@@ -149,6 +149,26 @@ class PreviewService extends RelayService {
       (data[path] as List).insert(0, row);
       return row;
     }
+    if (path == '/kyc-captures/draft') {
+      if (o.method == 'PUT') {
+        data[path] = {'version': body['version'] + 1, 'data': body['data']};
+      }
+      return data[path] ?? {'version': 0, 'data': <String, dynamic>{}};
+    }
+    if (path == '/kyc-captures/read-document') {
+      return {
+        'name': 'Alex Sample',
+        'document_number': 'SAMPLE-ID-1001',
+        'nationality': 'United Arab Emirates',
+        'birth_date': '1990-01-01',
+        'expiry_date': '2030-12-31',
+      };
+    }
+    if (path == '/resources/plans') {
+      return [
+        {'id': 'sample-plan', 'name': 'Connect Plus', 'monthly_cost': 150},
+      ];
+    }
     if (path.startsWith('/kyc-captures')) {
       final captures = data['/kyc-captures'] as List;
       if (path == '/kyc-captures') {
@@ -160,9 +180,10 @@ class PreviewService extends RelayService {
             'status': 'EXTRACTED',
             'version': 1,
             'review': null,
+            'intake': body['intake'],
             'history': [
               {
-                'action': 'Demo extraction completed (simulated)',
+                'action': 'Receipt details prepared',
                 'actor': 'Preview',
                 'at': DateTime.now().toIso8601String(),
               },
@@ -186,18 +207,10 @@ class PreviewService extends RelayService {
         if (action == 'retry') row['status'] = 'EXTRACTED';
         if (action == 'submit') {
           row['status'] = 'SUBMITTED';
-          Future<void>.delayed(const Duration(seconds: 3), () {
-            row['status'] = 'VERIFIED';
-            row['review'] = {
-              'outcome': 'VERIFIED',
-              'reason': 'Simulated reviewer approval in this browser demo.',
-            };
-            row['version']++;
-          });
         }
         row['version']++;
         (row['history'] as List).add({
-          'action': 'Demo $action',
+          'action': 'Receipt $action',
           'actor': 'Zayn Mercer',
           'at': DateTime.now().toIso8601String(),
         });
@@ -271,7 +284,7 @@ Uint8List previewWorkbook(List rows) {
   );
   add(
     'xl/workbook.xml',
-    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Demo receipts" sheetId="1" r:id="rId1"/></sheets></workbook>',
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Receipts" sheetId="1" r:id="rId1"/></sheets></workbook>',
   );
   add(
     'xl/_rels/workbook.xml.rels',

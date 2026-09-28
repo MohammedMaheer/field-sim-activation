@@ -268,7 +268,6 @@ def test_agent_can_report_own_stock_but_not_reassign_or_change_others(client):
         "/api/orders/x/submit",
         "/api/plans/x",
         "/api/roles",
-        "/api/resources/plans",
         "/api/resources/orders",
     ],
 )
@@ -901,3 +900,51 @@ def test_reference_transaction_cannot_skip_identity(client):
         json={"agent_id": me["agent_id"], "operation_id": "test-reference-no-skipping"},
     ).json()
     assert repeated["id"] == tx["id"]
+
+
+def test_intake_draft_and_independent_review_without_payment(client, monkeypatch):
+    from PIL import Image
+    from app import captures
+    from app.db import KycCapture, CaptureDraft
+    from uuid import uuid4
+    login(client, "agent1")
+    agent = client.get("/api/auth/me").json()["agent_id"]
+    image=io.BytesIO()
+    Image.new("RGB",(400,200),"white").save(image,format="PNG")
+    encoded=base64.b64encode(image.getvalue()).decode()
+    intake={"name":"Sample Customer","document_number":"SAMPLE-ONLY","nationality":"Sample","birth_date":"1990-01-01","expiry_date":"2090-12-31","document_image":encoded,"sim_identifier":"SAMPLE-SIM","plan_id":"sample-plan","msisdn":"SAMPLE-PHONE","signature":[[[i/10,0.5] for i in range(8)]]}
+    intake["plan_id"]=client.get("/api/resources/plans").json()[0]["id"]
+    draft=client.get("/api/kyc-captures/draft").json()
+    saved=client.put("/api/kyc-captures/draft",json={"version":draft["version"],"data":intake})
+    assert saved.status_code==200,saved.text
+    assert client.put("/api/kyc-captures/draft",json={"version":draft["version"],"data":intake}).status_code==409
+    with DB() as db:
+        assert all("SAMPLE-ONLY" not in d.payload_encrypted for d in db.scalars(select(CaptureDraft)))
+    body={"agent_id":agent,"operation_id":str(uuid4()),"source_reference":"SAMPLE-PAYMENT","image_base64":encoded,"intake":intake}
+    invalid={**body,"intake":{**intake,"document_number":""}}
+    assert client.post("/api/kyc-captures",json=invalid).status_code==422
+    created=client.post("/api/kyc-captures",json=body)
+    assert created.status_code==201,created.text
+    row=created.json();path="/api/kyc-captures/"+row["id"]
+    assert client.post("/api/kyc-captures",json=body).json()["id"]==row["id"]
+    assert client.get("/api/kyc-captures/draft").json()["data"]=={}
+    assert client.post("/api/kyc-captures",json={**body,"intake":{**intake,"name":"Different customer"}}).status_code==409
+    with DB() as db:
+        stored=db.get(KycCapture,row["id"]);stored.status="SUBMITTED";db.commit()
+    login(client,"agent2")
+    assert client.get("/api/kyc-captures/draft").json()["data"]=={}
+    assert client.get(path).status_code==404
+    login(client,"compliance")
+    review={"version":row["version"],"outcome":"VERIFIED","reason":"Checked kiosk reference and receipt"}
+    verified=client.post(path+"/review",json=review)
+    assert verified.status_code==200,verified.text
+    assert "payment_confirmed" not in verified.json()["review"]
+
+
+def test_identity_extraction_maps_printed_dates_without_verification_claim(client,monkeypatch):
+    from app import captures
+    login(client,"agent1")
+    monkeypatch.setattr(captures.extractor,"extract",lambda _: {"lines":[{"text":"Full legal name: Alex Sample"},{"text":"ID No: SAMPLE-001"},{"text":"Date of Birth: 14 NOV 1991"},{"text":"Date of expiry: 14/11/2030"}]})
+    response=client.post("/api/kyc-captures/read-document",json={"image_base64":"eA=="})
+    assert response.status_code==200
+    assert response.json()=={"name":"Alex Sample","document_number":"SAMPLE-001","birth_date":"1991-11-14","expiry_date":"2030-11-14"}

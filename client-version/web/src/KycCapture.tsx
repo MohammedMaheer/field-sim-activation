@@ -1,3 +1,4 @@
+import CustomerIntake from "./CustomerIntake";
 import ReceiptReview from "./ReceiptReview";
 import KycJourney from "./KycJourney";
 import { useContext, useEffect, useState } from "react";
@@ -23,6 +24,8 @@ export default function KycCapture() {
     ["activation.write", "ekyc.write"].includes(p),
   );
   const canReview = user.permissions.includes("compliance.write");
+  const [intake, setIntake] = useState<Row>({});
+  const [intakeReady, setIntakeReady] = useState(false);
   const [selected, setSelected] = useState(""),
     [agent, setAgent] = useState(""),
     [source, setSource] = useState(""),
@@ -108,6 +111,7 @@ export default function KycCapture() {
         operation_id: operation,
         source_reference: source,
         image_base64: base64,
+        intake,
       });
       setDirty(false);
       setSelected(result.id);
@@ -137,14 +141,10 @@ export default function KycCapture() {
     <>
       <div className={`page-header ${reviewMode ? "review-page-header" : ""}`}>
         <div>
-          <div className="eyebrow">CAPTURE · EXTRACT · VERIFY</div>
+          <div className="eyebrow">TRANSACTIONS</div>
           <h1>
             {canReview ? "Receipt verification" : "Activation receipt capture"}
           </h1>
-          <p>
-            Turn Etisalat activation receipts into reviewed records and an
-            auditable Excel file.
-          </p>
         </div>
         <button
           onClick={() =>
@@ -160,20 +160,30 @@ export default function KycCapture() {
         </button>
       </div>
       <div className="capture-workspace-nav">
-        <span>{canReview ? "Compare the original, check the fields, record your decision." : "One transaction. Three clear steps."}</span>
+        <span />
         <div>
           <button onClick={() => setHistoryOpen(true)}>Capture history</button>
           {canWrite && (
             <button
               className="primary"
-              onClick={() => {
-                if (dirty && !window.confirm("Discard unsaved row changes?"))
-                  return;
-                setSelected("");
-                setDirty(false);
-                setShowUpload(true);
-                setError("");
-              }}
+              disabled={busy}
+              onClick={() =>
+                run(async () => {
+                  if (dirty && !window.confirm("Discard unsaved row changes?"))
+                    return;
+                  const draft = await api("/kyc-captures/draft");
+                  await api("/kyc-captures/draft", {
+                    method: "PUT",
+                    body: JSON.stringify({ version: draft.version, data: {} }),
+                  });
+                  setIntake({});
+                  setIntakeReady(false);
+                  setSelected("");
+                  setDirty(false);
+                  setShowUpload(true);
+                  setError("");
+                })
+              }
             >
               New transaction capture
             </button>
@@ -185,7 +195,6 @@ export default function KycCapture() {
           <div className="review-inbox-header">
             <div>
               <h2>Review inbox</h2>
-              <p>Receipts submitted by agents in your authorized scope.</p>
             </div>
             <label>
               Status
@@ -268,7 +277,7 @@ export default function KycCapture() {
       <div
         className={`capture-workspace ${reviewMode ? "backend-review" : ""}`}
       >
-        {(selected || showUpload) && !reviewMode && (
+        {(selected || (showUpload && intakeReady)) && !reviewMode && (
           <KycJourney status={capture?.status} />
         )}
         {error && (
@@ -280,7 +289,14 @@ export default function KycCapture() {
           className={`capture-layout capture-focused ${selected ? "has-selection" : "capture-start"} ${!canWrite ? "capture-readonly" : ""}`}
         >
           <div>
-            {canWrite && (
+            {canWrite && showUpload && !intakeReady && (
+              <CustomerIntake
+                value={intake}
+                onChange={setIntake}
+                onReady={() => setIntakeReady(true)}
+              />
+            )}
+            {canWrite && intakeReady && (
               <div hidden={!showUpload}>
                 <Panel
                   title="Capture a transaction"
@@ -326,9 +342,7 @@ export default function KycCapture() {
                       <b>
                         {file?.name || "Choose an activation receipt image"}
                       </b>
-                      <span>
-                        Original image is encrypted and retained for review.
-                      </span>
+                      <span>Your receipt will be available for review.</span>
                       <div>
                         <label className="capture-file">
                           <Upload size={16} />
@@ -370,7 +384,7 @@ export default function KycCapture() {
                       className="primary"
                       disabled={busy || !file || !agents.data?.length}
                     >
-                      {busy ? "Uploading…" : "Upload & run VPS OCR"}
+                      {busy ? "Uploading…" : "Upload receipt"}
                     </button>
                   </form>
                 </Panel>
@@ -436,19 +450,11 @@ export default function KycCapture() {
                             Download original
                           </button>
                         </div>
-                        <details className="capture-evidence">
-                          <summary>File integrity</summary>
-                          <p className="field-help">
-                            Original SHA-256:{" "}
-                            <span className="capture-hash">
-                              {capture.image_hash}
-                            </span>
-                          </p>
-                        </details>
+
                         {capture.status === "QUEUED" && (
                           <p role="status">
-                            Screenshot saved. VPS OCR is processing it; you can
-                            leave this page and return.
+                            Your receipt is being prepared. You can return
+                            later.
                           </p>
                         )}
                         {capture.status === "OCR_FAILED" && (
@@ -468,7 +474,7 @@ export default function KycCapture() {
                                   )
                                 }
                               >
-                                Retry VPS OCR
+                                Try again
                               </button>
                             )}
                           </div>
@@ -476,25 +482,22 @@ export default function KycCapture() {
                         {!!capture.lines?.length && (
                           <details open={rows.length === 0}>
                             <summary>
-                              Extracted text · {capture.lines.length} lines
+                              Receipt text · {capture.lines.length} lines
                             </summary>
                             <p className="field-help">
-                              OCR confidence is not verification. Add relevant
-                              lines to the transaction table and correct any
-                              recognition errors.
+                              Use the receipt text to check or add missing
+                              details.
                             </p>
                             <div className="ocr-lines">
                               {capture.lines.map((line: Row, i: number) => (
                                 <div key={i}>
                                   <span>
-                                    <small>
-                                      Line {i + 1} · {line.confidence}%
-                                    </small>
+                                    <small>Line {i + 1}</small>
                                     <p dir="auto">{line.text}</p>
                                   </span>
                                   {editable && (
                                     <button
-                                      aria-label={"Add OCR line " + (i + 1)}
+                                      aria-label={"Add receipt text " + (i + 1)}
                                       disabled={rows.length >= 100}
                                       onClick={() => {
                                         setRows([
@@ -525,13 +528,11 @@ export default function KycCapture() {
                         {(editable || rows.length > 0) && (
                           <section className="capture-rows">
                             <h2>Transaction rows</h2>
-                            <p>
-                              Fields follow the receipt. Correct labels and
-                              values, or add missing fields before validating.
-                            </p>
+
                             {rows.length === 0 && (
                               <p>
-                                Select an OCR line above or add a row below.
+                                Add details from the receipt or create a new
+                                row.
                               </p>
                             )}
                             {rows.map((r, i) => (
@@ -539,7 +540,7 @@ export default function KycCapture() {
                                 <legend>
                                   Transaction {i + 1}
                                   {r.source_line !== null
-                                    ? " · OCR line " + (r.source_line + 1)
+                                    ? " · Line " + (r.source_line + 1)
                                     : " · Manual entry"}
                                 </legend>
                                 {Array.isArray(r.fields) ? (
@@ -595,14 +596,7 @@ export default function KycCapture() {
                                             }
                                           />
                                         </label>
-                                        <small>
-                                          {field.source_line != null
-                                            ? `OCR line ${field.source_line + 1}`
-                                            : "Manual field"}
-                                          {field.confidence != null
-                                            ? ` · ${field.confidence}% OCR confidence`
-                                            : ""}
-                                        </small>
+
                                         {editable && (
                                           <button
                                             aria-label={`Remove field ${i + 1}.${fi + 1}`}
@@ -775,7 +769,7 @@ export default function KycCapture() {
                                     })
                                   }
                                 >
-                                  Save & validate rows
+                                  Save details
                                 </button>
                                 {dirty && (
                                   <p className="field-help">
@@ -819,7 +813,7 @@ export default function KycCapture() {
                                     )
                                   }
                                 >
-                                  Submit to backend team
+                                  Submit for review
                                 </button>
                               )}
                             </div>
@@ -827,11 +821,7 @@ export default function KycCapture() {
                         {capture.status === "SUBMITTED" && (
                           <section className="capture-review">
                             <h2>Awaiting backend review</h2>
-                            <p>
-                              The backend team compares the original screenshot
-                              and validated rows. The decision will sync here
-                              automatically.
-                            </p>
+
                             {user.permissions.includes("compliance.write") && (
                               <>
                                 <label>
@@ -879,6 +869,35 @@ export default function KycCapture() {
                             )}
                           </section>
                         )}
+                        {capture.status === "VERIFIED" && capture.intake && (
+                          <section className="panel intake-review">
+                            <h2>Activation confirmed</h2>
+                            <strong>Receipt verified</strong>
+                            <dl className="intake-grid">
+                              {[
+                                ["Reference", capture.source_reference],
+                                ["Customer", capture.intake.name],
+                                ["Phone", capture.intake.msisdn],
+                                [
+                                  "SIM type",
+                                  capture.intake.sim_type === "ESIM"
+                                    ? "eSIM"
+                                    : "Physical SIM",
+                                ],
+                                ["Plan", capture.intake.plan_name],
+                                [
+                                  "Verified",
+                                  new Date(capture.review.at).toLocaleString(),
+                                ],
+                              ].map(([label, value]) => (
+                                <div key={label}>
+                                  <dt>{label}</dt>
+                                  <dd>{value}</dd>
+                                </div>
+                              ))}
+                            </dl>
+                          </section>
+                        )}
                         {capture.review && (
                           <div className="compliance-banner">
                             <div>
@@ -895,7 +914,11 @@ export default function KycCapture() {
                           <ol className="capture-timeline">
                             {capture.history?.map((event: Row, i: number) => (
                               <li key={i}>
-                                <b>{event.action}</b>
+                                <b>
+                                  {event.action
+                                    .replace(/KYC/g, "Receipt")
+                                    .replace(/OCR/g, "Details")}
+                                </b>
                                 <span>
                                   {event.actor} ·{" "}
                                   {new Date(event.at + "Z").toLocaleString()}
@@ -953,7 +976,9 @@ export default function KycCapture() {
                     "REJECTED",
                   ].map((s) => (
                     <option key={s} value={s}>
-                      {s.replaceAll("_", " ")}
+                      {s === "OCR_FAILED"
+                        ? "Needs another image"
+                        : s.replaceAll("_", " ")}
                     </option>
                   ))}
                 </select>

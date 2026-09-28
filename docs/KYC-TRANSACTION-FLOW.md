@@ -1,5 +1,14 @@
 # Transaction workflows
 
+## Current owner clarification — 28 September 2026
+
+Three stages: identity capture and extracted details, SIM/plan/phone and signature, then external Etisalat receipt upload and independent staff review. Payment verification has been explicitly removed by the owner. Preserve historical payment evidence but do not require or collect new payment verification. Selfie is optional; carrier activation stays external. No location or geofencing. Keep synthetic records, remove demo/technical paragraphs from customer-facing screens. Apply the same concise, colorful presentation to web, Flutter and the isolated phone preview.
+
+### Verification boundary
+
+Receipt OCR extracts printed text; unknown identity layouts require manual correction. Selfie capture is optional and does not verify liveness. Browser barcode scanning depends on BarcodeDetector support, with manual serial entry available; native Flutter uses the device barcode scanner. Real-world document and kiosk-provider validation require human review; no provider integration is claimed.
+
+
 ## Current receipt workflow — owner clarification, 27 September 2026
 
 Activation, identity verification and SIM/plan processing happen externally in Etisalat. Relay starts after activation: the agent photographs or uploads the Etisalat activation receipt, the VPS performs OCR, the agent checks/corrects the extracted rows, then submits the original and rows for authorized backend review. VERIFIED means receipt review, never carrier activation.

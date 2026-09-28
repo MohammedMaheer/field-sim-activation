@@ -1,5 +1,14 @@
 # Approved client scope
 
+## Current owner clarification — 28 September 2026
+
+Three stages: identity capture and extracted details, SIM/plan/phone and signature, then external Etisalat receipt upload and independent staff review. Payment verification has been explicitly removed by the owner. Preserve historical payment evidence but do not require or collect new payment verification. Selfie is optional; carrier activation stays external. No location or geofencing. Keep synthetic records, remove demo/technical paragraphs from customer-facing screens. Apply the same concise, colorful presentation to web, Flutter and the isolated phone preview.
+
+### Verification boundary
+
+Receipt OCR extracts printed text; unknown identity layouts require manual correction. Selfie capture is optional and does not verify liveness. Browser barcode scanning depends on BarcodeDetector support, with manual serial entry available; native Flutter uses the device barcode scanner. Real-world document and kiosk-provider validation require human review; no provider integration is claimed.
+
+
 The source of scope is the final `Field_Sales_Proposal_KYC_Incentives_150Users_AED6000.pdf`, clarified by the owner on 24 September 2026. This document governs `client-version/`.
 
 ## Included

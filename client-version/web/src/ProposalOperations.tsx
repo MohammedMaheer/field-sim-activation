@@ -429,7 +429,7 @@ export function Incentives({ user, notify }: Props) {
         <div className="proposal-columns">
           <Panel
             title="Manual entry"
-            subtitle="Amounts are recorded in AED; payout happens outside this demo."
+            subtitle="Your team’s recorded incentives in AED."
           >
             <form
               className="proposal-form"

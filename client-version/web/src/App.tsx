@@ -189,7 +189,7 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
       </section>
       <section className="login-form">
         <div className="login-form-inner">
-          <span className="badge neutral">DEMONSTRATION WORKSPACE</span>
+          <span className="badge neutral">FIELD OPERATIONS</span>
           <h2>Welcome to Relay</h2>
           <p className="muted">Sign in to your operations workspace.</p>
           <form
@@ -242,20 +242,7 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
               <ArrowRight size={17} />
             </button>
           </form>
-          <div className="demo-note">
-            <ShieldCheck size={20} />
-            <div>
-              <b>A safe space to explore</b>
-              <p>
-                Synthetic UAE field data. Transaction screenshots are processed
-                securely on the server.
-              </p>
-            </div>
-          </div>
-          <p className="tiny muted">
-            Other roles: ops, leader, compliance, inventory or agent1
-            @relay.demo. Same demo password.
-          </p>
+
         </div>
       </section>
     </main>
@@ -455,7 +442,7 @@ export default function App() {
             </span>
             <div>
               <b>Secure workspace</b>
-              <small>Demo environment · v1.0</small>
+              <small>Field operations</small>
             </div>
           </div>
           <button
@@ -606,7 +593,7 @@ export default function App() {
                 Relay Operations <span>·</span>{" "}
                 {live ? "Live updates connected" : "Reconnecting to updates"}
               </span>
-              <span>Demo providers · Synthetic data</span>
+              <span>Relay · Field operations</span>
             </footer>
           </main>
         </div>
@@ -1053,15 +1040,11 @@ const configs: Record<
   ekyc: {
     title: "Identity verification",
     description:
-      "Make every connection with confidence. Demo verification results.",
+      "Customer verification records.",
     columns: [
       { key: "customer", label: "Customer" },
       { key: "agent", label: "Agent" },
-      {
-        key: "confidence",
-        label: "OCR confidence",
-        render: (r) => r.confidence.toFixed(1) + "%",
-      },
+
       {
         key: "status",
         label: "Verification",
@@ -1249,15 +1232,7 @@ function ResourcePage({ resource }: { resource: string }) {
                 <pre>{JSON.stringify(selected.new_value, null, 2)}</pre>
               </>
             )}
-            {resource === "ekyc" && (
-              <div className="demo-note">
-                <ScanFace size={20} />
-                <span>
-                  Mock verification provider. No biometric verification has been
-                  performed.
-                </span>
-              </div>
-            )}
+
           </Drawer>
         ))}
     </>

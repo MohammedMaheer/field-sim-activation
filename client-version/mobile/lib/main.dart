@@ -271,7 +271,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 12),
                 Text(
                   ref.read(serviceProvider).isPreview
-                      ? 'Demo session ended. Re-enter without credentials.'
+                      ? 'Open your workspace to continue.'
                       : 'Sign in to your field workspace.',
                   style: TextStyle(color: muted),
                 ),
@@ -319,7 +319,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                     busy
                         ? 'Signing in…'
                         : ref.read(serviceProvider).isPreview
-                        ? 'Re-enter demo'
+                        ? 'Open workspace'
                         : 'Sign in to Relay',
                   ),
                 ),
@@ -327,7 +327,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                 const InfoCard(
                   icon: Icons.shield_outlined,
                   text:
-                      'Demo workspace · synthetic data only. Capture completed transactions for backend review.',
+                      'Your field workspace. Capture receipts and follow their progress.',
                 ),
                 const SizedBox(height: 15),
                 const Text(
@@ -574,20 +574,11 @@ class HomeScreen extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      'Capture a completed activation',
+                      'New transaction',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 22,
                         fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 5),
-                    const Text(
-                      'Upload the Etisalat activation receipt, review extracted details and track backend verification.',
-                      style: TextStyle(
-                        color: Color(0xFFF0DDE6),
-                        fontSize: 13,
-                        height: 1.4,
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -602,7 +593,7 @@ class HomeScreen extends ConsumerWidget {
                       ),
                       icon: const Icon(Icons.add_circle_outline),
                       label: const Text(
-                        'Upload activation receipt',
+                        'Start transaction',
                         style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
@@ -696,7 +687,7 @@ class HomeScreen extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: MetricTile(
-                      'KYC captured',
+                      'Receipts captured',
                       '${d['kyc_today']}',
                       Icons.document_scanner_outlined,
                       onTap: () => context.push('/ekyc'),
@@ -832,11 +823,7 @@ class HomeScreen extends ConsumerWidget {
                   .take(3)
                   .map((o) => OrderCard(Map<String, dynamic>.from(o))),
               const SizedBox(height: 18),
-              const Text(
-                'MOCK PROVIDERS · SYNTHETIC DATA',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 9, letterSpacing: 1.2, color: muted),
-              ),
+
             ],
           ),
         );
@@ -981,7 +968,7 @@ class IncentivesScreen extends ConsumerWidget {
               ),
             ),
             const Text(
-              'Recorded incentive entries · demo data',
+              'Your recorded incentives',
               style: TextStyle(color: muted),
             ),
             const SizedBox(height: 20),
@@ -1117,7 +1104,7 @@ class DailyReportScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   children: [
-                    KeyValue('KYC captures', '${d['kyc_today']}'),
+                    KeyValue('Receipts captured', '${d['kyc_today']}'),
                     KeyValue('Awaiting review', '${d['kyc_pending_review']}'),
                     KeyValue('Sales completed', '${d['today']}'),
                     KeyValue('Daily target', '${d['target']}'),
@@ -1758,7 +1745,7 @@ class ProfileScreen extends ConsumerWidget {
                     KeyValue('Outlet', a['outlet'] ?? '—'),
                     KeyValue('Team leader', a['leader'] ?? '—'),
                     const KeyValue('Device', 'Relay Flutter'),
-                    const KeyValue('App version', '1.0.0 · Demo'),
+                    const KeyValue('App version', '1.0.0'),
                   ],
                 ),
               ),
@@ -1805,9 +1792,9 @@ class ProfileScreen extends ConsumerWidget {
               onPressed: () => showDialog(
                 context: context,
                 builder: (c) => AlertDialog(
-                  title: const Text('Device diagnostics'),
+                  title: const Text('Connection status'),
                   content: Text(
-                    'API: ${s.isPreview ? 'Isolated browser simulation' : apiUrl}\nConnectivity: ${s.online ? 'online' : 'offline'}\nQueued: ${s.queued}\nCache: ${s.isPreview ? 'Temporary browser memory' : 'encrypted SQLite on Android'}\nPush: demo adapter\n${s.syncError ?? 'No sync errors'}',
+                    'Connection: ${s.online ? 'Connected' : 'Offline'}\nPending updates: ${s.queued}\n${s.syncError ?? 'Up to date'}',
                   ),
                   actions: [
                     TextButton(
@@ -1818,7 +1805,7 @@ class ProfileScreen extends ConsumerWidget {
                 ),
               ),
               icon: const Icon(Icons.health_and_safety_outlined),
-              label: const Text('Diagnostics'),
+              label: const Text('Connection status'),
               style: OutlinedButton.styleFrom(
                 minimumSize: const Size.fromHeight(48),
               ),
@@ -1839,8 +1826,8 @@ class ProfileScreen extends ConsumerWidget {
             InfoCard(
               icon: Icons.lock_outline,
               text: s.isPreview
-                  ? 'Public preview: fictional data and temporary browser memory. Reload to reset. No live account is connected.'
-                  : 'Your workspace is scoped to your assigned branch and team. Saved captures are encrypted on this device.',
+                  ? 'Your field workspace.'
+                  : 'Your workspace is shared with your assigned branch and team.',
             ),
           ],
         );

@@ -17,7 +17,7 @@ import { Badge, Drawer, ErrorState } from "./components";
 import "./transaction.css";
 import TransactionProgress from "./TransactionProgress";
 type Point = [number, number];
-function Signature({
+export function Signature({
   value,
   onChange,
 }: {
@@ -73,7 +73,7 @@ function Signature({
         onPointerCancel={() => (active.current = false)}
       />
       <div>
-        <span>Draw a synthetic customer signature</span>
+        <span>Customer signature</span>
         <button type="button" onClick={() => onChange([])}>
           Clear signature
         </button>
