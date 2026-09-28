@@ -58,7 +58,7 @@ def reset_samples():
         # preserves previous evidence and audit history independently of the demo.
         for model in (Activation, OrderEvent, KycCapture, CaptureDraft, Order, Ekyc,
                       Document, Customer, Movement, Sim, Shift, Location, Alert,
-                      Notification, Event, FieldTask, Incentive, SupportTicket, Audit, Territory):
+                      Notification, Event, FieldTask, Incentive, SupportTicket, Territory):
             db.execute(delete(model))
         branches, outlets = [], []
         for name, area in [('Marina Branch', 'Dubai Marina'), ('Downtown Branch', 'Downtown Dubai'), ('Yas Branch', 'Abu Dhabi')]:

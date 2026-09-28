@@ -28,6 +28,6 @@ The review workspace compares payment confirmation, identity document and signat
 
 Invoices feed down from the printer over 2.2 seconds, support replay, and honor reduced motion. The app returns to the invoice immediately after storing the payment image; supporting payment rows/history stay collapsed once submitted.
 
-The explicit `RELAY_RESET_OPERATIONAL_SAMPLES=KEEP_ACCOUNTS_AND_PLANS python -m app.sample_reset` maintenance command replaces operational samples only in a transaction. It preserves accounts, passwords, role permissions, sessions and complete plan configuration. Release requires a stopped-writer PostgreSQL backup and verifies preservation fingerprints; rollback restores the original database and client files. Old history is retained in that backup rather than silently rewritten.
+The explicit `RELAY_RESET_OPERATIONAL_SAMPLES=KEEP_ACCOUNTS_AND_PLANS python -m app.sample_reset` maintenance command replaces operational samples only in a transaction. It preserves accounts, passwords, role permissions, sessions and complete plan configuration. Release requires a stopped-writer PostgreSQL backup and verifies preservation fingerprints; rollback restores the original database and client files. Historical captures remain in the backup; append-only audit events remain in the database and a new reset event records this maintenance.
 
 Extraction accepts arbitrary colon/gap-separated labels and multiline values. Original text stays inspectable; missing fields are not fabricated and payment totals are never inferred from subscriber plan price.

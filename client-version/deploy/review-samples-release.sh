@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Owner-authorized sample reset; keep accounts and plans, scoped to client only.
-set -euo pipefail
+set -Eeuo pipefail
 cd /opt/relay-client
 test "$(pwd -P)" = /opt/relay-client
 archive="${1:?Expected release archive}"
@@ -22,12 +22,16 @@ tar -czf "$backup/files.tar.gz" backend/app web/dist downloads/relay-client-scop
 chmod 600 "$backup"/*
 docker image tag relay-client-api:latest "relay-client-api:pre-review-$stamp"
 changed=0
+reset_done=0
 rollback() {
   code=$?
   trap - ERR
+  set +e
   if [ "$changed" = 1 ]; then
     dc stop api || true
-    dc exec -T db pg_restore -U relay -d relay --clean --if-exists < "$backup/database.dump"
+    if [ "$reset_done" = 1 ]; then
+      dc exec -T db pg_restore -U relay -d relay --clean --if-exists < "$backup/database.dump"
+    fi
     tar -xzf "$backup/files.tar.gz" -C /opt/relay-client
     docker image tag "relay-client-api:pre-review-$stamp" relay-client-api:latest
   fi
@@ -46,6 +50,7 @@ dc build api
 fingerprint() { dc run --rm --no-deps -T api python -c 'from app.sample_reset import preservation_fingerprint; print(preservation_fingerprint())' | tail -n 1; }
 before="$(fingerprint)"
 dc run --rm --no-deps -T -e RELAY_RESET_OPERATIONAL_SAMPLES=KEEP_ACCOUNTS_AND_PLANS api python -m app.sample_reset
+reset_done=1
 after="$(fingerprint)"
 test "$before" = "$after"
 printf '%s\n' "$after" > "$backup/preserved-accounts-plans.sha256"
