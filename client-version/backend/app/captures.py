@@ -327,6 +327,10 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
                 [("name", "Customer"), ("msisdn", "Phone number"),
                  ("plan_name", "Plan"), ("sim_type", "SIM type")]
                 if intake.get(key)]
+    if intake.get("document_number"):
+        entries.append(("ID number", "**** " + str(intake["document_number"])[-4:]))
+    if intake.get("sim_identifier"):
+        entries.append(("SIM serial", intake["sim_identifier"]))
     for item in data.get("rows", []):
         fields = item.get("fields") or [{"label": key, "value": item.get(key, "")}
                                          for key in ["reference", "customer", "account", "details"]]
@@ -335,7 +339,7 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
                 continue
             label, value = str(field["label"]), str(field["value"])
             import re
-            if re.search(r"document|passport|identity|\bid\b", label, re.I):
+            if re.search(r"document|passport|identity|customer.*id|subscriber.*id|emirates.*id|national.*id|^id(?:\s|$)", label, re.I):
                 value = "**** " + value[-4:]
             entries.append((label, value))
     out = io.BytesIO()

@@ -105,15 +105,21 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page.keyboard.type("SAMPLE-PHONE");
   await (await reveal("Continue")).click();
 
+  await expect(page.getByText(/^FINAL REVIEW PENDING/)).toHaveCount(0);
   const host = await page.locator("#flutter-host").boundingBox();
   await page.waitForTimeout(300);
   await (await reveal("Upload")).click();
   await page
     .getByRole("button", { name: "Upload receipt", exact: true })
     .click();
-  await expect(
-    page.getByText("Transaction rows", { exact: true }),
-  ).toBeVisible();
+  await expect(await revealText("Transaction rows")).toBeVisible();
+  await page.mouse.move(host!.x + host!.width / 2, host!.y + host!.height / 2);
+  for(let i=0;i<8;i++){
+    if(await page.getByRole("textbox", {name:"Field name",exact:true}).first().count()) break;
+    await page.mouse.wheel(0, 400);
+    await page.waitForTimeout(200);
+  }
+  await page.waitForTimeout(350);
   await expect(
     page.getByRole("textbox", { name: "Field name" }).first(),
   ).toBeAttached();
@@ -159,6 +165,10 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page.mouse.move(host!.x + host!.width / 2, host!.y + host!.height / 2);
   await page.mouse.wheel(0, -5000);
   await page.waitForTimeout(400);
+  for(let i=0;i<12 && !await page.getByText(/Status: SUBMITTED/).count();i++){
+    await page.mouse.wheel(0,250);
+    await page.waitForTimeout(150);
+  }
   await expect(page.getByText(/Status: SUBMITTED/)).toBeAttached({
     timeout: 10000,
   });
@@ -200,6 +210,6 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page.getByRole("button", { name: "↗ Expand app", exact: true }).click();
   await expect(page.locator("body")).toHaveClass("expanded");
   await page.getByRole("button", { name: "Exit expanded view" }).click();
-  expect(apiCalls).toEqual(["http://127.0.0.1:5188/api/public/plans"]);
+  expect(apiCalls).toEqual([new URL("/api/public/plans",process.env.MOBILE_PREVIEW_URL || "http://127.0.0.1:5188/mobile-demo/").href]);
   expect(errors).toEqual([]);
 });

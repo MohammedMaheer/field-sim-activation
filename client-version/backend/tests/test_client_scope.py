@@ -1052,6 +1052,9 @@ def test_intake_draft_and_independent_review_without_payment(client, monkeypatch
     from pypdf import PdfReader
     text = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(receipt.content)).pages)
     assert "FINAL REVIEW PENDING" in text
+    assert "SAMPLE-SIM" in text
+    assert "SAMPLE-ONLY" not in text
+    assert client.get("/api/kyc-captures/missing-upload/receipt").status_code == 404
     assert client.post("/api/kyc-captures", json=body).json()["id"] == row["id"]
     assert client.get("/api/kyc-captures/draft").json()["data"] == {}
     assert (

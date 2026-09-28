@@ -35,12 +35,16 @@ Uint8List previewReceiptPdf(Json row) {
     status,
     'Reference: ${row['source_reference']}',
     'Customer: ${intake['name'] ?? ''}',
+    'Date: ${row['created_at'] ?? DateTime.now().toIso8601String()}',
+    'ID: **** ${intake['document_number'].toString().length > 4 ? intake['document_number'].toString().substring(intake['document_number'].toString().length - 4) : ''}',
     'Phone: ${intake['msisdn'] ?? ''}',
+    'SIM type: ${intake['sim_type'] == 'ESIM' ? 'eSIM' : 'Physical SIM'}',
+    'SIM serial: ${intake['sim_identifier'] ?? ''}',
     'Plan: ${intake['plan_name'] ?? ''}',
     for (final item in row['rows'] as List? ?? [])
       for (final field in item['fields'] as List? ?? [])
         if (!RegExp(
-          r'document|identity|passport|\bid\b',
+          r'document|identity|passport|customer.*id|subscriber.*id|emirates.*id|national.*id|^id(?:\s|$)',
           caseSensitive: false,
         ).hasMatch(field['label'].toString()))
           '${field['label']}: ${field['value']}',

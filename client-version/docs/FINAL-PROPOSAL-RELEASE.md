@@ -1,3 +1,15 @@
+## Upload-gated receipt experience — 28 September 2026, build 32
+
+- Latest owner clarification: the animated printable receipt appears only after an Etisalat receipt image is uploaded and accepted. Identity and SIM allocation alone do not generate a receipt. Final review pending remains until authorized independent staff verify the uploaded original and rows; carrier activation stays external.
+- Receipt presentation now uses a centered paper layout, Relay heading, customer/SIM/plan details, masked identity, readable dates and dynamic uploaded fields. Actual total fields are emphasized; no amounts, payment confirmation, tax identifiers or carrier approval are fabricated. Order references remain readable while identity numbers remain masked.
+- Flutter places the animated receipt first after upload and scrolls to it. PDF sharing and dashboard return remain available. The phone preview follows the same upload-first flow. Admin review now puts decisions directly after original/fields and moves the printable copy into an expandable section, removing duplicated customer details.
+- Verification: 53 backend tests passed and Ruff clean; Flutter analysis clean, 15 tests passed with one existing skip; web, APK and phone preview builds passed. Local complete phone-preview workflow, pending PDF download and dashboard return passed. All four hosted browser scenarios passed: web intake, original-image correction/review and independent verification/print, complete isolated phone-preview journey, and phone pending PDF/dashboard return. Visual receipt screenshots are stored outside Git in client-version/output/qa.
+- Client deployment/database backup: `/opt/relay-client/backups/connected-receipt-before-20260928T133011Z`. Migration remains 008; rollback restores the backed-up client files and previous API image. Other VPS container identities remained unchanged.
+- APK SHA-256: `793b1cf59b63361c2c71c1bb12d8476fae0b4c8e8364b77250e88a2016962b1b`, matching the hosted copy. Android cancelled an installation attempt; physical installation/testing of this final build is not claimed.
+- Web: https://relay-client.187-127-162-233.sslip.io/kyc-capture
+- Phone preview: https://relay-client.187-127-162-233.sslip.io/mobile-demo/?v=32
+- APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=32
+
 ## Administrator workspace and animated receipt — 28 September 2026, build 31
 
 - Added Manage workspace for branches, team leaders, outlets, agent profiles, customers, new SIM stock, tasks and incentives. Existing agent assignment, plan editing, stock movements and receipt review remain connected. Changes are audited. Deletes are permitted for unused master records; records with linked assignments/history are retained. Captures, audit logs, stock movements, tasks and recorded incentives are not silently erased.

@@ -1549,3 +1549,7 @@ button:active:not(:disabled) {
 .receipt-rejected .verified-receipt-heading{background:#fff0f0;color:#a63243}
 .receipt-done{display:flex;justify-content:center;margin:18px 22px;text-decoration:none;border-radius:12px;padding:13px;min-height:44px;box-sizing:border-box;background:linear-gradient(100deg,#07976c,#00b38e);color:white;font-weight:750}
 @media print{.receipt-done{display:none!important}}
+
+.receipt-paper-brand{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:18px 22px 0;padding-bottom:14px;border-bottom:2px dashed #c9d2df;color:#27364b}.receipt-paper-brand strong{font-size:26px;letter-spacing:-1px;color:#8b2256}.receipt-paper-brand span{font-size:11px;font-weight:800;letter-spacing:1px}.verified-receipt-lines .receipt-total{border-top:2px solid #27364b;border-bottom:0;margin-top:10px;padding-top:16px}.receipt-total strong,.receipt-total span{font-size:16px!important;font-weight:800!important;color:#1b293b!important}
+
+.verified-receipt{max-width:740px;margin:18px auto}.verified-receipt-heading{flex-wrap:wrap}.verified-receipt-heading .receipt-print{margin-left:0}.verified-receipt-heading>div{flex:1;min-width:180px}.verified-receipt-grid{grid-template-columns:1fr}.verified-receipt-lines>div{break-inside:avoid}@media print{.verified-receipt{max-width:none;margin:0;animation:none!important;clip-path:none!important}}

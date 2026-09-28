@@ -7,15 +7,34 @@ import 'package:relay_agent/preview_main.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   test('receipt PDF keeps pending and verified outcomes distinct', () {
-    final row = <String, dynamic>{'source_reference': 'RCP-TEST', 'status': 'SUBMITTED',
-      'intake': {'name': 'Alex Sample', 'msisdn': 'SAMPLE-PHONE', 'plan_name': 'Test plan'},
-      'rows': []};
+    final row = <String, dynamic>{
+      'source_reference': 'RCP-TEST',
+      'status': 'SUBMITTED',
+      'intake': {
+        'name': 'Alex Sample',
+        'msisdn': 'SAMPLE-PHONE',
+        'plan_name': 'Test plan',
+      },
+      'rows': [
+        {
+          'fields': [
+            {'label': 'Customer ID', 'value': 'PRIVATE-ID-12345678'},
+            {'label': 'Order ID', 'value': 'ORDER-12345678'},
+          ],
+        },
+      ],
+    };
     final pending = ascii.decode(previewReceiptPdf(row));
     expect(pending, startsWith('%PDF-1.4'));
     expect(pending, contains('FINAL REVIEW PENDING'));
     expect(pending, isNot(contains('SUCCESS')));
+    expect(pending, isNot(contains('PRIVATE-ID-12345678')));
+    expect(pending, contains('ORDER-12345678'));
     row['status'] = 'VERIFIED';
-    expect(ascii.decode(previewReceiptPdf(row)), contains('SUCCESS - RECEIPT VERIFIED'));
+    expect(
+      ascii.decode(previewReceiptPdf(row)),
+      contains('SUCCESS - RECEIPT VERIFIED'),
+    );
   });
   test('preview actions stay isolated and workbook uses edited rows', () async {
     final s = PreviewService(

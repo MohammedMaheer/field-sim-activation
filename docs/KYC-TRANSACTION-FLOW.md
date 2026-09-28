@@ -2,7 +2,7 @@
 
 ## Current owner clarification — 28 September 2026
 
-Three stages: identity capture and extracted details, SIM/plan/phone and signature, then external Etisalat receipt upload and independent staff review. Payment verification has been explicitly removed by the owner. Preserve historical payment evidence but do not require or collect new payment verification. Selfie is optional; carrier activation stays external. No location or geofencing. Keep synthetic records, remove demo/technical paragraphs from customer-facing screens. Apply the same concise, colorful presentation to web, Flutter and the isolated phone preview.
+Three stages: identity capture and extracted details, SIM/plan/phone and signature, then external Etisalat receipt upload and independent staff review. The printable receipt appears only after an Etisalat receipt image has been uploaded and accepted by the backend; it never appears from identity/SIM details alone. It shows Final review pending until an independent backend decision verifies it. Payment verification has been explicitly removed by the owner. Preserve historical payment evidence but do not require or collect new payment verification. Selfie is optional; carrier activation stays external. No location or geofencing. Keep synthetic records, remove demo/technical paragraphs from customer-facing screens. Apply the same concise, colorful presentation to web, Flutter and the isolated phone preview.
 
 ### Verification boundary
 

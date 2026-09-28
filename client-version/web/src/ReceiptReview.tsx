@@ -278,31 +278,6 @@ export default function ReceiptReview({
           </div>
         </section>
       </div>
-      <ActivationReceipt capture={capture} />
-      {capture.intake && (
-        <section className="panel intake-review">
-          <h3>Customer details</h3>
-          <dl className="intake-grid">
-            {[
-              ["Customer", capture.intake.name],
-              [
-                "Document",
-                capture.intake.document_type +
-                  " · " +
-                  String(capture.intake.document_number || "").slice(-4),
-              ],
-              ["SIM", capture.intake.sim_identifier],
-              ["Plan", capture.intake.plan_name],
-              ["Phone", capture.intake.msisdn],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      )}
       <section className="review-decision" aria-label="Verification decision">
         {eligible ? (
           <>
@@ -377,6 +352,10 @@ export default function ReceiptReview({
           </div>
         )}
       </section>
+      <details className="review-history">
+        <summary>Printable receipt</summary>
+        <ActivationReceipt capture={capture} />
+      </details>
       <details className="review-history">
         <summary>Review history</summary>
 
