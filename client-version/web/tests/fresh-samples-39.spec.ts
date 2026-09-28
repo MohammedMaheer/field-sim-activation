@@ -1,0 +1,22 @@
+import {test,expect} from '@playwright/test';
+import {authenticate} from './session';
+test('fresh submissions support side-by-side staff review', async ({page})=>{
+ await authenticate(page);
+ await page.goto('/kyc-capture');
+ await expect(page.getByRole('heading',{name:'Submissions for verification'})).toBeVisible();
+ await page.getByRole('button').filter({hasText:/PAY-\d+-0001/}).first().click();
+ await expect(page.getByRole('img',{name:/Payment confirmation from/})).toBeVisible();
+ await page.getByRole('button',{name:'Identity document',exact:true}).click();
+ await expect(page.getByRole('img',{name:'Identity document',exact:true})).toBeVisible();
+ await expect(page.getByRole('tabpanel')).toContainText('Avery Stone');
+ await page.waitForTimeout(500);
+ await page.screenshot({path:'../output/qa/hosted39-identity-comparison.png'});
+ await page.getByRole('button',{name:'Signature',exact:true}).click();
+ await expect(page.getByRole('img',{name:'Captured customer signature',exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Payment confirmation',exact:true}).click();
+ await expect(page.getByRole('button',{name:'Verify submission',exact:true})).toBeDisabled();
+ await page.getByText('Payment invoice',{exact:true}).click();
+ await page.getByRole('button',{name:'Replay invoice printing',exact:true}).click();
+ await page.waitForTimeout(2400);
+ await page.screenshot({path:'../output/qa/hosted39-payment-invoice.png'});
+});

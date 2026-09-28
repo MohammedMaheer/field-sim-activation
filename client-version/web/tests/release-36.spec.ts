@@ -37,6 +37,7 @@ test('responsive client pages fit the viewport', async ({page}) => {
       await page.goto(route);
       await expect(page.locator('h1').first()).toBeVisible();
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${route} at ${width}px`).toBeTruthy();
+      await page.waitForTimeout(700);
       await page.screenshot({path:`../output/qa/pages39-${route.replace(/\//g,'') || 'overview'}-${width}.png`});
     }
   }
