@@ -957,15 +957,42 @@ button.primary:hover:not(:disabled) {
   background: #182033;
   padding: 16px;
   border-radius: 16px;
-  margin: 16px 0;
+  margin: 16px auto;
+  max-width: 680px;
   color: white;
 }
 .intake-camera video {
   display: block;
   width: 100%;
-  max-height: 380px;
+  min-height: 220px;
+  max-height: 300px;
+  aspect-ratio: 1.58;
   object-fit: cover;
   border-radius: 12px;
+}
+.camera-scan-frame {
+  position: absolute;
+  left: 9%;
+  right: 9%;
+  top: 13%;
+  height: min(58%, 230px);
+  border: 2px solid rgba(92, 255, 222, .72);
+  border-radius: 16px;
+  box-shadow: 0 0 0 100vmax rgba(7, 21, 40, .18), inset 0 0 24px rgba(22, 224, 197, .16);
+  pointer-events: none;
+  overflow: hidden;
+}
+.camera-scan-status {
+  position: absolute;
+  left: 50%;
+  bottom: 78px;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(10, 28, 43, .88);
+  color: #e6fff8;
+  font-weight: 700;
+  white-space: nowrap;
 }
 .intake-camera > div:last-child {
   display: flex;
@@ -974,18 +1001,18 @@ button.primary:hover:not(:disabled) {
 }
 .camera-scan-line {
   position: absolute;
-  left: 10%;
-  right: 10%;
+  left: 3%;
+  right: 3%;
   height: 2px;
   background: #34dec6;
-  top: 20%;
+  top: 10%;
   box-shadow: 0 0 16px #34dec6;
   animation: intake-scan 2s ease-in-out infinite alternate;
   pointer-events: none;
 }
 @keyframes intake-scan {
   to {
-    top: 65%;
+    top: 88%;
   }
 }
 @media (prefers-reduced-motion: reduce) {

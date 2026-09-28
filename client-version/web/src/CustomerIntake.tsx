@@ -76,28 +76,40 @@ export default function CustomerIntake({
         : "",
     );
   };
+  async function preparedImage(file: File) {
+    if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 10000000)
+      throw Error("Choose a PNG or JPEG photo under 10 MB.");
+    const bitmap = await createImageBitmap(file);
+    const canvas = document.createElement("canvas"),
+      scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close();
+    const image = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+    if (image.length > 1333336) throw Error("Choose a smaller photo.");
+    return image;
+  }
+  async function detectDocument(file: File) {
+    try {
+      const image = await preparedImage(file);
+      const details = await post("/kyc-captures/read-document", {image_base64: image});
+      if (!details.name || !details.document_number) return false;
+      setScanImage(image);
+      clearMissing(["document_image", ...Object.keys(details)]);
+      onChange({...value, ...details, document_image: image});
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
     setBusy(true);
     setReading(key === "document_image");
     setError("");
     try {
-      if (
-        !["image/png", "image/jpeg"].includes(file.type) ||
-        file.size > 10000000
-      )
-        throw Error("Choose a PNG or JPEG photo under 10 MB.");
-      const bitmap = await createImageBitmap(file);
-      const canvas = document.createElement("canvas"),
-        scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
-      canvas.width = bitmap.width * scale;
-      canvas.height = bitmap.height * scale;
-      canvas
-        .getContext("2d")!
-        .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-      bitmap.close();
-      const image = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
-      if (image.length > 1333336) throw Error("Choose a smaller photo.");
+      const image = await preparedImage(file);
       if (key === "document_image") setScanImage(image);
       let details = {};
       if (key === "document_image") {
@@ -228,15 +240,6 @@ export default function CustomerIntake({
           {error}
         </p>
       )}
-      {camera && (
-        <IntakeCamera
-          selfie={camera === "selfie_image"}
-          barcode={camera === "barcode"}
-          onPhoto={(f) => photo(f, camera)}
-          onCode={(code) => set("sim_identifier", code)}
-          onClose={() => setCamera("")}
-        />
-      )}
       {step === 0 ? (
         <>
           <h2>Customer identity</h2>
@@ -265,6 +268,15 @@ export default function CustomerIntake({
               </button>
             </div>
           </div>
+          {camera && camera !== "barcode" && (
+            <IntakeCamera
+              selfie={camera === "selfie_image"}
+              onPhoto={(f) => photo(f, camera)}
+              onDetect={camera === "document_image" ? detectDocument : undefined}
+              onCode={() => {}}
+              onClose={() => setCamera("")}
+            />
+          )}
           <div
             data-intake-field="document_image"
             className={`document-scan ${reading ? "reading" : value.document_image ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
@@ -334,6 +346,14 @@ export default function CustomerIntake({
       ) : (
         <>
           <h2>SIM & plan</h2>
+          {camera === "barcode" && (
+            <IntakeCamera
+              barcode
+              onPhoto={() => {}}
+              onCode={(code) => set("sim_identifier", code)}
+              onClose={() => setCamera("")}
+            />
+          )}
           <div className="intake-choice">
             <button
               className={value.sim_type !== "ESIM" ? "primary" : ""}

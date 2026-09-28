@@ -6,14 +6,35 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
+import 'package:dio/dio.dart';
 import 'package:image/image.dart' as imaging;
 import 'package:image_picker/image_picker.dart';
 import 'services.dart';
 import 'transaction_journey.dart' show SignaturePad, SimBarcodeScreen;
 
+class DocumentScanResult {
+  final Uint8List image;
+  final Json? fields;
+  const DocumentScanResult(this.image, [this.fields]);
+}
+
+bool looksLikeDocument(Uint8List bytes) {
+  final decoded = imaging.decodeImage(bytes);
+  if (decoded == null) return false;
+  final sample = imaging.copyResize(decoded, width: 64);
+  var bright = 0;
+  final total = sample.width * sample.height;
+  for (final pixel in sample) {
+    final luminance = pixel.r * .299 + pixel.g * .587 + pixel.b * .114;
+    if (luminance > 155) bright++;
+  }
+  return bright / total > .16;
+}
+
 class IntakeCamera extends StatefulWidget {
   final bool selfie;
-  const IntakeCamera({super.key, this.selfie = false});
+  final Future<Json?> Function(Uint8List)? onAutoDetect;
+  const IntakeCamera({super.key, this.selfie = false, this.onAutoDetect});
   @override
   State<IntakeCamera> createState() => _IntakeCameraState();
 }
@@ -23,6 +44,8 @@ class _IntakeCameraState extends State<IntakeCamera>
   CameraController? controller;
   String? error;
   bool taking = false;
+  bool checking = false;
+  Timer? autoScan;
   late final AnimationController scan = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 2),
@@ -52,13 +75,42 @@ class _IntakeCameraState extends State<IntakeCamera>
       controller = next;
       await next.initialize();
       if (mounted) setState(() {});
+      if (!widget.selfie && widget.onAutoDetect != null) {
+        autoScan = Timer.periodic(
+          const Duration(milliseconds: 3200),
+          (_) => scanFrame(),
+        );
+      }
     } catch (e) {
       if (mounted) setState(() => error = 'Camera unavailable');
     }
   }
 
+  Future<void> scanFrame() async {
+    final active = controller;
+    if (!mounted || checking || taking || active?.value.isInitialized != true) {
+      return;
+    }
+    setState(() => checking = true);
+    try {
+      final frame = await active!.takePicture();
+      final bytes = await frame.readAsBytes();
+      final fields = await widget.onAutoDetect?.call(bytes);
+      if (mounted && fields != null) {
+        autoScan?.cancel();
+        Navigator.pop(context, DocumentScanResult(bytes, fields));
+        return;
+      }
+    } catch (_) {
+      // Motion and unreadable frames are normal while positioning a document.
+    } finally {
+      if (mounted) setState(() => checking = false);
+    }
+  }
+
   @override
   void dispose() {
+    autoScan?.cancel();
     scan.dispose();
     controller?.dispose();
     super.dispose();
@@ -124,20 +176,50 @@ class _IntakeCameraState extends State<IntakeCamera>
                         ),
                       ),
                     ),
+                    if (!widget.selfie)
+                      Positioned(
+                        left: 24,
+                        right: 24,
+                        bottom: 20,
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 9,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xe6142538),
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                            child: Text(
+                              checking
+                                  ? 'Reading document…'
+                                  : 'Hold document inside frame',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                   ],
                 ),
         ),
         Padding(
           padding: const EdgeInsets.all(24),
           child: FilledButton.icon(
-            onPressed: taking || controller?.value.isInitialized != true
+            onPressed:
+                taking || checking || controller?.value.isInitialized != true
                 ? null
                 : () async {
                     setState(() => taking = true);
                     try {
                       final image = await controller!.takePicture();
                       final bytes = await image.readAsBytes();
-                      if (context.mounted) Navigator.pop(context, bytes);
+                      if (context.mounted) {
+                        Navigator.pop(context, DocumentScanResult(bytes));
+                      }
                     } catch (e) {
                       if (mounted) {
                         setState(() {
@@ -282,9 +364,10 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
 
   Future<void> photo(String key, bool gallery) async {
     Uint8List? bytes;
+    Json? scannedFields;
     final service = ref.read(serviceProvider);
     try {
-      if (service.isPreview) {
+      if (service.isPreview && gallery) {
         bytes = await service.previewReceipt();
       } else if (gallery) {
         final f = await ImagePicker().pickImage(
@@ -295,12 +378,38 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         );
         bytes = await f?.readAsBytes();
       } else {
-        bytes = await Navigator.push<Uint8List>(
+        final result = await Navigator.push<DocumentScanResult>(
           context,
           MaterialPageRoute(
-            builder: (_) => IntakeCamera(selfie: key == 'selfie_image'),
+            builder: (_) => IntakeCamera(
+              selfie: key == 'selfie_image',
+              onAutoDetect: key == 'document_image' && !service.isPreview
+                  ? (frame) async {
+                      try {
+                        if (!looksLikeDocument(frame)) return null;
+                        final image = encodeDocument(frame);
+                        final response = await service.dio.post(
+                          '/kyc-captures/read-document',
+                          data: {'image_base64': image},
+                          options: Options(
+                            receiveTimeout: const Duration(seconds: 7),
+                          ),
+                        );
+                        final fields = Map<String, dynamic>.from(response.data);
+                        return fields['name'] != null &&
+                                fields['document_number'] != null
+                            ? fields
+                            : null;
+                      } catch (_) {
+                        return null;
+                      }
+                    }
+                  : null,
+            ),
           ),
         );
+        bytes = result?.image;
+        scannedFields = result?.fields;
       }
       if (bytes == null) return;
       if (!mounted) return;
@@ -311,27 +420,19 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       if (key == 'document_image') {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
-      final decoded = imaging.decodeImage(bytes);
-      if (decoded == null) throw Exception('Choose a valid photo');
-      final resized = imaging.copyResize(
-        decoded,
-        width: decoded.width >= decoded.height ? 1200 : null,
-        height: decoded.height > decoded.width ? 1200 : null,
-      );
-      final encoded = imaging.encodeJpg(resized, quality: 75);
-      if (encoded.length > 1000000) throw Exception('Choose a smaller photo');
-      data[key] = base64Encode(encoded);
+      data[key] = encodeDocument(bytes);
       if (mounted) setState(() {});
       if (key == 'document_image') {
-        await Future<void>.delayed(const Duration(milliseconds: 1400));
-      }
-      if (key == 'document_image') {
         try {
-          final r = await service.dio.post(
-            '/kyc-captures/read-document',
-            data: {'image_base64': data[key]},
-          );
-          data.addAll(Map<String, dynamic>.from(r.data));
+          if (scannedFields != null) {
+            data.addAll(scannedFields);
+          } else {
+            final r = await service.dio.post(
+              '/kyc-captures/read-document',
+              data: {'image_base64': data[key]},
+            );
+            data.addAll(Map<String, dynamic>.from(r.data));
+          }
           revision++;
         } catch (e) {
           error = 'Photo saved. Check the details.';
@@ -348,6 +449,19 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         });
       }
     }
+  }
+
+  String encodeDocument(Uint8List bytes) {
+    final decoded = imaging.decodeImage(bytes);
+    if (decoded == null) throw Exception('Choose a valid photo');
+    final resized = imaging.copyResize(
+      decoded,
+      width: decoded.width >= decoded.height ? 1200 : null,
+      height: decoded.height > decoded.width ? 1200 : null,
+    );
+    final encoded = imaging.encodeJpg(resized, quality: 75);
+    if (encoded.length > 1000000) throw Exception('Choose a smaller photo');
+    return base64Encode(encoded);
   }
 
   Future<void> save(bool next) async {

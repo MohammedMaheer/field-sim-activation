@@ -1202,6 +1202,40 @@ def test_identity_extraction_maps_printed_dates_without_verification_claim(clien
     assert response.json()=={"name":"Alex Sample","document_number":"SAMPLE-001","birth_date":"1991-11-14","expiry_date":"2030-11-14"}
 
 
+def test_identity_extraction_reads_unseparated_document_labels(client, monkeypatch):
+    from app import captures
+    login(client, "agent1")
+    monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines": [
+        {"text": "Full Name ALEX SAMPLE"},
+        {"text": "Identity number 784-1991-1234567-1"},
+        {"text": "Nationality UNITED ARAB EMIRATES"},
+        {"text": "Date of birth 14 NOV 1991"},
+        {"text": "Expiry date 14 NOV 2030"},
+    ]})
+    response = client.post("/api/kyc-captures/read-document", json={"image_base64": "eA=="})
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "ALEX SAMPLE", "document_number": "784-1991-1234567-1",
+        "nationality": "UNITED ARAB EMIRATES", "birth_date": "1991-11-14",
+        "expiry_date": "2030-11-14",
+    }
+
+
+def test_passport_mrz_autofills_readable_identity_without_verification(client, monkeypatch):
+    from app import captures
+    login(client, "agent1")
+    monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines": [
+        {"text": "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<"},
+        {"text": "L898902C36UTO7408122F3004159<<<<<<<<<<<<<<04"},
+    ]})
+    response = client.post("/api/kyc-captures/read-document", json={"image_base64": "eA=="})
+    assert response.status_code == 200
+    assert response.json() == {
+        "name": "ANNA MARIA ERIKSSON", "document_number": "L898902C3",
+        "birth_date": "1974-08-12", "expiry_date": "2030-04-15",
+    }
+
+
 def test_admin_edit_delete_and_history_guards(client):
     login(client)
     made = client.post("/api/organization/branches", json={"name": "Admin control QA"})

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import io
 import json
+import re
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
@@ -235,10 +236,20 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
         "date of expiry": "expiry_date",
     }
     fields = {}
-    for line in result.get("lines", []):
-        label, sep, value = line["text"].partition(":")
-        key = aliases.get(label.strip().lower())
-        if sep and key and value.strip():
+    lines = [str(line.get("text", "")).strip() for line in result.get("lines", [])]
+    labels = sorted(aliases, key=len, reverse=True)
+    for index, text in enumerate(lines):
+        label, sep, value = text.partition(":")
+        key = aliases.get(label.strip().lower()) if sep else None
+        if not key:
+            for candidate in labels:
+                match = re.match(rf"^{re.escape(candidate)}\s*[-–:]?\s+(.+)$", text, re.I)
+                if match:
+                    key, value = aliases[candidate], match.group(1)
+                    break
+        if not key and text.lower() in aliases and index + 1 < len(lines):
+            key, value = aliases[text.lower()], lines[index + 1]
+        if key and value.strip():
             value = value.strip()
             if key.endswith("date"):
                 parsed = None
@@ -252,6 +263,34 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                     continue
                 value = parsed
             fields[key] = value[: 80 if key in {"document_number", "nationality"} else 120]
+        if "document_number" not in fields:
+            emirates_id = re.search(r"\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b", text)
+            if emirates_id:
+                fields["document_number"] = emirates_id.group().replace(" ", "")
+    # Passport machine-readable zones contain the printed name and number.
+    for index, text in enumerate(lines[:-1]):
+        if not re.match(r"^P<[A-Z<]{3,}$", text):
+            continue
+        zone = text.upper()
+        name_part = zone[5:].split("<<")
+        if len(name_part) > 1 and "name" not in fields:
+            fields["name"] = " ".join(
+                part.replace("<", " ").strip() for part in [name_part[1], name_part[0]] if part
+            ).strip()
+        next_line = lines[index + 1].upper()
+        if re.match(r"^[A-Z0-9<]{9}[0-9]", next_line) and "document_number" not in fields:
+            fields["document_number"] = next_line[:9].replace("<", "")
+        if len(next_line) >= 28:
+            for key, part in (("birth_date", next_line[13:19]), ("expiry_date", next_line[21:27])):
+                if key in fields or not re.fullmatch(r"\d{6}", part):
+                    continue
+                year = int(part[:2])
+                year += (1900 if key == "birth_date" and year > datetime.now().year % 100 else 2000)
+                try:
+                    fields[key] = datetime.strptime(f"{year}{part[2:]}", "%Y%m%d").date().isoformat()
+                except ValueError:
+                    pass
+        break
     return fields
 
 
