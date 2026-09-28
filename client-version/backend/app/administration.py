@@ -215,6 +215,17 @@ def remove(kind: Kind, record_id: str, body: Change, request: Request, user=Depe
     row = item(db, kind, record_id)
     if kind in {"inventory", "tasks", "incentives"}:
         raise HTTPException(409, "Use stock movements, task completion or incentive history; these records are retained")
+    if kind == "branches":
+        for outlet in db.scalars(select(Outlet).where(Outlet.branch_id == row.id)).all():
+            for table in Base.metadata.tables.values():
+                for column in table.columns:
+                    if any(fk.target_fullname == "outlets.id" for fk in column.foreign_keys):
+                        if db.scalar(select(table.c.id).where(column == outlet.id).limit(1)):
+                            raise HTTPException(409, "This branch has linked agents or stock and cannot be deleted")
+            audit(db, user, "Branch assignment removed", outlet.id, old=view(outlet, "outlets", db),
+                  reason=body.reason, request=request)
+            db.delete(outlet)
+        db.flush()
     # Inspect every actual foreign-key relationship instead of guessing dependencies.
     target = MODELS[kind].__table__.name + ".id"
     for table in Base.metadata.tables.values():

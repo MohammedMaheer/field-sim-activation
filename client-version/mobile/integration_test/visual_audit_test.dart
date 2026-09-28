@@ -47,7 +47,7 @@ void main() {
       await shot('home');
       await t.drag(find.byType(Scrollable).first, const Offset(0, -650));
       await shot('home-lower');
-      for (final tab in ['Tasks', 'Stock', 'Profile']) {
+      for (final tab in ['Orders', 'Stock', 'Profile']) {
         await t.tap(find.text(tab).last);
         await t.pump(const Duration(seconds: 2));
         await shot(tab.toLowerCase());
@@ -61,7 +61,6 @@ void main() {
         '/customers',
         '/reports',
         '/support',
-        '/tasks',
       ]) {
         app.router.push(path);
         await t.pump(const Duration(seconds: 3));

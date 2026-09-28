@@ -148,27 +148,34 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
   };
 }
 
-class PaymentInvoiceSections extends StatelessWidget {
+class PaymentInvoiceSections extends StatefulWidget {
   const PaymentInvoiceSections({super.key, required this.invoice});
   final Map invoice;
+
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      for (final section in invoice['sections'] as List) ...[
-        const Divider(height: 28),
+  State<PaymentInvoiceSections> createState() => _PaymentInvoiceSectionsState();
+}
+
+class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
+  bool expanded = false;
+
+  Widget section(Map section) => Padding(
+    padding: const EdgeInsets.only(top: 10),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
         Text(
           section['title'],
           style: const TextStyle(
-            fontSize: 15,
+            fontSize: 13,
             fontWeight: FontWeight.w800,
             color: Color(0xff762765),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 3),
         for (final field in section['fields'])
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -177,19 +184,19 @@ class PaymentInvoiceSections extends StatelessWidget {
                   child: Text(
                     field['label'],
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 12,
                       color: Color(0xff596675),
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   flex: 5,
                   child: Text(
                     field['value'],
                     textAlign: TextAlign.right,
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: field['value'] == 'Not recorded'
                           ? const Color(0xff6a7180)
@@ -200,7 +207,55 @@ class PaymentInvoiceSections extends StatelessWidget {
               ],
             ),
           ),
+        const Divider(height: 8),
       ],
-    ],
+    ),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    final sections = (widget.invoice['sections'] as List).cast<Map>();
+    const primary = <String, List<String>>{
+      'Invoice': ['Invoice number', 'Date', 'Review'],
+      'Customer': ['Customer name', 'Document number', 'Phone number'],
+      'SIM & plan': ['SIM type', 'SIM serial', 'Plan', 'Plan price'],
+      'Payment': ['Payment reference', 'Total paid'],
+    };
+    final main = <Map>[];
+    final otherFields = <dynamic>[];
+    final extra = <Map>[];
+    for (final item in sections) {
+      final labels = primary[item['title']];
+      if (labels == null) {
+        extra.add(item);
+      } else {
+        final fields = (item['fields'] as List);
+        main.add({
+          ...item,
+          'fields': fields.where((f) => labels.contains(f['label'])).toList(),
+        });
+        otherFields.addAll(fields.where((f) => !labels.contains(f['label'])));
+      }
+    }
+    if (otherFields.isNotEmpty) {
+      extra.insert(0, {'title': 'More invoice details', 'fields': otherFields});
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final item in main) section(item),
+        if (extra.isNotEmpty) ...[
+          OutlinedButton.icon(
+            onPressed: () => setState(() => expanded = !expanded),
+            icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+            label: Text(
+              expanded ? 'Hide supporting details' : 'Show supporting details',
+            ),
+          ),
+          if (expanded)
+            for (final item in extra) section(item),
+        ],
+      ],
+    );
+  }
 }

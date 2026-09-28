@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Check, CircleDollarSign, Layers3, Plus, RotateCcw, Tag, X } from "lucide-react";
+import { Archive, Check, CircleDollarSign, Layers3, Plus, RotateCcw, Tag, Trash2, X } from "lucide-react";
 import { api, patch, post, Row } from "./api";
 import { Badge, Drawer, ErrorState, Loading } from "./components";
 import { useContext } from "react";
@@ -23,6 +23,7 @@ export default function PlanManagement() {
   const { user, notify } = useContext(Context);
   const cache = useQueryClient();
   const [editing, setEditing] = useState<Row | null>(null);
+  const [deleting, setDeleting] = useState<Row | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const plans = useQuery({
@@ -87,6 +88,24 @@ export default function PlanManagement() {
     }
   }
 
+  async function permanentlyDelete(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!deleting) return;
+    const reason = String(new FormData(event.currentTarget).get("reason") || "").trim();
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/plans/${deleting.id}`, { method: "DELETE", body: JSON.stringify({ reason }) });
+      await refresh();
+      notify("Unused plan permanently deleted.");
+      setDeleting(null);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <div className="page-header plan-page-header">
@@ -127,6 +146,7 @@ export default function PlanManagement() {
                   ) : (
                     <button className="plan-restore" onClick={() => changeAvailability(plan, true)} disabled={busy}><RotateCcw size={15} /> Restore</button>
                   )}
+                  <button aria-label={`Permanently delete ${plan.name}`} onClick={() => { setError(""); setDeleting(plan); }} disabled={busy}><Trash2 size={15} /> Delete</button>
                 </div>
               </article>
             ))}
@@ -151,6 +171,19 @@ export default function PlanManagement() {
             <div className="plan-editor-actions plan-editor-wide">
               <button type="button" onClick={() => setEditing(null)} disabled={busy}><X size={16} /> Cancel</button>
               <button className="primary" disabled={busy}><Check size={16} /> {busy ? "Saving…" : "Save plan"}</button>
+            </div>
+          </form>
+        </Drawer>
+      )}
+      {deleting && (
+        <Drawer title="Delete subscriber plan" onClose={() => !busy && setDeleting(null)}>
+          <form className="plan-editor" onSubmit={permanentlyDelete}>
+            <p className="plan-editor-wide">Delete {deleting.name} permanently? Plans used by existing transactions must be removed from new sales instead.</p>
+            <label className="plan-editor-wide">Reason for deletion<input name="reason" required minLength={5} maxLength={300} /></label>
+            {error && <p role="alert" className="plan-editor-wide">{error}</p>}
+            <div className="plan-editor-actions plan-editor-wide">
+              <button type="button" onClick={() => setDeleting(null)} disabled={busy}>Cancel</button>
+              <button className="plan-remove" disabled={busy}><Trash2 size={16} /> {busy ? "Deleting…" : "Delete plan"}</button>
             </div>
           </form>
         </Drawer>

@@ -21,10 +21,11 @@ from .db import *
 from .security import *
 from .services import *
 from . import providers
-from .captures import router as capture_router, process_capture
+from .captures import router as capture_router, process_capture, payload as capture_payload, SAMPLE_REFERENCE_PREFIXES
 from .proposal import router as proposal_router
 from .organization import router as organization_router
 from .administration import router as administration_router
+from .inventory_bulk import router as inventory_bulk_router
 from .transactions import router as transaction_router
 from .client_scope import configure as configure_client_scope
 
@@ -74,6 +75,7 @@ async def lifespan(app):
 
 app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
 app.include_router(capture_router)
+app.include_router(inventory_bulk_router)
 app.include_router(proposal_router)
 app.include_router(organization_router)
 app.include_router(administration_router)
@@ -253,13 +255,15 @@ def records(resource, db, user, branch_id=""):
         branches = {db.get(Outlet, a.outlet_id).branch_id for a in agents}
         if db.get(Role, user.role_id).name == "Administrator":
             branches = set(db.scalars(select(Branch.id)))
+        visible_orders = db.scalars(select(Order).where(Order.agent_id.in_(ids))).all()
+        today = business_date()
         return [
             {
                 **raw(b),
                 "agents": sum(db.get(Outlet, a.outlet_id).branch_id == b.id for a in agents),
-                "teams": len(
-                    {a.leader_id for a in agents if db.get(Outlet, a.outlet_id).branch_id == b.id}
-                ),
+                "target": sum(a.target for a in agents if db.get(Outlet, a.outlet_id).branch_id == b.id),
+                "today": sum(o.status == "ACTIVATED" and business_date(o.created_at) == today and db.get(Outlet, db.get(Agent, o.agent_id).outlet_id).branch_id == b.id for o in visible_orders),
+                "activations": sum(o.status == "ACTIVATED" and db.get(Outlet, db.get(Agent, o.agent_id).outlet_id).branch_id == b.id for o in visible_orders),
             }
             for b in db.scalars(select(Branch).where(Branch.id.in_(branches)).order_by(Branch.name))
         ]
@@ -331,7 +335,7 @@ def records(resource, db, user, branch_id=""):
             if business_date(o.created_at) == business_date()
         ]
         result = []
-        pairs = {(a.leader_id, db.get(Outlet, a.outlet_id).branch_id) for a in agents}
+        pairs = {(a.leader_id, db.get(Outlet, a.outlet_id).branch_id) for a in agents if a.leader_id}
         if db.get(Role, user.role_id).name == "Administrator":
             pairs.update(
                 (leader.id, leader.branch_id)
@@ -448,7 +452,10 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
     target = sum(a["target"] for a in agents)
     available = [s for s in sims if s["status"] == "AVAILABLE"]
     scope = [a["id"] for a in agents]
-    captures = db.scalars(select(KycCapture).where(KycCapture.agent_id.in_(scope))).all()
+    capture_query = select(KycCapture).where(KycCapture.agent_id.in_(scope))
+    for prefix in SAMPLE_REFERENCE_PREFIXES:
+        capture_query = capture_query.where(~KycCapture.source_reference.like(prefix))
+    captures = db.scalars(capture_query).all()
     tasks = db.scalars(select(FieldTask).where(FieldTask.agent_id.in_(scope))).all()
     incentives = db.scalars(select(Incentive).where(Incentive.agent_id.in_(scope))).all()
     trend = []
@@ -1104,10 +1111,38 @@ def edit_plan(
     return raw(plan)
 
 
+class PlanDelete(BaseModel):
+    reason: str = Field(min_length=5, max_length=300)
+
+
+@app.delete("/api/plans/{plan_id}")
+def delete_plan(
+    plan_id: str, body: PlanDelete, request: Request,
+    user=Depends(principal), db=Depends(get_db),
+):
+    require(db, user, "settings.write")
+    if len(body.reason.strip()) < 5:
+        raise HTTPException(422, "Enter a meaningful deletion reason")
+    plan = db.scalar(select(Plan).where(Plan.id == plan_id).with_for_update())
+    if not plan:
+        raise HTTPException(404, "Plan not found")
+    if db.scalar(select(Order.id).where(Order.plan_id == plan_id).limit(1)) or any(
+        (capture_payload(capture).get("intake") or {}).get("plan_id") == plan_id
+        for capture in db.scalars(select(KycCapture))
+    ):
+        raise HTTPException(409, "This plan is used by a transaction. Remove it from new sales instead.")
+    snapshot = raw(plan)
+    db.delete(plan)
+    audit(db, user, "Plan Permanently Deleted", plan_id, old=snapshot,
+          reason=body.reason.strip(), request=request)
+    db.commit()
+    return {"deleted": True, "id": plan_id}
+
+
 class AgentEdit(BaseModel):
     target: int = Field(ge=1, le=1000)
     outlet_id: str
-    leader_id: str
+    leader_id: str | None = None
 
 
 @app.patch("/api/agents/{agent_id}")
@@ -1117,10 +1152,10 @@ def edit_agent(
     require(db, user, "settings.write")
     assert_agent(db, user, agent_id)
     agent = db.get(Agent, agent_id)
-    leader = db.get(User, body.leader_id)
+    leader = db.get(User, body.leader_id) if body.leader_id else None
     outlet = db.get(Outlet, body.outlet_id)
-    if not outlet or not leader or db.get(Role, leader.role_id).name != "Team Leader":
-        raise HTTPException(422, "Select a valid outlet and team leader")
+    if not outlet or (leader and db.get(Role, leader.role_id).name != "Team Leader"):
+        raise HTTPException(422, "Select a valid branch")
     old = {k: getattr(agent, k) for k in type(body).model_fields}
     for k, v in body.model_dump().items():
         setattr(agent, k, v)
@@ -1141,10 +1176,10 @@ def edit_agent(
 class AgentManagement(BaseModel):
     target: int = Field(ge=1, le=1000)
     outlet_id: str
-    leader_id: str
+    leader_id: str | None = None
     expected_target: int
     expected_outlet_id: str
-    expected_leader_id: str
+    expected_leader_id: str | None = None
     reason: str = Field(min_length=5, max_length=300)
 
 
@@ -1194,11 +1229,12 @@ def save_agent_management(
     old = {k: getattr(agent, k) for k in ("target", "outlet_id", "leader_id")}
     if any(old[k] != getattr(body, "expected_" + k) for k in old):
         raise HTTPException(409, "Assignment changed. Reopen management before saving.")
-    outlet, leader = db.get(Outlet, body.outlet_id), db.get(User, body.leader_id)
-    if not outlet or not leader or db.get(Role, leader.role_id).name != "Team Leader":
-        raise HTTPException(422, "Select a valid outlet and team leader")
-    if leader.branch_id != outlet.branch_id:
-        raise HTTPException(422, "Choose a team leader belonging to the outlet branch")
+    outlet = db.get(Outlet, body.outlet_id)
+    leader = db.get(User, body.leader_id) if body.leader_id else None
+    if not outlet or (leader and db.get(Role, leader.role_id).name != "Team Leader"):
+        raise HTTPException(422, "Select a valid branch")
+    if leader and leader.branch_id != outlet.branch_id:
+        raise HTTPException(422, "Historical team assignment is in another branch")
     if len(body.reason.strip()) < 5:
         raise HTTPException(422, "Enter a meaningful reason")
     # Prevent moving stock silently across outlets; use the audited inventory workflow first.

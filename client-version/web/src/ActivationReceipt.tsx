@@ -6,6 +6,7 @@ import { download, Row } from "./api";
 export default function ActivationReceipt({ capture }: { capture: Row }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const [expanded, setExpanded] = useState(false);
   async function exportPdf() {
     setExporting(true);
     setError("");
@@ -40,7 +41,42 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
         )
         .map(([label, value]) => ({ label, value })),
   );
+  const sections: Row[] = capture.invoice?.sections || [];
+  const primaryLabels: Record<string, string[]> = {
+    Invoice: ["Invoice number", "Date", "Review"],
+    Customer: ["Customer name", "Document number", "Phone number"],
+    "SIM & plan": ["SIM type", "SIM serial", "Plan", "Plan price"],
+    Payment: ["Payment reference", "Total paid"],
+  };
+  const primarySections = sections
+    .filter((section) => primaryLabels[section.title])
+    .map((section) => ({...section, fields: section.fields.filter((field: Row) => primaryLabels[section.title].includes(field.label))}));
+  const otherFields = sections
+    .filter((section) => primaryLabels[section.title])
+    .flatMap((section) => section.fields.filter((field: Row) => !primaryLabels[section.title].includes(field.label)));
+  const supportingSections = [
+    ...(otherFields.length ? [{title: "More invoice details", fields: otherFields}] : []),
+    ...sections.filter((section) => !primaryLabels[section.title]),
+  ];
+  const renderSection = (section: Row) => (
+    <section key={section.title}>
+      <h3>{section.title}</h3>
+      <dl className="verified-receipt-grid">
+        {section.fields.map((field: Row, index: number) => (
+          <div key={index} className={/total paid/i.test(field.label) ? "receipt-total" : ""}>
+            <dt>{field.label}</dt>
+            <dd>{field.value || "Not recorded"}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  );
   return (
+    <div className="receipt-kiosk-assembly">
+      <div className="receipt-kiosk-machine" aria-hidden="true">
+        <div className="receipt-kiosk-screen"><strong>relay.</strong><span>INVOICE READY</span><i /></div>
+        <div className="receipt-kiosk-slot" />
+      </div>
     <section
       className={`verified-receipt receipt-${capture.status.toLowerCase()}`}
       aria-label={payment ? "Payment invoice" : "Activation receipt"}
@@ -71,24 +107,13 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
       </div>
       {payment ? (
         <div className="invoice-sections">
-          {capture.invoice?.sections?.map((section: Row) => (
-            <section key={section.title}>
-              <h3>{section.title}</h3>
-              <dl className="verified-receipt-grid">
-                {section.fields.map((field: Row, index: number) => (
-                  <div
-                    key={index}
-                    className={
-                      /total paid/i.test(field.label) ? "receipt-total" : ""
-                    }
-                  >
-                    <dt>{field.label}</dt>
-                    <dd>{field.value || "Not recorded"}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
+          {primarySections.map(renderSection)}
+          {supportingSections.length > 0 && <div className="invoice-more">
+            <button type="button" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? "Hide supporting details" : "Show supporting details"}</button>
+            <div className={expanded ? "invoice-more-content expanded" : "invoice-more-content"}>
+              {supportingSections.map(renderSection)}
+            </div>
+          </div>}
         </div>
       ) : (
         <>
@@ -143,5 +168,6 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
         Done · Return to dashboard
       </Link>
     </section>
+    </div>
   );
 }

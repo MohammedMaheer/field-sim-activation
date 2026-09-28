@@ -81,7 +81,9 @@ class TicketCreate(BaseModel):
 @router.post("/api/support-tickets", status_code=201)
 def create_ticket(body: TicketCreate, request: Request, user=Depends(principal), db=Depends(get_db)):
     require(db, user, "read")
-    assert_agent(db, user, body.agent_id)
+    own_agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
+    if not own_agent or own_agent.id != body.agent_id:
+        raise HTTPException(403, "Only the assigned field agent can open this support request")
     row = SupportTicket(agent_id=body.agent_id, subject=body.subject.strip(), message=body.message.strip())
     db.add(row)
     db.flush()

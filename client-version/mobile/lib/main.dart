@@ -25,16 +25,6 @@ final router = GoRouter(
       builder: (c, s) => const KycCaptureScreen(),
     ),
     GoRoute(
-      path: '/tasks',
-      builder: (c, s) => Scaffold(
-        appBar: AppBar(
-          leading: const WorkspaceBackButton(),
-          title: const Text('My tasks'),
-        ),
-        body: const TasksScreen(),
-      ),
-    ),
-    GoRoute(
       path: '/records',
       builder: (c, s) => Scaffold(
         appBar: AppBar(
@@ -416,7 +406,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
                         child: [
                           const HomeScreen(),
                           const SizedBox.shrink(),
-                          const TasksScreen(),
+                          const OrdersScreen(),
                           const StockScreen(),
                           const ProfileScreen(),
                         ][i],
@@ -460,7 +450,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF98610F)),
               selectedIcon: Icon(Icons.receipt_long, color: Color(0xFF98610F)),
-              label: 'Tasks',
+              label: 'Orders',
             ),
             NavigationDestination(
               icon: Icon(Icons.sim_card_outlined, color: RelayPalette.teal),
@@ -626,7 +616,7 @@ class HomeScreen extends ConsumerWidget {
                             ),
                           ),
                           Text(
-                            'Team leader · ${a['leader'] ?? 'Assigned team'}',
+                            '${a['stock'] ?? 0} SIMs available',
                             style: const TextStyle(fontSize: 14, color: muted),
                           ),
                         ],
@@ -696,10 +686,10 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: MetricTile(
-                      'Tasks to do',
-                      '${d['tasks_open']}',
-                      Icons.task_alt_outlined,
-                      onTap: () => context.push('/tasks'),
+                      'Awaiting verification',
+                      '${d['kyc_pending_review']}',
+                      Icons.fact_check_outlined,
+                      onTap: () => context.push('/ekyc'),
                       accent: const Color(0xFF35699C),
                     ),
                   ),
@@ -826,116 +816,6 @@ class HomeScreen extends ConsumerWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class TasksScreen extends ConsumerWidget {
-  const TasksScreen({super.key});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final data = ref.watch(taskProvider);
-    return data.when(
-      loading: () => const LoadingCards(),
-      error: (e, st) =>
-          RetryView(error: e, onRetry: () => ref.invalidate(taskProvider)),
-      data: (rows) => RefreshIndicator(
-        onRefresh: () async {
-          ref.invalidate(taskProvider);
-          await ref.read(taskProvider.future);
-        },
-        child: ListView(
-          padding: const EdgeInsets.all(22),
-          children: [
-            const Text(
-              'My field tasks',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              '${rows.where((t) => t['status'] != 'DONE').length} still to complete',
-              style: const TextStyle(color: muted),
-            ),
-            const SizedBox(height: 20),
-            if (rows.isEmpty) const EmptyView('No tasks assigned yet'),
-            ...rows.map(
-              (task) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(17),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                task['title'],
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            StatusPill(task['status']),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Due ${task['due_date']} · ${task['employee_id']}',
-                          style: const TextStyle(color: muted, fontSize: 13),
-                        ),
-                        if ((task['note'] ?? '').toString().isNotEmpty)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              task['note'],
-                              style: const TextStyle(fontSize: 14),
-                            ),
-                          ),
-                        if (task['status'] != 'DONE' &&
-                            task['status'] != 'DONE_PENDING_SYNC') ...[
-                          const SizedBox(height: 13),
-                          FilledButton(
-                            onPressed: () async {
-                              try {
-                                await ref
-                                    .read(serviceProvider)
-                                    .completeTask(task['id']);
-                                ref.invalidate(taskProvider);
-                                if (context.mounted) {
-                                  message(
-                                    context,
-                                    'Task completed or queued securely for synchronization',
-                                  );
-                                }
-                              } catch (e) {
-                                if (context.mounted) {
-                                  message(context, friendlyError(e));
-                                }
-                              }
-                            },
-                            child: const Text('Mark complete'),
-                          ),
-                        ],
-                        if (task['status'] == 'DONE_PENDING_SYNC')
-                          const Padding(
-                            padding: EdgeInsets.only(top: 10),
-                            child: Text(
-                              'Completion queued. Syncs when online.',
-                              style: TextStyle(color: burgundy),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -1107,7 +987,6 @@ class DailyReportScreen extends ConsumerWidget {
                     KeyValue('Sales completed', '${d['today']}'),
                     KeyValue('Daily target', '${d['target']}'),
                     KeyValue('Achievement', '${d['achievement']}%'),
-                    KeyValue('Open tasks', '${d['tasks_open']}'),
                     KeyValue('Available SIMs', '${d['stock']}'),
                     KeyValue(
                       'Recorded incentives this month',
@@ -1426,14 +1305,19 @@ class OrderCard extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    order['reference'],
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: burgundy,
+                  Expanded(
+                    child: Text(
+                      order['reference'],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: burgundy,
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   StatusPill(order['status']),
                 ],
               ),
@@ -1740,8 +1624,6 @@ class ProfileScreen extends ConsumerWidget {
                   children: [
                     KeyValue('Employee ID', a['employee_id'] ?? '—'),
                     KeyValue('Branch', a['branch'] ?? '—'),
-                    KeyValue('Outlet', a['outlet'] ?? '—'),
-                    KeyValue('Team leader', a['leader'] ?? '—'),
                     const KeyValue('Device', 'Relay Flutter'),
                     const KeyValue('App version', '1.0.0'),
                   ],
@@ -1825,7 +1707,7 @@ class ProfileScreen extends ConsumerWidget {
               icon: Icons.lock_outline,
               text: s.isPreview
                   ? 'Your field workspace.'
-                  : 'Your workspace is shared with your assigned branch and team.',
+                  : 'Your workspace is shared with your assigned branch.',
             ),
           ],
         );

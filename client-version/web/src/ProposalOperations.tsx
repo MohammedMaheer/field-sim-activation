@@ -558,13 +558,6 @@ export function Support({ user, notify }: Props) {
     queryKey: ["support-tickets"],
     queryFn: () => api("/support-tickets"),
   });
-  const { data: agents = [] } = useQuery<Row[]>({
-    queryKey: ["agents"],
-    queryFn: () => api("/resources/agents"),
-  });
-  const [agentId, setAgentId] = useState(user.agent_id || "");
-  const [subject, setSubject] = useState("");
-  const [body, setBody] = useState("");
   const [response, setResponse] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [errorText, setErrorText] = useState("");
@@ -589,7 +582,7 @@ export function Support({ user, notify }: Props) {
         <div>
           <div className="eyebrow">FIELD SUPPORT</div>
           <h1>Support & help</h1>
-          <p>Raise operational issues and track the response.</p>
+          <p>Review requests sent by field agents and respond to them.</p>
         </div>
       </div>
       {errorText && (
@@ -597,66 +590,6 @@ export function Support({ user, notify }: Props) {
           {errorText}
         </p>
       )}
-      <Panel
-        title="Open a support ticket"
-        subtitle="Describe the issue without uploading customer identity data."
-      >
-        <form
-          className="proposal-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            run(async () => {
-              const ticket = await post("/support-tickets", {
-                agent_id: agentId,
-                subject,
-                message: body,
-              });
-              setSelectedId(ticket.id);
-              setSubject("");
-              setBody("");
-            }, "Support ticket created");
-          }}
-        >
-          <label>
-            Agent
-            <select
-              required
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-            >
-              <option value="">Select agent</option>
-              {agents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Subject
-            <input
-              required
-              minLength={3}
-              maxLength={160}
-              value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-            />
-          </label>
-          <label className="wide">
-            Details
-            <input
-              required
-              minLength={10}
-              maxLength={1000}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-            />
-          </label>
-          <button className="primary" disabled={busy}>
-            Send request
-          </button>
-        </form>
-      </Panel>
       <Panel
         title="Support history"
         subtitle={`${data.length} requests in your scope`}

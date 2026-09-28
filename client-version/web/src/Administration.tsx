@@ -9,22 +9,16 @@ import OrganizationSetup from "./OrganizationSetup";
 
 const sections: Record<string, string> = {
   branches: "Branches",
-  teams: "Teams",
-  outlets: "Outlets",
   agents: "Agents",
   customers: "Customers",
   inventory: "SIM stock",
-  tasks: "Tasks",
   incentives: "Incentives",
 };
 const fields: Record<string, string[]> = {
   agents: ["name", "email", "employee_id", "target"],
   branches: ["name"],
-  teams: ["name", "email", "branch_id"],
-  outlets: ["name", "area", "branch_id"],
   customers: ["name", "arabic_name", "mobile", "nationality", "agent_id"],
   inventory: ["iccid", "serial", "sim_type", "outlet_id", "agent_id"],
-  tasks: ["title", "note", "due_date", "agent_id"],
   incentives: ["period", "amount", "note", "agent_id"],
 };
 const labels: Record<string, string> = {
@@ -36,7 +30,7 @@ const labels: Record<string, string> = {
   target: "Daily target",
   employee_id: "Employee ID",
   branch_id: "Branch",
-  outlet_id: "Outlet",
+  outlet_id: "Branch",
   agent_id: "Agent",
   sim_type: "SIM type",
   iccid: "ICCID",
@@ -51,7 +45,7 @@ const labels: Record<string, string> = {
 export default function Administration() {
   const { user, notify } = useContext(Context),
     cache = useQueryClient();
-  const [kind, setKind] = useState("branches"),
+  const [kind, setKind] = useState(() => new URLSearchParams(window.location.search).get("section") === "inventory" ? "inventory" : "branches"),
     [editing, setEditing] = useState<Row | null>(null),
     [removing, setRemoving] = useState<Row | null>(null),
     [setup, setSetup] = useState(false),
@@ -83,7 +77,10 @@ export default function Administration() {
     key === "branch_id"
       ? dir.data?.branches
       : key === "outlet_id"
-        ? dir.data?.outlets
+        ? dir.data?.branches?.map((branch: Row) => ({
+            id: dir.data?.outlets?.find((outlet: Row) => outlet.branch_id === branch.id)?.id,
+            name: branch.name,
+          })).filter((branch: Row) => branch.id)
         : key === "agent_id"
           ? agents.data
           : null;
@@ -124,17 +121,17 @@ export default function Administration() {
           <h1>Manage workspace</h1>
         </div>
         <Link className="button" to="/kyc-capture">
-          Review submissions
+          Backend verification
         </Link>
       </header>
       <div className="admin-groups">
         {[
           {
             title: "Field network",
-            items: ["branches", "teams", "outlets", "agents"],
+            items: ["branches", "agents"],
           },
           { title: "Customer & stock", items: ["customers", "inventory"] },
-          { title: "Daily work", items: ["tasks", "incentives"] },
+          { title: "Sales", items: ["incentives"] },
         ].map((group) => (
           <section key={group.title}>
             <h2>{group.title}</h2>
@@ -165,7 +162,7 @@ export default function Administration() {
           <button
             className="primary"
             onClick={() =>
-              ["branches", "teams", "outlets", "agents"].includes(kind)
+              ["branches", "agents"].includes(kind)
                 ? setSetup(true)
                 : start({})
             }
@@ -260,7 +257,7 @@ export default function Administration() {
       </section>
       {setup && (
         <OrganizationSetup
-          initial={kind as "branches" | "teams" | "outlets" | "agents"}
+          initial={kind as "branches" | "agents"}
           onClose={() => setSetup(false)}
         />
       )}

@@ -15,7 +15,6 @@ RESOURCES = {
     "ekyc",
     "inventory",
     "movements",
-    "compliance",
     "audit",
 }
 REPORTS = {"daily", "monthly", "agent", "team", "ekyc", "branch", "inventory", "failed", "audit"}
@@ -37,7 +36,8 @@ PATHS = {
     "/api/agents/{agent_id}/management",
     "/api/inventory/{sim_id}/move",
     "/api/inventory/{sim_id}",
-    "/api/compliance/{alert_id}",
+    "/api/inventory/bulk",
+    "/api/inventory/bulk-template",
     "/api/events",
     "/api/events/stream",
     "/api/reports/{report}",
@@ -56,7 +56,6 @@ def configure(app):
                 "/api/organization",
                 "/api/administration",
                 "/api/kyc-captures",
-                "/api/field-tasks",
                 "/api/incentives",
                 "/api/support-tickets",
             )

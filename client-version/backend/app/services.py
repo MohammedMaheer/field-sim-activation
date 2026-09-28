@@ -270,7 +270,7 @@ def agent_view(db, agent):
         "branch_id": outlet.branch_id,
         "branch": db.get(Branch, outlet.branch_id).name,
         "name": db.get(User, agent.user_id).name,
-        "leader": db.get(User, agent.leader_id).name,
+        "leader": db.get(User, agent.leader_id).name if agent.leader_id else None,
         "outlet": db.get(Outlet, agent.outlet_id).name,
         "activations": len(completed),
         "achievement": round(len(completed) / agent.target * 100),

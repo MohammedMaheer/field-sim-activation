@@ -33,6 +33,7 @@ from .invoices import invoice
 from .capture_ocr import extractor, inspect_image
 
 router = APIRouter(prefix="/api/kyc-captures", tags=["KYC transaction captures"])
+SAMPLE_REFERENCE_PREFIXES = ("DEMO-REVIEW-%", "DEMO-WEB-%", "PAY-REVIEW-%", "PAY-INVOICE-%", "PAY-QA-%")
 
 
 def access(db, user, write=False):
@@ -366,6 +367,7 @@ def listing(
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     search: str = Query("", max_length=120),
+    include_samples: bool = False,
     stage: Literal["", "READY", "COMPLETED"] = "",
     status: Literal[
         "", "QUEUED", "OCR_FAILED", "EXTRACTED", "VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"
@@ -375,6 +377,9 @@ def listing(
     q = select(KycCapture).where(KycCapture.agent_id.in_(visible_agents(db, user)))
     if search.strip():
         q = q.where(KycCapture.source_reference.icontains(search.strip(), autoescape=True))
+    elif not include_samples:
+        for prefix in SAMPLE_REFERENCE_PREFIXES:
+            q = q.where(~KycCapture.source_reference.like(prefix))
     if stage:
         q = q.where(KycCapture.status == "VERIFIED")
     elif status:
@@ -567,7 +572,7 @@ def save_rows(
     access(db, user, True)
     row = get_capture(db, user, capture_id, True)
     version_check(row, body)
-    if row.status not in {"EXTRACTED", "VALIDATED", "REJECTED"}:
+    if row.status not in {"EXTRACTED", "OCR_FAILED", "VALIDATED", "REJECTED"}:
         raise HTTPException(409, "Rows cannot be edited at this stage")
     rows = [r.model_dump(mode="json") for r in body.rows]
     legacy = [r for r in rows if r.get("fields") is None]

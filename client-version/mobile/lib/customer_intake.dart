@@ -100,8 +100,24 @@ class _IntakeCameraState extends State<IntakeCamera>
                                     : scan.value * 2 - 1,
                               ),
                               child: Container(
-                                height: 2,
-                                color: Colors.tealAccent,
+                                height: 4,
+                                decoration: const BoxDecoration(
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      Color(0x002df3d2),
+                                      Color(0xffbdfff0),
+                                      Color(0xff2df3d2),
+                                      Color(0x002df3d2),
+                                    ],
+                                  ),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Color(0xff3cf6d7),
+                                      blurRadius: 18,
+                                      spreadRadius: 3,
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -586,16 +602,24 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    TextButton(
-                      onPressed: () => update(() => strokes = []),
-                      child: const Text('Clear'),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: strokes.isEmpty
+                            ? null
+                            : () => update(() => strokes = []),
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Reset'),
+                      ),
                     ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: strokes.expand((s) => s).length < 2
-                          ? null
-                          : () => Navigator.pop(sheetContext, strokes),
-                      child: const Text('Save signature'),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: strokes.expand((s) => s).length < 2
+                            ? null
+                            : () => Navigator.pop(sheetContext, strokes),
+                        icon: const Icon(Icons.check, size: 18),
+                        label: const Text('Confirm'),
+                      ),
                     ),
                   ],
                 ),
@@ -732,23 +756,39 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             Row(
               children: [
                 Expanded(
-                  flex: 3,
                   child: FilledButton.icon(
                     onPressed: busy
                         ? null
                         : () => photo('document_image', false),
                     icon: const Icon(Icons.document_scanner),
-                    label: const Text('Scan document'),
+                    label: const Text('Scan document', maxLines: 1),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size.fromHeight(48),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  flex: 2,
-                  child: OutlinedButton(
+                  child: OutlinedButton.icon(
                     onPressed: busy
                         ? null
                         : () => photo('document_image', true),
-                    child: const Text('Upload photo'),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 18,
+                    ),
+                    label: const Text('Upload photo', maxLines: 1),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      minimumSize: const Size.fromHeight(48),
+                      backgroundColor: const Color(0xffffedf5),
+                      foregroundColor: const Color(0xff912a58),
+                      side: const BorderSide(color: Color(0xffd890b4)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -768,7 +808,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   : Row(
                       children: [
                         Expanded(
-                          child: field('birth_date', 'Date of birth', date: true),
+                          child: field(
+                            'birth_date',
+                            'Date of birth',
+                            date: true,
+                          ),
                         ),
                         const SizedBox(width: 8),
                         Expanded(

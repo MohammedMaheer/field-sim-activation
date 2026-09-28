@@ -30,6 +30,7 @@ class _ScanSurfaceState extends State<ScanSurface>
     );
     if (widget.image == null || widget.reading) beam.repeat(reverse: true);
   }
+
   @override
   void didUpdateWidget(covariant ScanSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -92,7 +93,11 @@ class _ScanSurfaceState extends State<ScanSurface>
       );
     }
     return Container(
-      height: complete ? 220 : 142,
+      height: complete
+          ? 220
+          : MediaQuery.sizeOf(context).width < 360
+          ? 190
+          : 142,
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -116,6 +121,23 @@ class _ScanSurfaceState extends State<ScanSurface>
       ),
       child: Stack(
         children: [
+          if (!complete)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: AnimatedBuilder(
+                  animation: beam,
+                  builder: (context, child) => CustomPaint(
+                    painter: _ScanCorners(
+                      Color.lerp(
+                        const Color(0xff2aa6ef),
+                        const Color(0xff6ff7ce),
+                        beam.value,
+                      )!,
+                    ),
+                  ),
+                ),
+              ),
+            ),
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(18, 12, 18, 36),
@@ -148,13 +170,13 @@ class _ScanSurfaceState extends State<ScanSurface>
                               letterSpacing: 1.5,
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(height: 8),
                           const Row(
                             children: [
                               Icon(
                                 Icons.badge_outlined,
                                 color: Color(0xffffd97a),
-                                size: 44,
+                                size: 36,
                               ),
                               SizedBox(width: 10),
                               Expanded(
@@ -182,7 +204,6 @@ class _ScanSurfaceState extends State<ScanSurface>
                               ),
                             ],
                           ),
-                          const Spacer(),
                         ],
                       ),
                     ),
@@ -200,26 +221,29 @@ class _ScanSurfaceState extends State<ScanSurface>
                           ? 0
                           : beam.value * 1.5 - .75,
                     ),
-                    child: Container(
-                      height: 4,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(4),
-                        gradient: const LinearGradient(
-                          colors: [
-                            Color(0x0040caff),
-                            Color(0xffa5f3ff),
-                            Color(0xff40caff),
-                            Color(0x0040caff),
+                    child: Opacity(
+                      opacity: .4,
+                      child: Container(
+                        height: 2,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(4),
+                          gradient: const LinearGradient(
+                            colors: [
+                              Color(0x0040caff),
+                              Color(0xffa5f3ff),
+                              Color(0xff40caff),
+                              Color(0x0040caff),
+                            ],
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0xff40caff),
+                              blurRadius: 10,
+                              spreadRadius: 2,
+                            ),
                           ],
                         ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Color(0xff40caff),
-                            blurRadius: 20,
-                            spreadRadius: 4,
-                          ),
-                        ],
                       ),
                     ),
                   ),
@@ -244,16 +268,20 @@ class _ScanSurfaceState extends State<ScanSurface>
                         : const Color(0xff78daff),
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    complete
-                        ? 'Document captured'
-                        : widget.reading
-                        ? 'Reading document…'
-                        : 'Position document',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13,
+                  Flexible(
+                    child: Text(
+                      complete
+                          ? 'Document captured'
+                          : widget.reading
+                          ? 'Reading document…'
+                          : 'Position document',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
@@ -274,4 +302,35 @@ class _ScanSurfaceState extends State<ScanSurface>
       ),
     );
   }
+}
+
+class _ScanCorners extends CustomPainter {
+  final Color color;
+  _ScanCorners(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    const inset = 10.0;
+    const arm = 18.0;
+    for (final x in [inset, size.width - inset]) {
+      for (final y in [inset, size.height - inset]) {
+        final dx = x == inset ? arm : -arm;
+        final dy = y == inset ? arm : -arm;
+        final path = Path()
+          ..moveTo(x + dx, y)
+          ..lineTo(x, y)
+          ..lineTo(x, y + dy);
+        canvas.drawPath(path, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScanCorners oldDelegate) =>
+      oldDelegate.color != color;
 }

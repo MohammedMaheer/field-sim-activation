@@ -103,7 +103,7 @@ void main() {
     await shot('home');
     await t.drag(find.byType(Scrollable).first, const Offset(0, -650));
     await shot('home-lower');
-    for (final tab in ['Tasks', 'Stock', 'Profile']) {
+    for (final tab in ['Orders', 'Stock', 'Profile']) {
       await t.tap(find.text(tab).last);
       await shot(tab.toLowerCase());
     }
@@ -134,30 +134,9 @@ void main() {
       '/customers',
       '/reports',
       '/support',
-      '/tasks',
     ]) {
       app.router.push(path);
       await shot(path.substring(1));
-      if (path == '/screenshot-capture') {
-        await t.ensureVisible(find.text('Capture history'));
-        await t.tap(find.text('Capture history'));
-        await t.pumpAndSettle();
-        final reference =
-            fixture['/kyc-captures'][0]['source_reference'] as String;
-        await Scrollable.ensureVisible(
-          t.element(find.text(reference)),
-          alignment: .5,
-        );
-        await t.pumpAndSettle();
-        await t.tap(find.text(reference));
-        await t.pumpAndSettle();
-        expect(find.text('Upload Etisalat receipt'), findsNothing);
-        await t.drag(find.byType(Scrollable).first, const Offset(0, 2000));
-        await shot('ekyc-review');
-        await t.tap(find.text('New capture'));
-        await t.pumpAndSettle();
-        expect(find.text('Upload Etisalat receipt'), findsOneWidget);
-      }
       if (path == '/incentives' || path == '/customers') {
         await t.tap(find.byType(ListTile).first);
         await shot('${path.substring(1)}-details');

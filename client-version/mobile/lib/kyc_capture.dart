@@ -898,7 +898,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 payment ? 'Preparing payment details…' : 'Preparing receipt…',
               ),
             if (capture!['status'] == 'OCR_FAILED') ...[
-              Text(capture!['error']),
+              const Text(
+                "We couldn't read this image automatically. Add the details below or try again.",
+              ),
               TextButton(
                 onPressed: busy ? null : () => command('retry'),
                 child: const Text('Try again'),

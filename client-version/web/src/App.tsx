@@ -2,8 +2,9 @@ import OrganizationSetup from "./OrganizationSetup";
 import AgentManagement from "./AgentManagement";
 import Administration from "./Administration";
 import PlanManagement from "./PlanManagement";
+import InventoryImport from "./InventoryImport";
 import KycCapture from "./KycCapture";
-import { FieldTasks, Incentives, Support } from "./ProposalOperations";
+import { Incentives, Support } from "./ProposalOperations";
 
 import Dashboard, { BranchFilter } from "./Dashboard";
 import {
@@ -121,14 +122,13 @@ const navigation = [
     items: [
       ["", "Overview", LayoutDashboard],
       ["live", "Live operations", Radio],
-      ["field-tasks", "Field tasks", ClipboardCheck],
     ],
   },
   {
     label: "FIELD NETWORK",
     items: [
       ["agents", "Agents", Users],
-      ["team-leaders", "Branch teams", UserRoundCheck],
+      ["branches", "Branches", UserRoundCheck],
       ["customers", "Customers", ContactRound],
     ],
   },
@@ -137,7 +137,7 @@ const navigation = [
     items: [
       ["activations", "Activations", Zap],
 
-      ["kyc-capture", "Transactions & review", ScanFace],
+      ["kyc-capture", "Backend verification", ScanFace],
 
       ["inventory", "SIM inventory", Layers3],
       ["incentives", "Incentives", Coins],
@@ -148,7 +148,6 @@ const navigation = [
     label: "GOVERNANCE",
     items: [
       ["reports", "Reports", ChartNoAxesCombined],
-      ["compliance", "Compliance", ShieldCheck],
       ["audit", "Audit log", History],
     ],
   },
@@ -176,7 +175,7 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
         </div>
         <div>
           <span className="eyebrow">
-            CONNECTED TEAMS. CONFIDENT OPERATIONS.
+            CONNECTED BRANCHES. CONFIDENT OPERATIONS.
           </span>
           <h1>
             Every connection
@@ -539,9 +538,9 @@ export default function App() {
               </button>
               <button
                 className="icon-btn notification-btn"
-                title="Compliance alerts"
-                aria-label="Compliance alerts"
-                onClick={() => navigate("/compliance")}
+                title="Backend verification"
+                aria-label="Backend verification"
+                onClick={() => navigate("/kyc-capture")}
               >
                 <Bell size={18} />
                 <i />
@@ -554,10 +553,6 @@ export default function App() {
               <Routes>
                 <Route path="/kyc-capture" element={<KycCapture />} />
                 <Route path="/screenshot-capture" element={<KycCapture />} />
-                <Route
-                  path="/field-tasks"
-                  element={<FieldTasks user={user} notify={setToast} />}
-                />
                 <Route
                   path="/incentives"
                   element={<Incentives user={user} notify={setToast} />}
@@ -574,12 +569,11 @@ export default function App() {
                 {[
                   "agents",
                   "customers",
-                  "team-leaders",
+                  "branches",
 
                   "activations",
 
                   "inventory",
-                  "compliance",
                   "audit",
                 ].map((resource) => (
                   <Route
@@ -683,7 +677,7 @@ function LiveOperations() {
       <PageHeader
         eyebrow="CONNECTED WORKSPACE"
         title="Live operations"
-        description="Agent shifts, branch teams and current sales activity."
+        description="Agent shifts, branches and current sales activity."
       >
         <BranchFilter value={branch} onChange={setBranch} />
         <button onClick={() => refetch()}>
@@ -782,9 +776,7 @@ function AgentDrawer({
       ? "activations"
       : tab === "Inventory"
         ? "inventory"
-        : tab === "Compliance"
-          ? "compliance"
-          : tab === "Audit history"
+        : tab === "Audit history"
             ? "audit"
             : "activations";
   const { data = [] } = useResource(resource);
@@ -795,7 +787,7 @@ function AgentDrawer({
         <div>
           <h2>{a.name}</h2>
           <p>
-            {a.employee_id} · {a.outlet}
+            {a.employee_id} · {a.branch}
           </p>
           <Badge value={a.status} />
         </div>
@@ -824,7 +816,6 @@ function AgentDrawer({
           "Activations",
 
           "Inventory",
-          "Compliance",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
           ...(user.role === "Administrator" ? ["Manage"] : []),
         ].map((t) => (
@@ -849,12 +840,10 @@ function AgentDrawer({
         <>
           <DetailList
             data={{
-              team_leader: a.leader,
-              assigned_outlet: a.outlet,
+              branch: a.branch,
               shift: a.on_shift ? "Active shift" : "Off shift",
               ekyc_pass_rate: a.ekyc_rate + "%",
               ocr_accuracy: a.ocr + "%",
-              branch: a.branch,
               last_sync: new Date(a.last_sync).toLocaleString(),
             }}
           />
@@ -886,7 +875,7 @@ function AgentDrawer({
                 : [
                     { key: "created_at", label: "Time" },
                     {
-                      key: tab === "Compliance" ? "title" : "action",
+                      key: "action",
                       label: "Event",
                     },
                     { key: "status", label: "Status" },
@@ -1001,17 +990,15 @@ const configs: Record<
     description: "Your people, their performance, and the support they need.",
     columns: agentColumns,
   },
-  "team-leaders": {
-    title: "Team performance",
-    description: "Branch-led teams, clear ownership and shared targets.",
+  branches: {
+    title: "Branches",
+    description: "Agents, targets and sales by branch.",
     columns: [
-      { key: "name", label: "Team leader" },
-      { key: "branch", label: "Branch" },
-      { key: "agents", label: "Team size" },
-      { key: "activations", label: "Activations" },
+      { key: "name", label: "Branch" },
+      { key: "agents", label: "Agents" },
+      { key: "today", label: "Sales today" },
       { key: "target", label: "Target" },
-      { key: "active", label: "Active agents" },
-      { key: "stock", label: "SIM stock" },
+      { key: "activations", label: "Completed sales" },
     ],
   },
   orders: {
@@ -1065,24 +1052,6 @@ const configs: Record<
       },
     ],
   },
-  compliance: {
-    title: "Compliance centre",
-    description: "Signals for investigation. Evidence before conclusions.",
-    columns: [
-      { key: "title", label: "Observation" },
-      { key: "agent", label: "Agent" },
-      {
-        key: "severity",
-        label: "Severity",
-        render: (r) => <Badge value={r.severity} />,
-      },
-      {
-        key: "status",
-        label: "Review status",
-        render: (r) => <Badge value={r.status} />,
-      },
-    ],
-  },
   audit: {
     title: "Audit history",
     description:
@@ -1103,6 +1072,8 @@ const configs: Record<
 
 function ResourcePage({ resource }: { resource: string }) {
   const [setup, setSetup] = useState<"branches" | "agents" | null>(null);
+  const [importStock, setImportStock] = useState(false);
+  const cache = useQueryClient();
   const [branch, setBranch] = useState("");
   const {
     data = [],
@@ -1130,16 +1101,13 @@ function ResourcePage({ resource }: { resource: string }) {
       {setup && (
         <OrganizationSetup initial={setup} onClose={() => setSetup(null)} />
       )}
+      {importStock && <InventoryImport onClose={() => setImportStock(false)} onImported={() => cache.invalidateQueries({ queryKey: ["inventory"] })} />}
       <PageHeader
-        eyebrow={
-          resource === "compliance"
-            ? "TRUST & ASSURANCE"
-            : "CONNECTED OPERATIONS"
-        }
+        eyebrow="CONNECTED OPERATIONS"
         title={config.title}
         description={config.description}
       >
-        {["agents", "team-leaders", "inventory", "activations"].includes(
+        {["agents", "inventory", "activations"].includes(
           resource,
         ) && (
           <BranchFilter
@@ -1151,16 +1119,20 @@ function ResourcePage({ resource }: { resource: string }) {
           />
         )}
         {user.role === "Administrator" &&
-          ["agents", "team-leaders"].includes(resource) && (
+          ["agents", "branches"].includes(resource) && (
             <button
               className="primary"
               onClick={() =>
                 setSetup(resource === "agents" ? "agents" : "branches")
               }
             >
-              {resource === "agents" ? "Add agent" : "Set up branches & teams"}
+              {resource === "agents" ? "Add agent" : "Add branch"}
             </button>
           )}
+        {resource === "inventory" && user.role === "Administrator" && <>
+          <button onClick={() => navigate("/administration?section=inventory")}><Plus size={16} /> Add SIM</button>
+          <button className="primary" onClick={() => setImportStock(true)}><Download size={16} /> Import Excel</button>
+        </>}
         <button onClick={() => refetch()}>
           <RefreshCw size={15} />
           Refresh
@@ -1185,18 +1157,6 @@ function ResourcePage({ resource }: { resource: string }) {
           ))}
         </div>
       )}
-      {resource === "compliance" && (
-        <div className="compliance-banner">
-          <ShieldCheck size={24} />
-          <div>
-            <b>A fair and traceable review process</b>
-            <p>
-              Alerts indicate activity to investigate. They are not findings of
-              misconduct.
-            </p>
-          </div>
-        </div>
-      )}
       <Panel
         title="Records"
         subtitle={`${data.length} records in your authorized scope`}
@@ -1218,10 +1178,8 @@ function ResourcePage({ resource }: { resource: string }) {
           <OrderDrawer id={selected.id} onClose={closeDetails} />
         ) : resource === "inventory" ? (
           <InventoryDrawer sim={selected} onClose={closeDetails} />
-        ) : resource === "compliance" ? (
-          <ComplianceDrawer alert={selected} onClose={closeDetails} />
-        ) : resource === "team-leaders" ? (
-          <TeamDrawer team={selected} onClose={closeDetails} />
+        ) : resource === "branches" ? (
+          <BranchDrawer branch={selected} onClose={closeDetails} />
         ) : (
           <Drawer title={config.title + " details"} onClose={closeDetails}>
             <DetailList
@@ -1252,21 +1210,18 @@ function ResourcePage({ resource }: { resource: string }) {
   );
 }
 
-function TeamDrawer({ team, onClose }: { team: Row; onClose: () => void }) {
+function BranchDrawer({ branch, onClose }: { branch: Row; onClose: () => void }) {
   const navigate = useNavigate();
   const { data = [], isPending, error, refetch } = useResource("agents");
   return (
-    <Drawer title={team.name + " · Team performance"} onClose={onClose}>
+    <Drawer title={branch.name + " · Branch performance"} onClose={onClose}>
       <DetailList
         data={{
-          branch: team.branch,
-          agents: team.agents,
-          active_agents: team.active,
-          daily_target: team.target,
-          activations_today: team.activations,
-          sim_stock: team.stock,
-          average_handling_minutes: team.aht,
-          verification_pass_rate: team.ekyc_rate + "%",
+          branch: branch.name,
+          agents: branch.agents,
+          daily_target: branch.target,
+          sales_today: branch.today,
+          completed_sales: branch.activations,
         }}
       />
       {isPending ? (
@@ -1275,10 +1230,7 @@ function TeamDrawer({ team, onClose }: { team: Row; onClose: () => void }) {
         <ErrorState error={error} retry={refetch} />
       ) : (
         <DataTable
-          rows={data.filter(
-            (a) =>
-              a.leader_id === team.leader_id && a.branch_id === team.branch_id,
-          )}
+          rows={data.filter((a) => a.branch_id === branch.id)}
           columns={agentColumns}
           onRow={(a) =>
             navigate("/agents?selected=" + encodeURIComponent(a.id))
@@ -1573,12 +1525,11 @@ function Reports() {
     ["daily", "Daily activation", "A complete snapshot of daily connections."],
     ["monthly", "Monthly activation", "Activation performance over the month."],
     ["agent", "Agent performance", "Productivity and quality by field agent."],
-    ["team", "Team performance", "Performance by leader and team."],
 
     [
       "ekyc",
-      "KYC compliance",
-      "Captured transactions and backend verification outcomes.",
+      "Verification outcomes",
+      "Captured transactions and backend decisions.",
     ],
     [
       "branch",

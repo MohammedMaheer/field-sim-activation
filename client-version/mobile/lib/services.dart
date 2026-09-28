@@ -36,9 +36,6 @@ final resourceProvider = FutureProvider.family<List<Json>, String>(
 final dashboardProvider = FutureProvider<Json>(
   (ref) => _resourceService(ref).dashboard(),
 );
-final taskProvider = FutureProvider<List<Json>>(
-  (ref) => _resourceService(ref).proposalList('field-tasks'),
-);
 final incentiveProvider = FutureProvider<List<Json>>(
   (ref) => _resourceService(ref).proposalList('incentives'),
 );
@@ -282,66 +279,15 @@ class RelayService extends ChangeNotifier {
           .map((v) => Map<String, dynamic>.from(v))
           .toList();
       await store.put(key, {'rows': rows});
-      return _pendingTasks(resource, rows);
+      return rows;
     } on DioException catch (e) {
       if (e.response != null) rethrow;
       online = false;
       final cached = await store.get(key);
       if (cached == null) rethrow;
-      return _pendingTasks(
-        resource,
-        (cached['rows'] as List)
-            .map((v) => Map<String, dynamic>.from(v))
-            .toList(),
-      );
-    }
-  }
-
-  Future<List<Json>> _pendingTasks(String resource, List<Json> rows) async {
-    if (resource != 'field-tasks') return rows;
-    final queued = await store.get('${user!['id']}:task-updates');
-    final ids = ((queued?['ids'] ?? []) as List).cast<String>().toSet();
-    for (final row in rows) {
-      if (ids.contains(row['id'])) row['status'] = 'DONE_PENDING_SYNC';
-    }
-    return rows;
-  }
-
-  Future<void> completeTask(String taskId) async {
-    final key = '${user!['id']}:task-updates';
-    try {
-      await dio.patch('/field-tasks/$taskId', data: {'status': 'DONE'});
-    } on DioException catch (e) {
-      if (e.response != null) rethrow;
-      final queued = await store.get(key);
-      final ids = ((queued?['ids'] ?? []) as List).cast<String>().toSet();
-      ids.add(taskId);
-      await store.put(key, {'ids': ids.toList()});
-      online = false;
-    }
-  }
-
-  Future<void> syncTaskUpdates() async {
-    final key = '${user!['id']}:task-updates';
-    final queued = await store.get(key);
-    final ids = ((queued?['ids'] ?? []) as List).cast<String>();
-    if (ids.isEmpty) return;
-    final remaining = <String>[];
-    for (final id in ids) {
-      try {
-        await dio.patch('/field-tasks/$id', data: {'status': 'DONE'});
-      } on DioException catch (e) {
-        if (e.response?.statusCode == 409) {
-          // Lost response to a previously completed update.
-          continue;
-        }
-        remaining.add(id);
-      }
-    }
-    if (remaining.isEmpty) {
-      await store.remove(key);
-    } else {
-      await store.put(key, {'ids': remaining});
+      return (cached['rows'] as List)
+          .map((v) => Map<String, dynamic>.from(v))
+          .toList();
     }
   }
 
@@ -352,9 +298,7 @@ class RelayService extends ChangeNotifier {
     notifyListeners();
     try {
       await dio.get('/health');
-      await syncTaskUpdates();
       await dashboard();
-      await proposalList('field-tasks');
       await proposalList('incentives');
       await proposalList('support-tickets');
       for (final name in [

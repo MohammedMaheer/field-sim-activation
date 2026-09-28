@@ -13,9 +13,10 @@ The invoice is projected from saved data. The chosen plan's price is distinct fr
 
 ## Included
 
-- Web operations dashboard, live field activity, branch teams/outlets, agent and target monitoring, administrator management of branches, teams, outlets, agents, customers, plans, stock, tasks and incentives.
-- Mobile field dashboard, assignment, tasks, customer search, own SIM stock, return/damage reporting, daily reports, support, offline drafts, synchronization and the three-stage transaction flow.
-- Payment confirmation extraction into flexible labelled rows, editable with an audited reason; original-image comparison; scoped CSV/XLSX/PDF export, compliance review and immutable audit events.
+- Web operations dashboard, live field activity, branch and agent monitoring, independent backend verification, and administrator management of branches, agents, customers, plans, SIM stock and incentives. Branches are the sales outlets; agents are assigned directly to a branch. Historic team assignments remain in stored records.
+- Mobile field dashboard, orders, customer search, own SIM stock, return/damage reporting, daily reports, agent support, offline drafts, synchronization and the three-stage transaction flow.
+- Payment confirmation extraction into flexible labelled rows, editable with an audited reason; original-image comparison; scoped CSV/XLSX/PDF export and immutable audit events. An agent raises support requests; administrators review and resolve them.
+- Administrators may edit individual SIMs, import up to 500 new SIMs from the Excel template with a movement/audit record per SIM, and permanently delete unused plans. Plans linked to saved transactions cannot be deleted.
 - Role and branch scoped access, encrypted capture storage, PostgreSQL, live updates and synthetic example records.
 
 ## Excluded or external

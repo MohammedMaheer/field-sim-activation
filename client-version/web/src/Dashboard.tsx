@@ -233,7 +233,7 @@ export default function Dashboard() {
           </div>
           <h2>Today’s field performance</h2>
           <p>
-            {d.agents.length} agents · {d.teams.length} branch teams · one
+            {d.agents.length} agents · {d.branches.length} branches · one
             connected workflow.
           </p>
           <button className="primary" onClick={() => navigate("/kyc-capture")}>
@@ -437,9 +437,9 @@ export default function Dashboard() {
           </div>
           <button
             className="chart-link"
-            onClick={() => navigate("/team-leaders")}
+            onClick={() => navigate("/branches")}
           >
-            Explore branch teams
+            Explore branches
             <ArrowRight size={15} />
           </button>
         </Panel>
@@ -456,15 +456,15 @@ export default function Dashboard() {
           className="priority-panel"
         >
           <button
-            onClick={() => navigate("/field-tasks")}
-            aria-label="View open field tasks"
+            onClick={() => navigate("/kyc-capture")}
+            aria-label="Open backend verification"
           >
             <span className="priority-icon blue">
               <ClipboardCheck />
             </span>
             <span>
-              <b>{d.tasks_open} open field tasks</b>
-              <small>Assigned work across your team</small>
+              <b>{d.kyc_pending_review} awaiting verification</b>
+              <small>Check submitted transaction evidence</small>
             </span>
             <ArrowUpRight size={17} />
           </button>
@@ -486,16 +486,15 @@ export default function Dashboard() {
             </span>
             <ArrowUpRight size={17} />
           </button>
-          <button onClick={() => navigate("/compliance")}>
+          <button onClick={() => navigate("/activations")}>
             <span className="priority-icon amber">
               <Sparkles />
             </span>
             <span>
               <b>
-                {d.alerts.filter((a: Row) => a.status !== "RESOLVED").length}{" "}
-                reviews to investigate
+                {d.failed} failed activations
               </b>
-              <small>Compliance and data quality</small>
+              <small>Follow up with the backend team</small>
             </span>
             <ArrowUpRight size={17} />
           </button>
@@ -517,21 +516,21 @@ export default function Dashboard() {
       </div>
       <div className="dashboard-bottom-grid">
         <Panel
-          title="Team snapshot"
-          subtitle="Leading teams by today’s sales"
+          title="Branch snapshot"
+          subtitle="Sales and targets by branch"
           action={
             <button
               className="text-button"
-              onClick={() => navigate("/team-leaders")}
+              onClick={() => navigate("/branches")}
             >
-              View all teams
+              View all branches
               <ArrowUpRight size={16} />
             </button>
           }
         >
           <div className="branch-team-grid">
-            {[...d.teams]
-              .sort((a: Row, b: Row) => b.activations - a.activations)
+            {[...d.branches]
+              .sort((a: Row, b: Row) => b.today - a.today)
               .slice(0, 2)
               .map((t: Row, i: number) => (
                 <button
@@ -539,7 +538,7 @@ export default function Dashboard() {
                   key={t.id}
                   onClick={() =>
                     navigate(
-                      "/team-leaders?selected=" + encodeURIComponent(t.id),
+                      "/branches?selected=" + encodeURIComponent(t.id),
                     )
                   }
                 >
@@ -547,26 +546,26 @@ export default function Dashboard() {
                     className="branch-label"
                     style={{ color: palette[i % palette.length] }}
                   >
-                    {t.branch}
+                    {t.name}
                   </span>
                   <div>
                     <Avatar name={t.name} />
                     <span>
                       <b>{t.name}</b>
                       <small>
-                        {t.agents} agents · {t.active} active
+                        {t.agents} agents
                       </small>
                     </span>
                     <ArrowUpRight size={17} />
                   </div>
                   <Progress
                     value={Math.round(
-                      (t.activations / Math.max(1, t.target)) * 100,
+                      (t.today / Math.max(1, t.target)) * 100,
                     )}
                   />
                   <p>
-                    {t.activations} of {t.target} daily sales target
-                    <span>{t.stock} SIMs</span>
+                    {t.today} of {t.target} daily sales target
+                    <span>{t.activations} completed</span>
                   </p>
                 </button>
               ))}

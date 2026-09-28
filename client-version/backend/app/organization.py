@@ -72,6 +72,9 @@ def create(
         if db.scalar(select(Branch.id).where(func.lower(Branch.name) == body.name.lower())):
             raise HTTPException(409, "A branch with this name already exists")
         entity = Branch(name=body.name)
+        db.add(entity)
+        db.flush()
+        db.add(Outlet(name=body.name, branch_id=entity.id, area="", lat=0, lng=0))
     elif kind == "outlets":
         if db.scalar(
             select(Outlet.id).where(
@@ -91,16 +94,14 @@ def create(
         if db.scalar(select(User.id).where(func.lower(User.email) == email)):
             raise HTTPException(409, "An account with this email already exists")
         if kind == "agents":
-            leader = db.get(User, body.leader_id)
-            outlet = db.get(Outlet, body.outlet_id)
-            if (
-                not leader
-                or db.get(Role, leader.role_id).name != "Team Leader"
-                or leader.branch_id != body.branch_id
-            ):
-                raise HTTPException(422, "Choose a team from this branch")
+            outlet = db.get(Outlet, body.outlet_id) if body.outlet_id else db.scalar(
+                select(Outlet).where(Outlet.branch_id == body.branch_id).order_by(Outlet.created_at)
+            )
             if not outlet or outlet.branch_id != body.branch_id:
-                raise HTTPException(422, "Choose an outlet from this branch")
+                raise HTTPException(422, "This branch has no valid assignment")
+            leader = db.get(User, body.leader_id) if body.leader_id else None
+            if leader and (db.get(Role, leader.role_id).name != "Team Leader" or leader.branch_id != body.branch_id):
+                raise HTTPException(422, "Invalid historical team assignment")
             if not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", body.employee_id):
                 raise HTTPException(
                     422, "Employee ID must contain 2–40 letters, numbers, hyphens or underscores"
@@ -123,8 +124,8 @@ def create(
             else Agent(
                 user_id=account.id,
                 employee_id=body.employee_id.upper(),
-                leader_id=body.leader_id,
-                outlet_id=body.outlet_id,
+                leader_id=leader.id if leader else None,
+                outlet_id=outlet.id,
                 target=body.target,
                 lat=0,
                 lng=0,

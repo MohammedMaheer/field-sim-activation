@@ -46,11 +46,12 @@ export default function KycCapture() {
     canReview ? "SUBMITTED" : "",
   );
   const [historyPage, setHistoryPage] = useState(0);
+  const [showSamples, setShowSamples] = useState(false);
   const list = useQuery({
-    queryKey: ["kyc-captures", historySearch, historyStatus, historyPage],
+    queryKey: ["kyc-captures", historySearch, historyStatus, historyPage, showSamples],
     queryFn: () =>
       api(
-        `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${["READY", "COMPLETED"].includes(historyStatus) ? "" : historyStatus}&stage=${["READY", "COMPLETED"].includes(historyStatus) ? historyStatus : ""}`,
+        `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${["READY", "COMPLETED"].includes(historyStatus) ? "" : historyStatus}&stage=${["READY", "COMPLETED"].includes(historyStatus) ? historyStatus : ""}&include_samples=${showSamples}`,
       ),
     refetchInterval: 8000,
   });
@@ -144,7 +145,7 @@ export default function KycCapture() {
       <div className={`page-header ${reviewMode ? "review-page-header" : ""}`}>
         <div>
           <div className="eyebrow">TRANSACTIONS</div>
-          <h1>{canReview ? "Transaction review" : "New transaction"}</h1>
+          <h1>{canReview ? "Backend verification" : "New transaction"}</h1>
         </div>
         <button
           onClick={() =>
@@ -194,7 +195,7 @@ export default function KycCapture() {
         <section className="review-inbox">
           <div className="review-inbox-header">
             <div>
-              <h2>Review inbox</h2>
+              <h2>Submissions for verification</h2>
             </div>
             <label>
               Status
@@ -224,6 +225,7 @@ export default function KycCapture() {
                 placeholder="Transaction reference"
               />
             </label>
+            <label className="review-sample-toggle"><input type="checkbox" checked={showSamples} onChange={(event) => { setShowSamples(event.target.checked); setHistoryPage(0); }} /> Older sample records</label>
           </div>
           {list.isPending ? (
             <Loading />
@@ -465,7 +467,7 @@ export default function KycCapture() {
                         )}
                         {capture.status === "OCR_FAILED" && (
                           <div role="alert">
-                            <p>{capture.error}</p>
+                            <p>We couldn't read this image automatically. Add the details below or try again.</p>
                             {canWrite && (
                               <button
                                 disabled={busy}

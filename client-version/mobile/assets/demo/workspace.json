@@ -334,32 +334,6 @@
       "assigned_at": "2026-09-28T09:30:00Z"
     }
   ],
-  "/field-tasks": [
-    {
-      "id": "task-0",
-      "title": "Review receipt queue",
-      "note": "Check extracted details before submission.",
-      "status": "OPEN",
-      "due_date": "2026-09-28",
-      "created_at": "2026-09-28T09:30:00Z"
-    },
-    {
-      "id": "task-1",
-      "title": "Check your SIM balance",
-      "note": "Reconcile physical SIMs with your stock.",
-      "status": "OPEN",
-      "due_date": "2026-09-28",
-      "created_at": "2026-09-28T09:30:00Z"
-    },
-    {
-      "id": "task-2",
-      "title": "Confirm daily target",
-      "note": "Review progress with your team leader.",
-      "status": "OPEN",
-      "due_date": "2026-09-28",
-      "created_at": "2026-09-28T09:30:00Z"
-    }
-  ],
   "/incentives": [
     {
       "id": "incentive-0",
@@ -616,7 +590,10 @@
     {
       "id": "capture-1",
       "agent_id": "demo-agent",
-      "source_reference": "DEMO-RECEIPT-002",
+      "source_reference": "PAY-240928-002",
+      "document_kind": "PAYMENT_CONFIRMATION",
+      "payment_reference": "KIOSK-240928-002",
+      "plan_snapshot": {"monthly_cost": 250, "promotion": "100GB 5G Data + 500 Local Mins"},
       "status": "SUBMITTED",
       "version": 1,
       "image_type": "image/png",
@@ -624,15 +601,15 @@
       "updated_at": "2026-09-28T09:30:00Z",
       "rows": [
         {
-          "reference": "DEMO-RECEIPT-002",
+          "reference": "KIOSK-240928-002",
           "customer": "Jordan Demo",
           "account": "DEMO-050-0001",
           "details": "Flexi Postpaid",
           "source_line": 0,
           "fields": [
             {
-              "label": "Order ID",
-              "value": "DEMO-RECEIPT-002",
+              "label": "Payment reference",
+              "value": "KIOSK-240928-002",
               "source_line": 0,
               "confidence": 97.2
             },
@@ -677,7 +654,7 @@
       ],
       "history": [
         {
-          "action": "Synthetic receipt captured",
+          "action": "Payment confirmation uploaded",
           "actor": "Zayn Mercer",
           "at": "2026-09-28T09:30:00Z"
         }
@@ -686,6 +663,9 @@
         "name": "Jordan Demo",
         "document_type": "EMIRATES_ID",
         "document_number": "SAMPLE-ID-1001",
+        "nationality": "United Arab Emirates",
+        "birth_date": "1990-01-01",
+        "expiry_date": "2030-12-31",
         "sim_identifier": "SAMPLE-SIM-1001",
         "sim_type": "PHYSICAL",
         "plan_name": "Flexi Postpaid",

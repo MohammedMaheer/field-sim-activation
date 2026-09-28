@@ -33,6 +33,7 @@ output/private/
 **/.metadata
 **/.idea/
 **/.gradle/
+**/.kotlin/
 **/ephemeral/
 **/key.properties
 **/*.jks

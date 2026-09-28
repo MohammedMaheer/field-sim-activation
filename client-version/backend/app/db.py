@@ -101,7 +101,7 @@ class Agent(Entity):
     __tablename__ = "agents"
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), unique=True)
     employee_id: Mapped[str] = mapped_column(String(40), unique=True)
-    leader_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    leader_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
     outlet_id: Mapped[str] = mapped_column(ForeignKey("outlets.id"), index=True)
     target: Mapped[int] = mapped_column(Integer, default=20)
     status: Mapped[str] = mapped_column(String(40), default="OFFLINE")

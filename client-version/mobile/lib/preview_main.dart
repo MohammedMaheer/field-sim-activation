@@ -138,6 +138,11 @@ class PreviewService extends RelayService {
   bool get isPreview => true;
   PreviewService(this.data) {
     user = Map<String, dynamic>.from(data['user']);
+    for (final row in data['/kyc-captures'] as List) {
+      if (row['document_kind'] == 'PAYMENT_CONFIRMATION') {
+        row['invoice'] = paymentInvoice(row);
+      }
+    }
     ready = true;
     dio.interceptors.clear();
     dio.interceptors.add(
@@ -202,16 +207,6 @@ class PreviewService extends RelayService {
       data['/resources/agents'][0]['on_shift'] = body['action'] == 'start';
       data['/dashboard']['agents'][0]['on_shift'] = body['action'] == 'start';
       return {};
-    }
-    if (path.startsWith('/field-tasks/') && o.method == 'PATCH') {
-      final row = (data['/field-tasks'] as List).firstWhere(
-        (r) => r['id'] == path.split('/')[2],
-      );
-      row['status'] = 'DONE';
-      data['/dashboard']['tasks_open'] = (data['/field-tasks'] as List)
-          .where((r) => r['status'] == 'OPEN')
-          .length;
-      return row;
     }
     if (path.startsWith('/inventory/') && path.endsWith('/move')) {
       final row = (data['/resources/inventory'] as List).firstWhere(

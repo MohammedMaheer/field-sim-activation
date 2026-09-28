@@ -11,7 +11,7 @@ from openpyxl import Workbook
 temp = tempfile.TemporaryDirectory(prefix="relay-client-tests-")
 os.environ["DATABASE_URL"] = "sqlite:///" + str(Path(temp.name) / "client.db")
 os.environ["DEMO_PASSWORD"] = "test-client-password"
-from app.db import Base, engine, DB, Order, Audit
+from app.db import Base, engine, DB, Order, Audit, Agent
 from app.main import app, limits
 from app.seed import seed
 
@@ -135,15 +135,25 @@ def test_admin_can_manage_plans_and_changes_reach_the_shared_catalog(client):
     assert "Plan Changed" in actions
     assert "Plan Removed" in actions
     assert "Plan Restored" in actions
+    deleted = client.request("DELETE", f"/api/plans/{plan_id}", json={"reason": "Unused plan retired"})
+    assert deleted.status_code == 200, deleted.text
+    assert all(p["id"] != plan_id for p in client.get("/api/admin/plans").json())
+    with DB() as db:
+        assert db.scalar(select(Audit).where(Audit.entity == plan_id, Audit.action == "Plan Permanently Deleted"))
 
 
 def test_plan_management_is_restricted_to_administrators(client):
     login(client, "agent1")
     assert client.get("/api/admin/plans").status_code == 403
-    assert client.post(
-        "/api/plans",
-        json={"name": "No access", "monthly_cost": 1, "data_gb": 0},
-    ).status_code == 403
+    assert client.request("DELETE", "/api/plans/unknown", json={"reason": "Not authorized"}).status_code == 403
+
+
+def test_referenced_plan_cannot_be_permanently_deleted(client):
+    login(client)
+    with DB() as db:
+        plan_id = db.scalar(select(Order.plan_id).where(Order.plan_id.is_not(None)).limit(1))
+    assert plan_id
+    assert client.request("DELETE", f"/api/plans/{plan_id}", json={"reason": "Attempted plan deletion"}).status_code == 409
 
 
 def test_public_plans_catalog_is_read_only_and_requires_no_account(client):
@@ -155,44 +165,11 @@ def test_public_plans_catalog_is_read_only_and_requires_no_account(client):
     assert client.post("/api/public/plans", json={}).status_code == 405
 
 
-def test_proposal_tasks_are_scoped_audited_and_transition_once(client):
+def test_field_tasks_are_not_in_the_client_edition(client):
     login(client)
-    agent = next(
-        a for a in client.get("/api/resources/agents").json() if a["employee_id"] == "RLY-1041"
-    )
-    created = client.post(
-        "/api/field-tasks",
-        json={
-            "agent_id": agent["id"],
-            "title": "Verify outlet stock",
-            "note": "Synthetic task",
-            "due_date": "2026-09-24",
-        },
-    )
-    assert created.status_code == 201, created.text
-    task_id = created.json()["id"]
-    login(client, "agent1")
-    own = client.get("/api/field-tasks").json()
-    assert own and all(t["agent_id"] == own[0]["agent_id"] for t in own)
-    if agent["id"] == own[0]["agent_id"]:
-        done = client.patch(f"/api/field-tasks/{task_id}", json={"status": "DONE"})
-        assert done.status_code == 200 and done.json()["completed_at"]
-        assert (
-            client.patch(f"/api/field-tasks/{task_id}", json={"status": "OPEN"}).status_code == 409
-        )
-        statuses = [item["status"] for item in client.get("/api/field-tasks").json()]
-        assert statuses == sorted(statuses, key=lambda status: status == "DONE")
-    assert (
-        client.post(
-            "/api/field-tasks",
-            json={"agent_id": agent["id"], "title": "Unauthorized", "due_date": "2026-09-24"},
-        ).status_code
-        == 403
-    )
-    login(client, "agent2")
-    assert client.patch(f"/api/field-tasks/{task_id}", json={"status": "DONE"}).status_code == 404
-    with DB() as db:
-        assert db.scalar(select(Audit).where(Audit.entity == task_id))
+    assert client.get("/api/field-tasks").status_code == 404
+    assert client.post("/api/field-tasks", json={}).status_code == 404
+    assert client.get("/api/resources/compliance").status_code == 404
 
 
 def test_support_ticket_is_scoped_and_review_is_audited(client):
@@ -217,6 +194,9 @@ def test_support_ticket_is_scoped_and_review_is_audited(client):
     )
     login(client, "agent2")
     assert all(row["id"] != ticket_id for row in client.get("/api/support-tickets").json())
+    assert client.post("/api/support-tickets", json={
+        "agent_id": agent_id, "subject": "Wrong agent", "message": "Cannot open for another agent",
+    }).status_code == 403
     login(client, "leader2")
     assert (
         client.patch(
@@ -230,6 +210,11 @@ def test_support_ticket_is_scoped_and_review_is_audited(client):
         json={"status": "RESOLVED", "response": "Restarted sync process"},
     )
     assert resolved.status_code == 200 and resolved.json()["status"] == "RESOLVED"
+    login(client)
+    assert client.post("/api/support-tickets", json={
+        "agent_id": agent_id, "subject": "Admin request", "message": "Administrators only respond",
+    }).status_code == 403
+    login(client, "ops")
     assert (
         client.patch(
             f"/api/support-tickets/{ticket_id}", json={"status": "RESOLVED", "response": "Again"}
@@ -795,6 +780,105 @@ def test_organization_setup_is_atomic_scoped_and_audited(client):
     assert not any(
         a["id"] == created.json()["id"] for a in client.get("/api/resources/agents").json()
     )
+
+
+def test_agent_can_be_assigned_directly_to_a_branch(client):
+    login(client)
+    branch = client.post("/api/organization/branches", json={"name": "Direct Agent Branch"})
+    assert branch.status_code == 201, branch.text
+    payload = {
+        "name": "Direct Agent",
+        "branch_id": branch.json()["id"],
+        "employee_id": "DIRECT-01",
+        "email": "direct.agent@relay.demo",
+        "password": "test-client-password",
+        "target": 18,
+    }
+    created = client.post("/api/organization/agents", json=payload)
+    assert created.status_code == 201, created.text
+    assert created.json()["branch_id"] == branch.json()["id"]
+    with DB() as db:
+        assert db.get(Agent, created.json()["id"]).leader_id is None
+    login(client, "direct.agent")
+    assert [a["id"] for a in client.get("/api/resources/agents").json()] == [created.json()["id"]]
+
+
+def test_failed_image_extraction_can_be_completed_manually(client):
+    from PIL import Image
+    from uuid import uuid4
+    from app.db import KycCapture
+
+    login(client, "agent1")
+    agent_id = client.get("/api/auth/me").json()["agent_id"]
+    image = io.BytesIO()
+    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    plan_id = client.get("/api/resources/plans").json()[0]["id"]
+    created = client.post("/api/kyc-captures", json={
+        "agent_id": agent_id, "operation_id": str(uuid4()),
+        "source_reference": "MANUAL-CORRECTION-CASE", "image_base64": encoded,
+        "intake": {"name": "Sample Customer", "document_number": "SAMPLE-ONLY",
+                   "nationality": "Sample", "birth_date": "1990-01-01",
+                   "expiry_date": "2090-12-31", "document_image": encoded,
+                   "sim_identifier": "SAMPLE-SIM", "plan_id": plan_id,
+                   "msisdn": "SAMPLE-PHONE", "signature": [[[i / 10, 0.5] for i in range(8)]]},
+    })
+    assert created.status_code == 201, created.text
+    capture_id = created.json()["id"]
+    with DB() as db:
+        row = db.get(KycCapture, capture_id)
+        row.status = "OCR_FAILED"
+        db.commit()
+    current = client.get(f"/api/kyc-captures/{capture_id}").json()
+    saved = client.patch(f"/api/kyc-captures/{capture_id}/rows", json={
+        "version": current["version"], "reason": "Read payment image manually",
+        "rows": [{"fields": [{"label": "Total paid", "value": "AED 100.00"}]}],
+    })
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"] == "VALIDATED"
+
+
+def test_excel_sim_import_is_atomic_and_audited(client):
+    login(client)
+    branch = client.get("/api/resources/branches").json()[0]
+    template = client.get("/api/inventory/bulk-template")
+    assert template.status_code == 200 and template.content[:2] == b"PK"
+
+    def workbook(rows):
+        book = Workbook()
+        sheet = book.active
+        sheet.append(["ICCID", "SIM Serial", "SIM Type"])
+        for row in rows:
+            sheet.append(row)
+        stream = io.BytesIO()
+        book.save(stream)
+        return base64.b64encode(stream.getvalue()).decode()
+
+    invalid = client.post("/api/inventory/bulk", json={
+        "branch_id": branch["id"], "reason": "Received branch stock", "content_base64": workbook([
+            ["QA-BULK-001", "QA-SERIAL-001", "Physical"],
+            ["QA-BULK-001", "QA-SERIAL-002", "eSIM"],
+        ])})
+    assert invalid.status_code == 409
+    valid = client.post("/api/inventory/bulk", json={
+        "branch_id": branch["id"], "reason": "Received branch stock", "content_base64": workbook([
+            ["QA-BULK-001", "QA-SERIAL-001", "Physical"],
+            ["QA-BULK-002", "QA-SERIAL-002", "eSIM"],
+        ])})
+    assert valid.status_code == 201, valid.text
+    assert valid.json()["imported"] == 2
+    assert client.post("/api/inventory/bulk", json={
+        "branch_id": branch["id"], "reason": "Received branch stock", "content_base64": workbook([
+            ["QA-BULK-001", "QA-SERIAL-001", "Physical"],
+        ])}).status_code == 409
+    from app.db import Sim, Movement
+    with DB() as db:
+        sims = db.scalars(select(Sim).where(Sim.iccid.in_(["QA-BULK-001", "QA-BULK-002"]))).all()
+        assert len(sims) == 2
+        assert all(db.scalar(select(Movement.id).where(Movement.sim_id == sim.id)) for sim in sims)
+        assert all(db.scalar(select(Audit.id).where(Audit.entity == sim.id, Audit.action == "SIM Imported")) for sim in sims)
+    login(client, "agent1")
+    assert client.get("/api/inventory/bulk-template").status_code == 403
 
 
 def test_demo_refresh_is_opt_in_idempotent_and_preserves_history(monkeypatch):
