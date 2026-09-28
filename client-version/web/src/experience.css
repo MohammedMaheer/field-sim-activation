@@ -323,3 +323,28 @@ button.primary:hover:not(:disabled) { background: linear-gradient(110deg, #a02a6
 .report-card:nth-child(3n) > svg { color: #98610f; }
 
 .capture-file:nth-child(2) svg { color: #087e6a; }
+
+/* Number badges have explicit foregrounds: active labels inherit white. */
+.transaction-stages li > span {
+  background: #e8ddfa;
+  color: #59308c;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.transaction-stages li:nth-child(2) > span {
+  background: #dceafe;
+  color: #2157a0;
+}
+.transaction-stages li:nth-child(3) > span {
+  background: #d5f2e9;
+  color: #08634f;
+}
+.transaction-stages li.active > span {
+  background: #fff;
+  color: #6432a3;
+  box-shadow: 0 1px 4px #32155724;
+}
+.transaction-stages li.complete > span {
+  background: #08765e;
+  color: #fff;
+}
