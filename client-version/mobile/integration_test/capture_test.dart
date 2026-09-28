@@ -68,7 +68,7 @@ void main() {
       await service.store.put(draftKey,prepared);
       app.router.push('/screenshot-capture');
       await wait(find.byType(KycCaptureScreen));
-      await wait(find.text('Receipt saved.'));
+      await wait(find.text('Image ready to upload'));
       await binding.convertFlutterSurfaceToImage();
       await tester.pump();
       await binding.takeScreenshot('capture-local-draft');

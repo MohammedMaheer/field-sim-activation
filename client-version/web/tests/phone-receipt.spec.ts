@@ -3,7 +3,7 @@ test('phone pending receipt paper reveal and PDF download',async({page})=>{
  test.setTimeout(90000);
  await page.goto(process.env.MOBILE_PREVIEW_URL||'http://127.0.0.1:5188/mobile-demo/');
  await expect(page.getByText('Your day, at a glance',{exact:true})).toBeVisible({timeout:60000});
- await page.getByRole('tab',{name:'Receipts',exact:true}).click();
+ await page.getByRole('tab',{name:'Capture',exact:true}).click();
  await page.getByRole('button',{name:'History',exact:true}).click();
  await page.getByRole('button',{name:'DEMO-RECEIPT-002 SUBMITTED',exact:true}).click();
  await expect(page.getByRole('group',{name:/^FINAL REVIEW PENDING/}).or(page.getByText(/^FINAL REVIEW PENDING/))).toBeVisible();

@@ -326,8 +326,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                 const SizedBox(height: 28),
                 const InfoCard(
                   icon: Icons.shield_outlined,
-                  text:
-                      'Your field workspace. Capture receipts and follow their progress.',
+                  text: 'Capture transactions and follow their progress.',
                 ),
                 const SizedBox(height: 15),
                 const Text(
@@ -456,7 +455,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
             ),
             NavigationDestination(
               icon: Icon(Icons.add_circle_outline, color: RelayPalette.brand),
-              label: 'Receipts',
+              label: 'Capture',
             ),
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF98610F)),
@@ -673,7 +672,7 @@ class HomeScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
-                    '${d['kyc_pending_review']} captures awaiting backend review',
+                    '${d['kyc_pending_review']} transactions awaiting review',
                     style: const TextStyle(
                       color: Color(0xFF855416),
                       fontSize: 13,
@@ -687,7 +686,7 @@ class HomeScreen extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: MetricTile(
-                      'Receipts captured',
+                      'Transactions today',
                       '${d['kyc_today']}',
                       Icons.document_scanner_outlined,
                       onTap: () => context.push('/ekyc'),
@@ -823,7 +822,6 @@ class HomeScreen extends ConsumerWidget {
                   .take(3)
                   .map((o) => OrderCard(Map<String, dynamic>.from(o))),
               const SizedBox(height: 18),
-
             ],
           ),
         );
@@ -1104,7 +1102,7 @@ class DailyReportScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   children: [
-                    KeyValue('Receipts captured', '${d['kyc_today']}'),
+                    KeyValue('Transactions today', '${d['kyc_today']}'),
                     KeyValue('Awaiting review', '${d['kyc_pending_review']}'),
                     KeyValue('Sales completed', '${d['today']}'),
                     KeyValue('Daily target', '${d['target']}'),

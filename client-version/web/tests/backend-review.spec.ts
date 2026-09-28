@@ -35,16 +35,15 @@ test("backend side-by-side review, correction and verification", async ({
     plan_id: plans[0].id,
     msisdn: "SAMPLE-PHONE",
     signature: [Array.from({ length: 10 }, (_, i) => [i / 10, 0.5])],
-    kiosk_reference: "SAMPLE-KIOSK",
-    payment_on_receipt: true,
   };
   const created = await request.post("/api/kyc-captures", {
     headers,
     data: {
       agent_id: me.agent_id,
+      document_kind: "PAYMENT_CONFIRMATION",
       intake,
       operation_id: crypto.randomUUID(),
-      source_reference: "DEMO-REVIEW-" + Date.now(),
+      source_reference: "PAY-REVIEW-" + Date.now(),
       image_base64: (
         await readFile(path.resolve("tests/fixtures/transaction-sample.png"))
       ).toString("base64"),
@@ -67,7 +66,7 @@ test("backend side-by-side review, correction and verification", async ({
     data: {
       version: capture.version,
       rows: capture.rows,
-      reason: "Checked synthetic receipt",
+      reason: "Checked synthetic payment image",
     },
   });
   expect(saved.ok()).toBeTruthy();
@@ -106,14 +105,14 @@ test("backend side-by-side review, correction and verification", async ({
     page.getByRole("button", { name: "Verify submission", exact: true }),
   ).toBeDisabled();
   await page.getByRole("button", { name: "Retry image", exact: true }).click();
-  const image = page.getByRole("img", { name: /Original receipt from/ });
+  const image = page.getByRole("img", { name: /Payment confirmation from/ });
   await expect(image).toBeVisible();
   await expect
     .poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
     .toBeGreaterThan(0);
-  await page.getByText("Printable invoice", { exact: true }).click();
+  await page.getByText("Payment invoice", { exact: true }).click();
   await expect(
-    page.getByRole("heading", { name: "Final review pending", exact: true }),
+    page.getByRole("heading", { name: "Payment successful", exact: true }),
   ).toBeVisible();
   const pendingDownload = page.waitForEvent("download");
   await page.getByRole("button", { name: "PDF", exact: true }).click();
@@ -124,14 +123,14 @@ test("backend side-by-side review, correction and verification", async ({
   await expect(
     page.getByRole("button", { name: "Verify submission", exact: true }),
   ).toBeDisabled();
-  await page.getByRole("button", { name: "Zoom in receipt" }).click();
-  await expect(page.getByRole("button", { name: "Fit receipt" })).toHaveText(
+  await page.getByRole("button", { name: "Zoom in image" }).click();
+  await expect(page.getByRole("button", { name: "Fit image" })).toHaveText(
     "125%",
   );
-  await page.getByRole("button", { name: "Fit receipt" }).click();
-  await page.getByRole("tab", { name: /Receipt text/ }).click();
+  await page.getByRole("button", { name: "Fit image" }).click();
+  await page.getByRole("tab", { name: /Text from image/ }).click();
   await expect(page.locator(".review-raw-lines")).toContainText("Jordan Demo");
-  await page.getByRole("tab", { name: "Transaction fields" }).click();
+  await page.getByRole("tab", { name: "Payment fields" }).click();
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Excel", exact: true }).click();
   expect((await dl).suggestedFilename()).toMatch(/xlsx$/);
@@ -175,27 +174,27 @@ test("backend side-by-side review, correction and verification", async ({
   });
   await expect(
     page.getByLabel(
-      "I compared the uploaded image with the transaction fields.",
+      "I checked the image against the customer, SIM and captured details.",
     ),
   ).toBeVisible({ timeout: 15000 });
   await page
     .getByLabel("Review note", { exact: true })
-    .fill("Original receipt and all submitted fields match.");
+    .fill("Original payment image and captured details match.");
   await page
-    .getByLabel("I compared the uploaded image with the transaction fields.")
+    .getByLabel("I checked the image against the customer, SIM and captured details.")
     .check();
   await page
     .getByRole("button", { name: "Verify submission", exact: true })
     .click();
   await expect(
-    page.getByRole("heading", { name: "Receipt verified", exact: true }),
+    page.getByRole("heading", { name: "Payment verified", exact: true }),
   ).toBeVisible();
   expect((await (await request.get(url, { headers })).json()).status).toBe(
     "VERIFIED",
   );
   await expect(
     page.getByRole("heading", {
-      name: "Success · Receipt verified",
+      name: "Payment successful",
       exact: true,
     }),
   ).toBeVisible();
@@ -209,7 +208,7 @@ test("backend side-by-side review, correction and verification", async ({
     };
   });
   await page
-    .getByRole("button", { name: "Print receipt", exact: true })
+    .getByRole("button", { name: "Print invoice", exact: true })
     .click();
   expect(await page.evaluate(() => (window as any).printed)).toBeTruthy();
 });

@@ -144,7 +144,7 @@ export default function KycCapture() {
       <div className={`page-header ${reviewMode ? "review-page-header" : ""}`}>
         <div>
           <div className="eyebrow">TRANSACTIONS</div>
-          <h1>{canReview ? "Payment review" : "New transaction"}</h1>
+          <h1>{canReview ? "Transaction review" : "New transaction"}</h1>
         </div>
         <button
           onClick={() =>
@@ -221,7 +221,7 @@ export default function KycCapture() {
                   setHistorySearch(e.target.value);
                   setHistoryPage(0);
                 }}
-                placeholder="Payment reference"
+                placeholder="Transaction reference"
               />
             </label>
           </div>
@@ -238,6 +238,11 @@ export default function KycCapture() {
                     <small>
                       {agents.data?.find((a: Row) => a.id === r.agent_id)
                         ?.name || r.agent_id}
+                    </small>
+                    <small>
+                      {r.document_kind === "PAYMENT_CONFIRMATION"
+                        ? "Payment confirmation"
+                        : "Historical receipt"}
                     </small>
                   </span>
                   <span>
@@ -483,7 +488,9 @@ export default function KycCapture() {
                         {!!capture.lines?.length && (
                           <details open={rows.length === 0}>
                             <summary>
-                              Receipt text · {capture.lines.length} lines
+                              {capture.document_kind === "PAYMENT_CONFIRMATION"
+                                ? "Text from image"
+                                : "Receipt text"} · {capture.lines.length} lines
                             </summary>
                             <p className="field-help">
                               Use the uploaded text to check or add missing
@@ -498,7 +505,7 @@ export default function KycCapture() {
                                   </span>
                                   {editable && (
                                     <button
-                                      aria-label={"Add receipt text " + (i + 1)}
+                                    aria-label={"Add image text " + (i + 1)}
                                       disabled={rows.length >= 100}
                                       onClick={() => {
                                         setRows([
@@ -506,7 +513,7 @@ export default function KycCapture() {
                                           {
                                             fields: [
                                               {
-                                                label: "Receipt text",
+                                                label: capture.document_kind === "PAYMENT_CONFIRMATION" ? "Image text" : "Receipt text",
                                                 value: line.text,
                                                 source_line: i,
                                                 confidence: line.confidence,
@@ -528,7 +535,7 @@ export default function KycCapture() {
                         )}
                         {(editable || rows.length > 0) && (
                           <section className="capture-rows">
-                            <h2>Transaction rows</h2>
+                            <h2>{capture.document_kind === "PAYMENT_CONFIRMATION" ? "Payment details" : "Transaction rows"}</h2>
 
                             {rows.length === 0 && (
                               <p>

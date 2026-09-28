@@ -95,7 +95,7 @@ test("payment invoice and backend activation remain connected", async ({
   await expect(
     page.getByRole("img", { name: /Payment confirmation from/ }),
   ).toBeVisible();
-  await page.getByText("Printable invoice", { exact: true }).click();
+  await page.getByText("Payment invoice", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Payment successful", exact: true }),
   ).toBeVisible();
@@ -117,7 +117,7 @@ test("payment invoice and backend activation remain connected", async ({
     .getByLabel("Review note", { exact: true })
     .fill("Original payment and identity details match");
   await page
-    .getByLabel("I compared the uploaded image with the transaction fields.")
+    .getByLabel("I checked the image against the customer, SIM and captured details.")
     .check();
   await page
     .getByRole("button", { name: "Verify submission", exact: true })
@@ -139,9 +139,9 @@ test("payment invoice and backend activation remain connected", async ({
   ).toBeVisible();
   const invoiceDetails = page
     .locator("details")
-    .filter({ has: page.getByText("Printable invoice", { exact: true }) });
+    .filter({ has: page.getByText("Payment invoice", { exact: true }) });
   if (!((await invoiceDetails.getAttribute("open")) !== null))
-    await page.getByText("Printable invoice", { exact: true }).click();
+    await page.getByText("Payment invoice", { exact: true }).click();
   await expect(page.locator(".invoice-sections")).toContainText("ACTIVATED");
   await expect(page.locator(".invoice-sections")).toContainText(
     "EXTERNAL-QA-123",

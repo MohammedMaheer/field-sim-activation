@@ -35,7 +35,7 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await expect(page.getByText("My SIM stock", { exact: true })).toBeVisible();
   await page.getByRole("tab", { name: "Profile", exact: true }).click();
   await expect(page.getByText("My workspace", { exact: true })).toBeVisible();
-  await page.getByRole("tab", { name: "Receipts", exact: true }).click();
+  await page.getByRole("tab", { name: "Capture", exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "New transaction" }),
   ).toBeVisible();
@@ -131,7 +131,7 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page.waitForTimeout(850);
   await expect(page.getByRole("group",{name:/Payment successful/}).or(page.getByText(/Payment successful/)).first()).toBeVisible();
   await page.screenshot({path:"../output/qa/phone-payment-invoice-top.png",fullPage:true});
-  await expect(await revealText("Transaction rows")).toBeVisible();
+  await expect(await revealText("Payment details")).toBeVisible();
   await page.mouse.move(host!.x + host!.width / 2, host!.y + host!.height / 2);
   for(let i=0;i<8;i++){
     if(await page.getByRole("textbox", {name:"Field name",exact:true}).first().count()) break;

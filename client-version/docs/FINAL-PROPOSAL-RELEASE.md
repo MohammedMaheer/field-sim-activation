@@ -1,3 +1,13 @@
+## Transaction review clarity — 28 September 2026, build 35
+
+- The administrator review inbox and side-by-side image comparison now distinguish current payment confirmations from preserved historical activation receipts. Current payments show a compact customer, masked document, phone, plan, SIM and recorded amount summary; missing fields say “Not recorded.” Historical records rely on the original image and extracted fields, avoiding misleading summaries from older sample data. Verification and printable invoice labels follow the record type.
+- The field app and phone preview use Capture, Payment and Invoice labels for the current workflow. Image selection and processing messages no longer claim a receipt was saved before upload. The transaction search accepts both current and historical references.
+- Validation: 54 backend tests passed; web build, Flutter analysis, Flutter tests, phone preview and release APK build passed. Desktop and 390px route checks, current payment review, independent verification and historical receipt review passed. Hosted browser checks and the Android installation result are recorded below.
+- Client-only release backup: `/opt/relay-client/backups/connected-receipt-before-20260928T150829Z`; migration remains 008. Hosted APK SHA-256: `8ddcf3231f8491f0b14b36ff6b1f7402dc6ef24fd1f66f96297c01991b721872`. Android cancelled the connected-phone install (`INSTALL_FAILED_USER_RESTRICTED`), so the new binary was not physically verified on that device.
+- Web: https://relay-client.187-127-162-233.sslip.io/kyc-capture
+- Phone preview: https://relay-client.187-127-162-233.sslip.io/mobile-demo/?v=35
+- APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=35
+
 ## Upload-gated receipt experience — 28 September 2026, build 32
 
 - Latest owner clarification: the animated printable receipt appears only after an Etisalat receipt image is uploaded and accepted. Identity and SIM allocation alone do not generate a receipt. Final review pending remains until authorized independent staff verify the uploaded original and rows; carrier activation stays external.

@@ -64,6 +64,20 @@ export default function ReceiptReview({
   }, [capture.id, capture.version]);
   const own = capture.creator_id === user.id;
   const eligible = capture.status === "SUBMITTED" && !own;
+  const payment = capture.document_kind === "PAYMENT_CONFIRMATION";
+  const evidenceLabel = payment ? "Payment confirmation" : "Historical activation receipt";
+  const customerId = String(capture.intake?.document_number || "");
+  const paidAmount = (capture.rows || [])
+    .flatMap((row: Row) => row.fields || [])
+    .find((field: Row) => /^(total paid|amount paid|paid amount)$/i.test(String(field.label || "").trim()))?.value;
+  const summary = [
+    ["Customer", capture.intake?.name],
+    ["Document", customerId ? `•••• ${customerId.slice(-4)}` : ""],
+    ["Phone", capture.intake?.msisdn],
+    ["Plan", capture.intake?.plan_name],
+    ["SIM", capture.intake?.sim_identifier],
+    [payment ? "Paid amount" : "Record type", payment ? paidAmount : "Earlier receipt"],
+  ];
   async function perform(action: () => Promise<unknown>) {
     setBusy(true);
     setError("");
@@ -91,7 +105,7 @@ export default function ReceiptReview({
   return (
     <section
       className="receipt-review-workspace"
-      aria-label="Receipt verification workspace"
+      aria-label="Transaction review workspace"
     >
       <header className="review-record-header">
         <button onClick={onBack} disabled={busy}>
@@ -99,6 +113,7 @@ export default function ReceiptReview({
           Review inbox
         </button>
         <div>
+          <span className="review-kind">{evidenceLabel}</span>
           <h2>{capture.source_reference}</h2>
           <p>
             <strong>{agent?.name || "Assigned agent"}</strong> ·{" "}
@@ -111,6 +126,16 @@ export default function ReceiptReview({
         </div>
         <Badge value={capture.status} />
       </header>
+      {payment && (
+        <div className="review-summary" aria-label="Captured transaction summary">
+          {summary.map(([label, value]) => (
+            <div key={label}>
+              <span>{label}</span>
+              <strong dir="auto">{value || "Not recorded"}</strong>
+            </div>
+          ))}
+        </div>
+      )}
       {error && (
         <div role="alert" className="capture-error">
           {error}
@@ -119,34 +144,28 @@ export default function ReceiptReview({
       <div className="review-comparison">
         <section
           className="review-pane"
-          aria-label={
-            capture.document_kind === "PAYMENT_CONFIRMATION"
-              ? "Payment confirmation"
-              : "Original receipt"
-          }
+          aria-label={evidenceLabel}
         >
           <div className="review-pane-heading">
             <div>
               <h3>
-                {capture.document_kind === "PAYMENT_CONFIRMATION"
-                  ? "Payment confirmation"
-                  : "Original receipt"}
+                {evidenceLabel}
               </h3>
-              <small>Uploaded by the agent · unmodified</small>
+              <small>Original image uploaded by the agent</small>
             </div>
             <div className="review-image-controls">
               <button
-                aria-label="Zoom out receipt"
+                aria-label="Zoom out image"
                 disabled={zoom <= 100}
                 onClick={() => setZoom((z) => Math.max(100, z - 25))}
               >
                 <ZoomOut size={17} />
               </button>
-              <button aria-label="Fit receipt" onClick={() => setZoom(100)}>
+              <button aria-label="Fit image" onClick={() => setZoom(100)}>
                 {zoom}%
               </button>
               <button
-                aria-label="Zoom in receipt"
+                aria-label="Zoom in image"
                 disabled={zoom >= 300}
                 onClick={() => setZoom((z) => Math.min(300, z + 25))}
               >
@@ -157,7 +176,7 @@ export default function ReceiptReview({
           <div
             className="review-image-stage"
             tabIndex={0}
-            aria-label="Scrollable receipt image"
+            aria-label="Scrollable original image"
           >
             {imageError ? (
               <div role="alert">
@@ -170,16 +189,16 @@ export default function ReceiptReview({
             ) : image ? (
               <img
                 src={image}
-                alt={`${capture.document_kind === "PAYMENT_CONFIRMATION" ? "Payment confirmation" : "Original receipt"} from ${agent?.name || "assigned agent"}`}
+                alt={`${evidenceLabel} from ${agent?.name || "assigned agent"}`}
                 style={{ width: `${zoom}%` }}
                 onError={() =>
                   setImageError(
-                    "The receipt could not be displayed. Retry or download the original.",
+                    "The image could not be displayed. Retry or download the original.",
                   )
                 }
               />
             ) : (
-              <p role="status">Loading original receipt…</p>
+              <p role="status">Loading original image…</p>
             )}
           </div>
           <div className="review-pane-footer">
@@ -197,20 +216,18 @@ export default function ReceiptReview({
               <Download size={16} />
               Download original
             </button>
-            <span>Zoom, then scroll to inspect details</span>
+            <span>Zoom to inspect the original</span>
           </div>
         </section>
-        <section className="review-pane" aria-label="Extracted receipt data">
+        <section className="review-pane" aria-label="Captured details">
           <div className="review-pane-heading">
             <div>
               <h3>
-                {capture.document_kind === "PAYMENT_CONFIRMATION"
-                  ? "Payment details"
-                  : "Receipt details"}
+                {payment ? "Payment details" : "Historical receipt details"}
               </h3>
               <small>
-                {capture.rows?.length || 0} transaction(s) · review against
-                original
+                {capture.rows?.length || 0} {payment ? "payment" : "receipt"}
+                {capture.rows?.length === 1 ? " record" : " records"} · compare with image
               </small>
             </div>
             <button
@@ -219,7 +236,7 @@ export default function ReceiptReview({
                 perform(() =>
                   download(
                     `/kyc-captures/${capture.id}/excel`,
-                    `receipt-${capture.id}.xlsx`,
+                    `${payment ? "payment" : "receipt"}-${capture.id}.xlsx`,
                   ),
                 )
               }
@@ -231,7 +248,7 @@ export default function ReceiptReview({
           <div
             className="review-data-tabs"
             role="tablist"
-            aria-label="Receipt data"
+            aria-label="Captured data"
           >
             <button
               role="tab"
@@ -240,7 +257,7 @@ export default function ReceiptReview({
               aria-selected={tab === "fields"}
               onClick={() => setTab("fields")}
             >
-              Transaction fields
+              {payment ? "Payment fields" : "Transaction fields"}
             </button>
             <button
               role="tab"
@@ -249,7 +266,7 @@ export default function ReceiptReview({
               aria-selected={tab === "ocr"}
               onClick={() => setTab("ocr")}
             >
-              Receipt text ({capture.lines?.length || 0})
+              {payment ? "Text from image" : "Receipt text"} ({capture.lines?.length || 0})
             </button>
           </div>
           <div
@@ -263,7 +280,7 @@ export default function ReceiptReview({
               capture.rows?.length ? (
                 capture.rows.map((row: Row, i: number) => (
                   <section className="review-transaction" key={i}>
-                    <h4>Transaction {i + 1}</h4>
+                    <h4>{payment ? "Payment" : "Transaction"} {i + 1}</h4>
                     <dl>
                       {(
                         row.fields ||
@@ -307,7 +324,7 @@ export default function ReceiptReview({
                   disabled={busy || !image || !!imageError}
                   onChange={(e) => setChecked(e.target.checked)}
                 />
-                I compared the uploaded image with the transaction fields.
+                I checked the image against the customer, SIM and captured details.
               </label>
             </div>
             <div>
@@ -351,7 +368,7 @@ export default function ReceiptReview({
           <div>
             <h3>
               {capture.status === "VERIFIED"
-                ? "Receipt verified"
+                ? payment ? "Payment verified" : "Historical receipt verified"
                 : capture.status === "REJECTED"
                   ? "Returned for correction"
                   : own
@@ -363,7 +380,7 @@ export default function ReceiptReview({
                 ? `${capture.review.reviewer}: ${capture.review.reason}`
                 : own
                   ? "Another authorized team member must review your own submission."
-                  : "The agent must validate and submit the receipt before review."}
+                  : "The agent must check and submit the details before review."}
             </p>
           </div>
         )}
@@ -485,7 +502,7 @@ export default function ReceiptReview({
         </details>
       )}
       <details className="review-history">
-        <summary>Printable invoice</summary>
+        <summary>{payment ? "Payment invoice" : "Historical receipt"}</summary>
         <ActivationReceipt capture={capture} />
       </details>
       <details className="review-history">

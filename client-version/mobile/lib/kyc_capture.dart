@@ -516,7 +516,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     return Scaffold(
       appBar: AppBar(
         leading: const WorkspaceBackButton(),
-        title: Text(payment ? 'Invoice' : 'Receipt'),
+        title: Text(
+          capture == null
+              ? 'Payment'
+              : payment
+              ? 'Invoice'
+              : 'Receipt',
+        ),
         actions: [
           if (capture != null)
             TextButton(
@@ -631,6 +637,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                 ? invoice!['status']
                                 : receiptSuccess
                                 ? 'Receipt confirmed'
+                                : payment
+                                ? 'Payment confirmation saved'
                                 : 'Receipt saved',
                             style: TextStyle(color: Color(0xff087756)),
                           ),
@@ -851,7 +859,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         ),
                       ),
                       gap(),
-                      const Text('Receipt saved.'),
+                      const Text('Image ready to upload'),
                       gap(),
                     ],
                     FilledButton(
@@ -886,7 +894,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
             gap(),
             if (capture!['status'] == 'QUEUED')
-              const Text('Preparing receipt…'),
+              Text(
+                payment ? 'Preparing payment details…' : 'Preparing receipt…',
+              ),
             if (capture!['status'] == 'OCR_FAILED') ...[
               Text(capture!['error']),
               TextButton(
@@ -900,7 +910,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
             if ((capture!['lines'] as List? ?? []).isNotEmpty)
               ExpansionTile(
-                title: const Text('Receipt text'),
+                title: Text(payment ? 'Text from image' : 'Receipt text'),
                 initiallyExpanded: rows.isEmpty,
                 children: [
                   ...(capture!['lines'] as List).asMap().entries.map(
@@ -917,7 +927,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                         rows.add({
                                           'fields': [
                                             {
-                                              'label': 'Receipt text',
+                                              'label': payment
+                                                  ? 'Image text'
+                                                  : 'Receipt text',
                                               'value': entry.value['text'],
                                               'source_line': entry.key,
                                               'confidence':
@@ -937,7 +949,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
               ),
             gap(),
             Text(
-              'Transaction rows',
+              payment ? 'Payment details' : 'Transaction rows',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             ...rows.asMap().entries.map((entry) {

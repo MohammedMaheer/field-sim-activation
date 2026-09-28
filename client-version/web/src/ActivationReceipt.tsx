@@ -15,7 +15,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
         `${capture.document_kind === "PAYMENT_CONFIRMATION" ? "invoice" : "receipt"}-${capture.id}.pdf`,
       );
     } catch {
-      setError("Could not download receipt. Please try again.");
+      setError(`Could not download ${capture.document_kind === "PAYMENT_CONFIRMATION" ? "invoice" : "receipt"}. Please try again.`);
     } finally {
       setExporting(false);
     }
