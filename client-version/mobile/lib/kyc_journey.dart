@@ -14,7 +14,7 @@ class KycJourneyGuide extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Container(
         decoration: const BoxDecoration(gradient: RelayPalette.soft),
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -25,7 +25,7 @@ class KycJourneyGuide extends StatelessWidget {
                 color: Color(0xFF6940A3),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             Row(
               children: List.generate(
                 3,
@@ -37,7 +37,7 @@ class KycJourneyGuide extends StatelessWidget {
                       duration: motionDuration(context),
                       curve: Curves.easeOutCubic,
                       margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
-                      height: 5,
+                      height: 4,
                       decoration: BoxDecoration(
                         color: i <= step
                             ? RelayPalette.plum
@@ -49,17 +49,15 @@ class KycJourneyGuide extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 8),
             Text(
               titles[step],
               style: const TextStyle(
-                fontSize: 20,
+                fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: Color(0xFF512479),
               ),
             ),
-            const SizedBox(height: 8),
-
           ],
         ),
       ),

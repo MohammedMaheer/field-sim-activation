@@ -876,7 +876,13 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
 class SignaturePad extends StatefulWidget {
   final List<List<Offset>> value;
   final ValueChanged<List<List<Offset>>> onChanged;
-  const SignaturePad({super.key, required this.value, required this.onChanged});
+  final double height;
+  const SignaturePad({
+    super.key,
+    required this.value,
+    required this.onChanged,
+    this.height = 160,
+  });
   @override
   State<SignaturePad> createState() => _SignaturePadState();
 }
@@ -892,8 +898,10 @@ class _SignaturePadState extends State<SignaturePad> {
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (c, box) {
-      Offset norm(Offset p) =>
-          Offset((p.dx / box.maxWidth).clamp(0, 1), (p.dy / 160).clamp(0, 1));
+      Offset norm(Offset p) => Offset(
+        (p.dx / box.maxWidth).clamp(0, 1),
+        (p.dy / widget.height).clamp(0, 1),
+      );
       return Semantics(
         label: 'Customer signature pad',
         child: RawGestureDetector(
@@ -937,7 +945,7 @@ class _SignaturePadState extends State<SignaturePad> {
               if (pointer == e.pointer) pointer = null;
             },
             child: Container(
-              height: 160,
+              height: widget.height,
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: const Color(0xFFBDA6D4)),
@@ -945,7 +953,7 @@ class _SignaturePadState extends State<SignaturePad> {
               ),
               child: CustomPaint(
                 painter: _SignaturePainter(widget.value),
-                size: Size(box.maxWidth, 160),
+                size: Size(box.maxWidth, widget.height),
               ),
             ),
           ),

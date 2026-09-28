@@ -428,7 +428,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     TextInputType? keyboardType,
   }) => Padding(
     key: fieldAnchors.putIfAbsent(key, GlobalKey.new),
-    padding: const EdgeInsets.only(bottom: 16),
+    padding: const EdgeInsets.only(bottom: 10),
     child: TextFormField(
       key: ValueKey('$key-$revision-${date ? data[key] : ''}'),
       focusNode: fieldFocus.putIfAbsent(key, FocusNode.new),
@@ -455,6 +455,164 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       onChanged: (v) => set(key, v),
     ),
   );
+
+  Widget _planCard(Json plan) {
+    final selected = data['plan_id'] == plan['id'];
+    final promotion = (plan['promotion'] ?? '').toString();
+    return Material(
+      color: selected ? const Color(0xffe9dcff) : const Color(0xffedf5ff),
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => setState(() {
+          data['plan_id'] = plan['id'];
+          data['plan_name'] = plan['name'];
+          missing.remove('plan_id');
+          error = null;
+        }),
+        child: AnimatedContainer(
+          duration: motionDuration(context),
+          constraints: const BoxConstraints(minHeight: 112),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: selected ? RelayPalette.plum : const Color(0xffc9dff9),
+              width: selected ? 2 : 1,
+            ),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      '${plan['name']}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(
+                    selected ? Icons.check_circle : Icons.circle_outlined,
+                    size: 20,
+                    color: RelayPalette.plum,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'AED ${plan['monthly_cost']}${plan['name'] == 'Tourist Prepaid' ? '' : ' / month'}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xff6940a3),
+                ),
+              ),
+              if (promotion.isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  promotion,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: Color(0xff526277),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<List<Offset>> get signatureStrokes => (data['signature'] as List? ?? [])
+      .map(
+        (s) => (s as List)
+            .map(
+              (p) => Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
+            )
+            .toList(),
+      )
+      .toList();
+
+  Future<void> captureSignature() async {
+    var strokes = signatureStrokes;
+    final result = await showModalBottomSheet<List<List<Offset>>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, update) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Customer signature',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close signature',
+                      onPressed: () => Navigator.pop(sheetContext),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                SignaturePad(
+                  height: 220,
+                  value: strokes,
+                  onChanged: (value) => update(() => strokes = value),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    TextButton(
+                      onPressed: () => update(() => strokes = []),
+                      child: const Text('Clear'),
+                    ),
+                    const Spacer(),
+                    FilledButton(
+                      onPressed: strokes.expand((s) => s).length < 2
+                          ? null
+                          : () => Navigator.pop(sheetContext, strokes),
+                      child: const Text('Save signature'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (mounted && result != null) {
+      set(
+        'signature',
+        result.map((s) => s.map((p) => [p.dx, p.dy]).toList()).toList(),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -515,7 +673,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     body: EnterSurface(
       key: ValueKey(step),
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         children: [
           Row(
             children: [
@@ -524,7 +682,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   child: AnimatedContainer(
                     duration: motionDuration(context),
                     margin: const EdgeInsets.all(3),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    padding: const EdgeInsets.symmetric(vertical: 9),
                     decoration: BoxDecoration(
                       gradient: i == step ? RelayPalette.hero : null,
                       color: i == step
@@ -550,7 +708,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
           if (error != null)
             Text(error!, style: const TextStyle(color: Colors.red)),
           if (step == 0) ...[
@@ -562,7 +720,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               selected: {data['document_type'] ?? 'National ID'},
               onSelectionChanged: (v) => set('document_type', v.first),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             ScanSurface(
               image: data['document_image'],
               reading: reading,
@@ -571,20 +729,58 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   ? 'Passport'
                   : 'Emirates ID',
             ),
-            FilledButton.icon(
-              onPressed: busy ? null : () => photo('document_image', false),
-              icon: const Icon(Icons.document_scanner),
-              label: const Text('Scan document'),
+            Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => photo('document_image', false),
+                    icon: const Icon(Icons.document_scanner),
+                    label: const Text('Scan document'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: OutlinedButton(
+                    onPressed: busy
+                        ? null
+                        : () => photo('document_image', true),
+                    child: const Text('Upload photo'),
+                  ),
+                ),
+              ],
             ),
-            TextButton(
-              onPressed: busy ? null : () => photo('document_image', true),
-              child: const Text('Upload photo'),
-            ),
+            const SizedBox(height: 12),
             field('name', 'Full name'),
             field('document_number', 'Document number'),
             field('nationality', 'Nationality'),
-            field('birth_date', 'Date of birth', date: true),
-            field('expiry_date', 'Expiry date', date: true),
+            LayoutBuilder(
+              builder: (context, constraints) => constraints.maxWidth < 320
+                  ? Column(
+                      children: [
+                        field('birth_date', 'Date of birth', date: true),
+                        field('expiry_date', 'Expiry date', date: true),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: field('birth_date', 'Date of birth', date: true),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: field(
+                            'expiry_date',
+                            'Expiry date',
+                            date: true,
+                          ),
+                        ),
+                      ],
+                    ),
+            ),
             OutlinedButton.icon(
               onPressed: busy ? null : () => photo('selfie_image', false),
               icon: const Icon(Icons.face),
@@ -603,7 +799,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               selected: {data['sim_type'] ?? 'PHYSICAL'},
               onSelectionChanged: (v) => set('sim_type', v.first),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -634,62 +830,22 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               'Subscriber plan',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
-            for (final p in plans)
-              AnimatedContainer(
-                duration: motionDuration(context),
-                margin: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: data['plan_id'] == p['id']
-                      ? const Color(0xffe4d7ff)
-                      : const Color(0xffedf5ff),
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(
-                    color: data['plan_id'] == p['id']
-                        ? RelayPalette.plum
-                        : const Color(0xffc9dff9),
-                    width: data['plan_id'] == p['id'] ? 2 : 1,
-                  ),
-                ),
-                child: ListTile(
-                  leading: const Icon(
-                    Icons.sim_card_rounded,
-                    color: RelayPalette.plum,
-                  ),
-                  title: Text(
-                    p['name'],
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  subtitle: Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'AED ${p['monthly_cost']}${p['name'] == 'Tourist Prepaid' ? '' : ' / month'}',
-                        ),
-                        if ((p['promotion'] ?? '').toString().isNotEmpty)
-                          Text(
-                            p['promotion'],
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                      ],
-                    ),
-                  ),
-                  trailing: Icon(
-                    data['plan_id'] == p['id']
-                        ? Icons.check_circle
-                        : Icons.circle_outlined,
-                  ),
-                  onTap: () => setState(() {
-                    data['plan_id'] = p['id'];
-                    data['plan_name'] = p['name'];
-                    missing.remove('plan_id');
-                    error = null;
-                  }),
-                ),
-              ),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final columns = constraints.maxWidth < 320 ? 1 : 2;
+                final width =
+                    (constraints.maxWidth - (columns - 1) * 8) / columns;
+                return Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final p in plans)
+                      SizedBox(width: width, child: _planCard(p)),
+                  ],
+                );
+              },
+            ),
+            const SizedBox(height: 12),
             const Text(
               'Customer signature',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -702,32 +858,21 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   style: TextStyle(color: Colors.red, fontSize: 12),
                 ),
               ),
-            SignaturePad(
-              value: (data['signature'] as List? ?? [])
-                  .map(
-                    (s) => (s as List)
-                        .map(
-                          (p) => Offset(
-                            (p[0] as num).toDouble(),
-                            (p[1] as num).toDouble(),
-                          ),
-                        )
-                        .toList(),
-                  )
-                  .toList(),
-              onChanged: (strokes) => set(
-                'signature',
-                strokes
-                    .map((s) => s.map((p) => [p.dx, p.dy]).toList())
-                    .toList(),
+            OutlinedButton.icon(
+              onPressed: captureSignature,
+              icon: Icon(
+                signatureStrokes.expand((s) => s).length >= 2
+                    ? Icons.check_circle
+                    : Icons.draw_outlined,
+              ),
+              label: Text(
+                signatureStrokes.expand((s) => s).length >= 2
+                    ? 'Signature saved · Edit'
+                    : 'Add customer signature',
               ),
             ),
-            TextButton(
-              onPressed: () => set('signature', []),
-              child: const Text('Clear signature'),
-            ),
           ],
-          const SizedBox(height: 24),
+          const SizedBox(height: 12),
         ],
       ),
     ),

@@ -19,13 +19,21 @@ class ScanSurface extends StatefulWidget {
 
 class _ScanSurfaceState extends State<ScanSurface>
     with SingleTickerProviderStateMixin {
-  late final AnimationController beam = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1700),
-  )..repeat(reverse: true);
+  bool expanded = false;
+  late final AnimationController beam;
+  @override
+  void initState() {
+    super.initState();
+    beam = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1700),
+    );
+    if (widget.image == null || widget.reading) beam.repeat(reverse: true);
+  }
   @override
   void didUpdateWidget(covariant ScanSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) expanded = false;
     if (widget.image != null && !widget.reading) {
       beam.stop();
     } else if (!beam.isAnimating) {
@@ -42,9 +50,50 @@ class _ScanSurfaceState extends State<ScanSurface>
   @override
   Widget build(BuildContext context) {
     final complete = widget.image != null && !widget.reading;
+    if (complete && !expanded) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: Material(
+          color: const Color(0xffe5f8f2),
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => setState(() => expanded = true),
+            child: Container(
+              height: 62,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                border: Border.all(color: const Color(0xff69d7b4)),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.check_circle, color: Color(0xff008f69)),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Document captured',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Text(
+                    'View',
+                    style: TextStyle(
+                      color: Color(0xff006b80),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  Icon(Icons.chevron_right, color: Color(0xff006b80)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Container(
-      height: 220,
-      margin: const EdgeInsets.only(bottom: 14),
+      height: complete ? 220 : 142,
+      margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         gradient: const LinearGradient(
@@ -69,7 +118,7 @@ class _ScanSurfaceState extends State<ScanSurface>
         children: [
           Positioned.fill(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(22, 18, 22, 48),
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 36),
               child: widget.image != null && !widget.illustration
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(12),
@@ -86,7 +135,7 @@ class _ScanSurfaceState extends State<ScanSurface>
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: const Color(0xff539bb4)),
                       ),
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -107,7 +156,7 @@ class _ScanSurfaceState extends State<ScanSurface>
                                 color: Color(0xffffd97a),
                                 size: 44,
                               ),
-                              SizedBox(width: 16),
+                              SizedBox(width: 10),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -211,6 +260,16 @@ class _ScanSurfaceState extends State<ScanSurface>
               ),
             ),
           ),
+          if (complete)
+            Positioned(
+              top: 4,
+              right: 4,
+              child: IconButton(
+                tooltip: 'Collapse document preview',
+                onPressed: () => setState(() => expanded = false),
+                icon: const Icon(Icons.close, color: Colors.white),
+              ),
+            ),
         ],
       ),
     );

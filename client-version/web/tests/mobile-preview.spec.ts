@@ -39,10 +39,19 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "New transaction" }),
   ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Continue", exact: true })).toBeEnabled();
+  await page.screenshot({
+    path: "../output/qa/phone-compact-identity-before.png",
+    fullPage: false,
+  });
   await page
     .getByRole("button", { name: "Scan document", exact: true })
     .click();
-  await page.waitForTimeout(800);
+  await expect(page.getByRole("button", { name: /Document captured View/ })).toBeVisible();
+  await page.screenshot({
+    path: "../output/qa/phone-compact-identity-captured.png",
+    fullPage: false,
+  });
   await (await reveal("Continue")).click();
   await page
     .getByRole("button", { name: "Scan SIM barcode", exact: true })
@@ -78,7 +87,8 @@ test("isolated Flutter phone preview", async ({ page }) => {
     .first()
     .click();
   await page.waitForTimeout(300);
-  const pad = await revealText("Customer signature pad");
+  await (await reveal("Add customer signature")).click();
+  const pad = page.getByText("Customer signature pad", { exact: true });
   const bounds = await pad.boundingBox();
   expect(bounds).toBeTruthy();
   await page.mouse.move(bounds!.x + 20, bounds!.y + 40);
@@ -89,6 +99,7 @@ test("isolated Flutter phone preview", async ({ page }) => {
       bounds!.y + 40 + (i % 3) * 10,
     );
   await page.mouse.up();
+  await page.getByRole("button", { name: "Save signature" }).click();
   await page.screenshot({
     path: "../output/qa/phone-preview-signature.png",
     fullPage: false,
@@ -104,6 +115,11 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await phone.click();
   await page.keyboard.type("SAMPLE-PHONE");
   await (await reveal("Continue")).click();
+  await expect(page.getByText("Upload payment confirmation", { exact: true }).first()).toBeVisible();
+  await page.screenshot({
+    path: "../output/qa/phone-compact-payment.png",
+    fullPage: false,
+  });
 
   await expect(page.getByText(/^FINAL REVIEW PENDING/)).toHaveCount(0);
   const host = await page.locator("#flutter-host").boundingBox();
