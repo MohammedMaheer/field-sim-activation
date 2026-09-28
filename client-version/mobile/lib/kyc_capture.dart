@@ -130,6 +130,18 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
 
   Future<void> pick(ImageSource from) async {
     await act(() async {
+      final service = ref.read(serviceProvider);
+      if (service.isPreview) {
+        final sample = await service.previewReceipt();
+        if (!mounted) return;
+        setState(() {
+          bytes = sample;
+          source.text = "DEMO-RECEIPT-NEW";
+          pending = false;
+        });
+        await saveDraft();
+        return;
+      }
       final f = await ImagePicker().pickImage(
         source: from,
         maxWidth: from == ImageSource.camera ? 2000 : null,
@@ -328,6 +340,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         padding: const EdgeInsets.all(20),
         children: [
           KycJourneyGuide(status: capture?['status']),
+          if (ref.read(serviceProvider).isPreview)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'INTERACTIVE PREVIEW: buttons load a synthetic receipt. OCR, backend approval and synchronization are simulated. No files leave this browser.',
+              ),
+            ),
           gap(),
           if (error != null)
             Card(

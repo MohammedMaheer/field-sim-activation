@@ -1,0 +1,3 @@
+{{flutter_js}}
+{{flutter_build_config}}
+_flutter.loader.load({config:{hostElement:document.getElementById('flutter-host'),canvasKitBaseUrl:'canvaskit/'},onEntrypointLoaded:async function(engineInitializer){const engine=await engineInitializer.initializeEngine({hostElement:document.getElementById('flutter-host'),canvasKitBaseUrl:'canvaskit/'});await engine.runApp();document.querySelector('.loading')?.remove();}}).catch(()=>{document.querySelector('.loading').textContent='Unable to open the preview. Please reload this page.'});

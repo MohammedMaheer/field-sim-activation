@@ -1,0 +1,634 @@
+{
+  "user": {
+    "id": "demo-user",
+    "agent_id": "demo-agent",
+    "name": "Zayn Mercer",
+    "email": "agent@preview.invalid",
+    "role": "Field Agent",
+    "permissions": [
+      "read",
+      "ekyc.write",
+      "inventory.self",
+      "shift.write"
+    ]
+  },
+  "/resources/agents": [
+    {
+      "id": "demo-agent",
+      "user_id": "demo-user",
+      "name": "Zayn Mercer",
+      "employee_id": "RLY-1041",
+      "branch": "Dubai Central",
+      "leader": "Rayan Vale",
+      "outlet": "Marina Walk",
+      "on_shift": true,
+      "target": 20,
+      "activations": 12,
+      "achievement": 60,
+      "aht": 3.5,
+      "ekyc_rate": 98,
+      "ocr": 97,
+      "stock": 18,
+      "last_sync": "2026-09-28T09:30:00Z",
+      "status": "ACTIVE"
+    }
+  ],
+  "/resources/customers": [
+    {
+      "id": "customer-1",
+      "name": "Jordan Demo",
+      "mobile": "DEMO-050-0001",
+      "document": "**** DEMO",
+      "nationality": "Synthetic UAE resident",
+      "agent": "Zayn Mercer",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "customer-2",
+      "name": "Avery Sample",
+      "mobile": "DEMO-050-0002",
+      "document": "**** DEMO",
+      "nationality": "Synthetic UAE resident",
+      "agent": "Zayn Mercer",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "customer-3",
+      "name": "Morgan Example",
+      "mobile": "DEMO-050-0003",
+      "document": "**** DEMO",
+      "nationality": "Synthetic UAE resident",
+      "agent": "Zayn Mercer",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "customer-4",
+      "name": "Taylor Demo",
+      "mobile": "DEMO-050-0004",
+      "document": "**** DEMO",
+      "nationality": "Synthetic UAE resident",
+      "agent": "Zayn Mercer",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "customer-5",
+      "name": "Casey Sample",
+      "mobile": "DEMO-050-0005",
+      "document": "**** DEMO",
+      "nationality": "Synthetic UAE resident",
+      "agent": "Zayn Mercer",
+      "created_at": "2026-09-28T09:30:00Z"
+    }
+  ],
+  "/resources/activations": [
+    {
+      "id": "order-0",
+      "reference": "DEMO-REC-0000",
+      "request_id": "DEMO-REQ-0",
+      "sr_id": "DEMO-SR-0",
+      "customer": "Jordan Demo",
+      "msisdn": "DEMO-050-0001",
+      "plan": "Essential 125",
+      "status": "ACTIVATED",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "order-1",
+      "reference": "DEMO-REC-0001",
+      "request_id": "DEMO-REQ-1",
+      "sr_id": "DEMO-SR-1",
+      "customer": "Avery Sample",
+      "msisdn": "DEMO-050-0002",
+      "plan": "Everyday 200",
+      "status": "PROCESSING",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "order-2",
+      "reference": "DEMO-REC-0002",
+      "request_id": "DEMO-REQ-2",
+      "sr_id": "DEMO-SR-2",
+      "customer": "Morgan Example",
+      "msisdn": "DEMO-050-0003",
+      "plan": "Unlimited 350",
+      "status": "FAILED",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "order-3",
+      "reference": "DEMO-REC-0003",
+      "request_id": "DEMO-REQ-3",
+      "sr_id": "DEMO-SR-3",
+      "customer": "Taylor Demo",
+      "msisdn": "DEMO-050-0004",
+      "plan": "Essential 125",
+      "status": "DRAFT",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "order-4",
+      "reference": "DEMO-REC-0004",
+      "request_id": "DEMO-REQ-4",
+      "sr_id": "DEMO-SR-4",
+      "customer": "Casey Sample",
+      "msisdn": "DEMO-050-0005",
+      "plan": "Everyday 200",
+      "status": "ACTIVATED",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z"
+    }
+  ],
+  "/resources/inventory": [
+    {
+      "id": "sim-0",
+      "iccid": "DEMO-ICCID-0000",
+      "serial": "DEMO-SERIAL-0000",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-1",
+      "iccid": "DEMO-ICCID-0001",
+      "serial": "DEMO-SERIAL-0001",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-2",
+      "iccid": "DEMO-ICCID-0002",
+      "serial": "DEMO-SERIAL-0002",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-3",
+      "iccid": "DEMO-ICCID-0003",
+      "serial": "DEMO-SERIAL-0003",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-4",
+      "iccid": "DEMO-ICCID-0004",
+      "serial": "DEMO-SERIAL-0004",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-5",
+      "iccid": "DEMO-ICCID-0005",
+      "serial": "DEMO-SERIAL-0005",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-6",
+      "iccid": "DEMO-ICCID-0006",
+      "serial": "DEMO-SERIAL-0006",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-7",
+      "iccid": "DEMO-ICCID-0007",
+      "serial": "DEMO-SERIAL-0007",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-8",
+      "iccid": "DEMO-ICCID-0008",
+      "serial": "DEMO-SERIAL-0008",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-9",
+      "iccid": "DEMO-ICCID-0009",
+      "serial": "DEMO-SERIAL-0009",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-10",
+      "iccid": "DEMO-ICCID-0010",
+      "serial": "DEMO-SERIAL-0010",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-11",
+      "iccid": "DEMO-ICCID-0011",
+      "serial": "DEMO-SERIAL-0011",
+      "sim_type": "Physical",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-12",
+      "iccid": "DEMO-ICCID-0012",
+      "serial": "DEMO-SERIAL-0012",
+      "sim_type": "eSIM",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-13",
+      "iccid": "DEMO-ICCID-0013",
+      "serial": "DEMO-SERIAL-0013",
+      "sim_type": "eSIM",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-14",
+      "iccid": "DEMO-ICCID-0014",
+      "serial": "DEMO-SERIAL-0014",
+      "sim_type": "eSIM",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-15",
+      "iccid": "DEMO-ICCID-0015",
+      "serial": "DEMO-SERIAL-0015",
+      "sim_type": "eSIM",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-16",
+      "iccid": "DEMO-ICCID-0016",
+      "serial": "DEMO-SERIAL-0016",
+      "sim_type": "eSIM",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "sim-17",
+      "iccid": "DEMO-ICCID-0017",
+      "serial": "DEMO-SERIAL-0017",
+      "sim_type": "eSIM",
+      "status": "AVAILABLE",
+      "agent": "Zayn Mercer",
+      "outlet": "Marina Walk",
+      "assigned_at": "2026-09-28T09:30:00Z"
+    }
+  ],
+  "/field-tasks": [
+    {
+      "id": "task-0",
+      "title": "Review receipt queue",
+      "note": "Check extracted details before submission.",
+      "status": "OPEN",
+      "due_date": "2026-09-28",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "task-1",
+      "title": "Check your SIM balance",
+      "note": "Reconcile physical SIMs with your stock.",
+      "status": "OPEN",
+      "due_date": "2026-09-28",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "task-2",
+      "title": "Confirm daily target",
+      "note": "Review progress with your team leader.",
+      "status": "OPEN",
+      "due_date": "2026-09-28",
+      "created_at": "2026-09-28T09:30:00Z"
+    }
+  ],
+  "/incentives": [
+    {
+      "id": "incentive-0",
+      "amount": 240,
+      "period": "2026-09",
+      "source": "MANUAL",
+      "note": "Weekly sales performance",
+      "status": "RECORDED",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "incentive-1",
+      "amount": 120,
+      "period": "2026-09",
+      "source": "MANUAL",
+      "note": "Verified transaction quality",
+      "status": "RECORDED",
+      "created_at": "2026-09-28T09:30:00Z"
+    },
+    {
+      "id": "incentive-2",
+      "amount": 65,
+      "period": "2026-09",
+      "source": "MANUAL",
+      "note": "Team achievement",
+      "status": "RECORDED",
+      "created_at": "2026-09-28T09:30:00Z"
+    }
+  ],
+  "/support-tickets": [
+    {
+      "id": "support-1",
+      "subject": "Receipt image guidance",
+      "message": "Which image format should I use?",
+      "status": "RESOLVED",
+      "response": "Use a clear PNG or JPEG with the full receipt visible.",
+      "created_at": "2026-09-28T09:30:00Z"
+    }
+  ],
+  "/dashboard": {
+    "agents": [
+      {
+        "id": "demo-agent",
+        "user_id": "demo-user",
+        "name": "Zayn Mercer",
+        "employee_id": "RLY-1041",
+        "branch": "Dubai Central",
+        "leader": "Rayan Vale",
+        "outlet": "Marina Walk",
+        "on_shift": true,
+        "target": 20,
+        "activations": 12,
+        "achievement": 60,
+        "aht": 3.5,
+        "ekyc_rate": 98,
+        "ocr": 97,
+        "stock": 18,
+        "last_sync": "2026-09-28T09:30:00Z",
+        "status": "ACTIVE"
+      }
+    ],
+    "today": 12,
+    "target": 20,
+    "achievement": 60,
+    "aht": 3.5,
+    "ekyc": 98,
+    "ocr": 97,
+    "stock": 18,
+    "physical": 12,
+    "esim": 6,
+    "kyc_today": 5,
+    "kyc_pending_review": 1,
+    "kyc_verified": 8,
+    "capture_total": 10,
+    "tasks_open": 3,
+    "incentive_total": 425,
+    "trend": [
+      {
+        "day": "Tue",
+        "captures": 6,
+        "activations": 8
+      },
+      {
+        "day": "Wed",
+        "captures": 8,
+        "activations": 10
+      },
+      {
+        "day": "Thu",
+        "captures": 7,
+        "activations": 9
+      },
+      {
+        "day": "Fri",
+        "captures": 12,
+        "activations": 14
+      },
+      {
+        "day": "Sat",
+        "captures": 10,
+        "activations": 12
+      },
+      {
+        "day": "Sun",
+        "captures": 9,
+        "activations": 11
+      },
+      {
+        "day": "Mon",
+        "captures": 12,
+        "activations": 14
+      }
+    ],
+    "capture_statuses": [
+      {
+        "name": "VERIFIED",
+        "value": 8
+      },
+      {
+        "name": "SUBMITTED",
+        "value": 1
+      },
+      {
+        "name": "EXTRACTED",
+        "value": 1
+      }
+    ],
+    "recent": [
+      {
+        "id": "order-0",
+        "reference": "DEMO-REC-0000",
+        "request_id": "DEMO-REQ-0",
+        "sr_id": "DEMO-SR-0",
+        "customer": "Jordan Demo",
+        "msisdn": "DEMO-050-0001",
+        "plan": "Essential 125",
+        "status": "ACTIVATED",
+        "agent": "Zayn Mercer",
+        "outlet": "Marina Walk",
+        "created_at": "2026-09-28T09:30:00Z",
+        "updated_at": "2026-09-28T09:30:00Z"
+      },
+      {
+        "id": "order-1",
+        "reference": "DEMO-REC-0001",
+        "request_id": "DEMO-REQ-1",
+        "sr_id": "DEMO-SR-1",
+        "customer": "Avery Sample",
+        "msisdn": "DEMO-050-0002",
+        "plan": "Everyday 200",
+        "status": "PROCESSING",
+        "agent": "Zayn Mercer",
+        "outlet": "Marina Walk",
+        "created_at": "2026-09-28T09:30:00Z",
+        "updated_at": "2026-09-28T09:30:00Z"
+      },
+      {
+        "id": "order-2",
+        "reference": "DEMO-REC-0002",
+        "request_id": "DEMO-REQ-2",
+        "sr_id": "DEMO-SR-2",
+        "customer": "Morgan Example",
+        "msisdn": "DEMO-050-0003",
+        "plan": "Unlimited 350",
+        "status": "FAILED",
+        "agent": "Zayn Mercer",
+        "outlet": "Marina Walk",
+        "created_at": "2026-09-28T09:30:00Z",
+        "updated_at": "2026-09-28T09:30:00Z"
+      }
+    ]
+  },
+  "/resources/ekyc": [],
+  "/kyc-captures": [
+    {
+      "id": "capture-0",
+      "agent_id": "demo-agent",
+      "source_reference": "DEMO-RECEIPT-001",
+      "status": "VERIFIED",
+      "version": 1,
+      "image_type": "image/png",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z",
+      "rows": [
+        {
+          "reference": "DEMO-RECEIPT-001",
+          "customer": "Jordan Demo",
+          "account": "DEMO-050-0001",
+          "details": "Everyday 200 plan. Activation completed externally.",
+          "source_line": 0
+        }
+      ],
+      "lines": [
+        {
+          "text": "Jordan Demo | Everyday 200 | DEMO-050-0001",
+          "confidence": 97.2
+        }
+      ],
+      "history": [
+        {
+          "action": "Synthetic receipt captured",
+          "actor": "Zayn Mercer",
+          "at": "2026-09-28T09:30:00Z"
+        }
+      ]
+    },
+    {
+      "id": "capture-1",
+      "agent_id": "demo-agent",
+      "source_reference": "DEMO-RECEIPT-002",
+      "status": "SUBMITTED",
+      "version": 1,
+      "image_type": "image/png",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z",
+      "rows": [
+        {
+          "reference": "DEMO-RECEIPT-002",
+          "customer": "Jordan Demo",
+          "account": "DEMO-050-0001",
+          "details": "Everyday 200 plan. Activation completed externally.",
+          "source_line": 0
+        }
+      ],
+      "lines": [
+        {
+          "text": "Jordan Demo | Everyday 200 | DEMO-050-0001",
+          "confidence": 97.2
+        }
+      ],
+      "history": [
+        {
+          "action": "Synthetic receipt captured",
+          "actor": "Zayn Mercer",
+          "at": "2026-09-28T09:30:00Z"
+        }
+      ]
+    },
+    {
+      "id": "capture-2",
+      "agent_id": "demo-agent",
+      "source_reference": "DEMO-RECEIPT-003",
+      "status": "EXTRACTED",
+      "version": 1,
+      "image_type": "image/png",
+      "created_at": "2026-09-28T09:30:00Z",
+      "updated_at": "2026-09-28T09:30:00Z",
+      "rows": [
+        {
+          "reference": "DEMO-RECEIPT-003",
+          "customer": "Jordan Demo",
+          "account": "DEMO-050-0001",
+          "details": "Everyday 200 plan. Activation completed externally.",
+          "source_line": 0
+        }
+      ],
+      "lines": [
+        {
+          "text": "Jordan Demo | Everyday 200 | DEMO-050-0001",
+          "confidence": 97.2
+        }
+      ],
+      "history": [
+        {
+          "action": "Synthetic receipt captured",
+          "actor": "Zayn Mercer",
+          "at": "2026-09-28T09:30:00Z"
+        }
+      ]
+    }
+  ]
+}

@@ -269,22 +269,26 @@ class _LoginState extends ConsumerState<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                const Text(
-                  'Sign in to your field workspace.',
+                Text(
+                  ref.read(serviceProvider).isPreview
+                      ? 'Demo session ended. Re-enter without credentials.'
+                      : 'Sign in to your field workspace.',
                   style: TextStyle(color: muted),
                 ),
                 const SizedBox(height: 32),
-                TextField(
-                  controller: email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Work email'),
-                ),
+                if (!ref.read(serviceProvider).isPreview)
+                  TextField(
+                    controller: email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Work email'),
+                  ),
                 const SizedBox(height: 18),
-                TextField(
-                  controller: password,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                ),
+                if (!ref.read(serviceProvider).isPreview)
+                  TextField(
+                    controller: password,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                  ),
                 const SizedBox(height: 22),
                 if (error != null)
                   Padding(
@@ -311,7 +315,13 @@ class _LoginState extends ConsumerState<LoginScreen> {
                             if (mounted) setState(() => busy = false);
                           }
                         },
-                  child: Text(busy ? 'Signing in…' : 'Sign in to Relay'),
+                  child: Text(
+                    busy
+                        ? 'Signing in…'
+                        : ref.read(serviceProvider).isPreview
+                        ? 'Re-enter demo'
+                        : 'Sign in to Relay',
+                  ),
                 ),
                 const SizedBox(height: 28),
                 const InfoCard(
@@ -1797,7 +1807,7 @@ class ProfileScreen extends ConsumerWidget {
                 builder: (c) => AlertDialog(
                   title: const Text('Device diagnostics'),
                   content: Text(
-                    'API: $apiUrl\nConnectivity: ${s.online ? 'online' : 'offline'}\nQueued: ${s.queued}\nCache: encrypted SQLite on Android\nPush: demo adapter\n${s.syncError ?? 'No sync errors'}',
+                    'API: ${s.isPreview ? 'Isolated browser simulation' : apiUrl}\nConnectivity: ${s.online ? 'online' : 'offline'}\nQueued: ${s.queued}\nCache: ${s.isPreview ? 'Temporary browser memory' : 'encrypted SQLite on Android'}\nPush: demo adapter\n${s.syncError ?? 'No sync errors'}',
                   ),
                   actions: [
                     TextButton(
@@ -1826,10 +1836,11 @@ class ProfileScreen extends ConsumerWidget {
               label: const Text('Sign out'),
             ),
             const SizedBox(height: 18),
-            const InfoCard(
+            InfoCard(
               icon: Icons.lock_outline,
-              text:
-                  'Your workspace is scoped to your assigned branch and team. Saved captures are encrypted on this device.',
+              text: s.isPreview
+                  ? 'Public preview: fictional data and temporary browser memory. Reload to reset. No live account is connected.'
+                  : 'Your workspace is scoped to your assigned branch and team. Saved captures are encrypted on this device.',
             ),
           ],
         );

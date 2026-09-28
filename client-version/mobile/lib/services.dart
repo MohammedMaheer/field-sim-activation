@@ -123,6 +123,8 @@ class OfflineStore {
 }
 
 class RelayService extends ChangeNotifier {
+  bool get isPreview => false;
+  Future<Uint8List?> previewReceipt() async => null;
   final queueLock = Lock();
   final dio = Dio(
     BaseOptions(
