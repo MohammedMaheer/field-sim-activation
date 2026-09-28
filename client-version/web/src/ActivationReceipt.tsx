@@ -1,12 +1,13 @@
 import { Link } from "react-router-dom";
 import { useState } from "react";
-import { CheckCircle2, Clock3, Download, Printer } from "lucide-react";
+import { CheckCircle2, Clock3, Download, Printer, RotateCcw } from "lucide-react";
 import { download, Row } from "./api";
 
 export default function ActivationReceipt({ capture }: { capture: Row }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [printRun, setPrintRun] = useState(0);
   async function exportPdf() {
     setExporting(true);
     setError("");
@@ -43,7 +44,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
   );
   const sections: Row[] = capture.invoice?.sections || [];
   const primaryLabels: Record<string, string[]> = {
-    Invoice: ["Invoice number", "Date", "Review"],
+    Invoice: ["Invoice number", "Date"],
     Customer: ["Customer name", "Document number", "Phone number"],
     "SIM & plan": ["SIM type", "SIM serial", "Plan", "Plan price"],
     Payment: ["Payment reference", "Total paid"],
@@ -53,7 +54,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
     .map((section) => ({...section, fields: section.fields.filter((field: Row) => primaryLabels[section.title].includes(field.label))}));
   const otherFields = sections
     .filter((section) => primaryLabels[section.title])
-    .flatMap((section) => section.fields.filter((field: Row) => !primaryLabels[section.title].includes(field.label)));
+    .flatMap((section) => section.fields.filter((field: Row) => !primaryLabels[section.title].includes(field.label) && field.label !== "Review"));
   const supportingSections = [
     ...(otherFields.length ? [{title: "More invoice details", fields: otherFields}] : []),
     ...sections.filter((section) => !primaryLabels[section.title]),
@@ -73,11 +74,12 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
   );
   return (
     <div className="receipt-kiosk-assembly">
-      <div className="receipt-kiosk-machine" aria-hidden="true">
-        <div className="receipt-kiosk-screen"><strong>relay.</strong><span>INVOICE READY</span><i /></div>
+      <div className="receipt-kiosk-machine">
+        <div className="receipt-kiosk-screen"><strong>relay.</strong><span>PAYMENT INVOICE</span><button type="button" aria-label="Replay invoice printing" onClick={() => setPrintRun(n => n + 1)}><RotateCcw size={17} /></button><i /></div>
         <div className="receipt-kiosk-slot" />
       </div>
-    <section
+    <div className="receipt-paper-outlet">
+    <section key={`${capture.id}-${printRun}`}
       className={`verified-receipt receipt-${capture.status.toLowerCase()}`}
       aria-label={payment ? "Payment invoice" : "Activation receipt"}
     >
@@ -168,6 +170,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
         Done · Return to dashboard
       </Link>
     </section>
+    </div>
     </div>
   );
 }

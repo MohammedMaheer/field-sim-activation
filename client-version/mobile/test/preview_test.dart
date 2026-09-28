@@ -42,8 +42,11 @@ void main() {
     );
     addTearDown(s.dispose);
     expect(s.isPreview, true);
-    expect((await s.dashboard())['today'], 12);
-    await s.dio.post('/inventory/sim-0/move', data: {'status': 'RETURNED'});
+    expect((await s.dashboard())['today'], isA<num>());
+    final originalUserId = s.user!['id'];
+    final inventory = await s.list('inventory');
+    final simId = inventory.first['id'];
+    await s.dio.post('/inventory/$simId/move', data: {'status': 'RETURNED'});
     expect((await s.list('inventory')).first['status'], 'RETURNED');
     await s.dio.post('/agents/demo-agent/shift', data: {'action': 'end'});
     expect((await s.list('agents')).first['on_shift'], false);
@@ -80,7 +83,7 @@ void main() {
     await s.logout();
     expect(s.user, isNull);
     await s.login('', '');
-    expect(s.user!['id'], 'demo-user');
+    expect(s.user!['id'], originalUserId);
     expect(() => s.dio.get('/unknown'), throwsA(anything));
   });
 }

@@ -95,11 +95,26 @@ test("payment invoice and backend activation remain connected", async ({
   await expect(
     page.getByRole("img", { name: /Payment confirmation from/ }),
   ).toBeVisible();
+  await page.getByRole("button", {name: "Identity document", exact: true}).click();
+  await expect(page.getByRole("img", {name: "Identity document", exact: true})).toBeVisible();
+  await expect(page.getByRole("tabpanel")).toContainText("Alex Synthetic");
+  await page.getByRole("button", {name: "Signature", exact: true}).click();
+  await expect(page.getByRole("img", {name: "Captured customer signature", exact: true}).first()).toBeVisible();
+  await page.getByRole("button", {name: "Payment confirmation", exact: true}).click();
   await page.getByText("Payment invoice", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Payment successful", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".invoice-sections")).toContainText("Not recorded");
+  await page.getByRole("button", {name: "Replay invoice printing", exact: true}).click();
+  const paper = page.locator(".verified-receipt");
+  await page.waitForTimeout(500);
+  const feeding = await paper.evaluate(el => getComputedStyle(el).transform);
+  expect(feeding).not.toBe("none");
+  expect(feeding).not.toBe("matrix(1, 0, 0, 1, 0, 0)");
+  await page.screenshot({path:"../output/qa/invoice-39-web-printing.png"});
+  await page.waitForTimeout(2000);
+  expect(await paper.evaluate(el => getComputedStyle(el).transform)).toBe("matrix(1, 0, 0, 1, 0, 0)");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.waitForTimeout(850);

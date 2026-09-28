@@ -437,6 +437,8 @@ export default function KycCapture() {
                     >
                       <div className="capture-detail">
                         <ActivationReceipt capture={capture} />
+                        <details className="capture-supporting" open={!["SUBMITTED", "VERIFIED", "REJECTED"].includes(capture.status) ? true : undefined}>
+                        <summary>Payment details & history</summary>
                         <div className="capture-toolbar">
                           <Badge value={capture.status} />
                           <button
@@ -907,6 +909,7 @@ export default function KycCapture() {
                               </li>
                             ))}
                           </ol>
+                        </details>
                         </details>
                       </div>
                     </Panel>

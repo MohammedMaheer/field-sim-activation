@@ -204,16 +204,12 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           source.clear();
           operation = const Uuid().v4();
         });
-        await refresh();
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted && receiptScroll.hasClients) {
-            receiptScroll.animateTo(
-              0,
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeOutCubic,
-            );
+            receiptScroll.jumpTo(0);
           }
         });
+        await refresh();
       } on DioException catch (e) {
         if (e.response != null &&
             e.response!.statusCode != 429 &&
@@ -573,8 +569,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         controller: receiptScroll,
         padding: const EdgeInsets.all(20),
         children: [
-          KycJourneyGuide(status: capture?['status']),
-          gap(),
+          if (capture == null) ...[
+            KycJourneyGuide(status: capture?['status']),
+            gap(),
+          ],
           if (error != null)
             Card(
               child: Padding(
@@ -603,7 +601,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Container(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
                       color: receiptSuccess
                           ? const Color(0xffe8fbf2)
                           : const Color(0xfffff3d5),
@@ -614,9 +615,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                 ? Icons.check_circle
                                 : Icons.pending_outlined,
                             color: Color(0xff07966b),
-                            size: 48,
+                            size: 28,
                           ),
-                          SizedBox(height: 8),
+                          SizedBox(height: 3),
                           Text(
                             payment
                                 ? invoice!['heading']
@@ -646,7 +647,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       ),
                     ),
                     Padding(
-                      padding: const EdgeInsets.all(18),
+                      padding: const EdgeInsets.all(12),
                       child: Column(
                         children: [
                           Row(
@@ -672,7 +673,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                               ),
                             ],
                           ),
-                          const Divider(height: 24),
+                          const Divider(height: 16),
                           if (payment)
                             PaymentInvoiceSections(invoice: invoice!)
                           else ...[
@@ -881,249 +882,269 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 ),
               ),
             ),
-          if (capture != null) ...[
-            const Divider(),
-            Text(
-              capture!['source_reference'],
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            gap(),
-            Text(
-              'Status: ${capture!['status'] == 'OCR_FAILED' ? 'Needs another image' : capture!['status']}',
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            gap(),
-            if (capture!['status'] == 'QUEUED')
-              Text(
-                payment ? 'Preparing payment details…' : 'Preparing receipt…',
-              ),
-            if (capture!['status'] == 'OCR_FAILED') ...[
-              const Text(
-                "We couldn't read this image automatically. Add the details below or try again.",
-              ),
-              TextButton(
-                onPressed: busy ? null : () => command('retry'),
-                child: const Text('Try again'),
-              ),
-            ],
-            OutlinedButton(
-              onPressed: busy ? null : () => export('original'),
-              child: const Text('Download / share original'),
-            ),
-            if ((capture!['lines'] as List? ?? []).isNotEmpty)
-              ExpansionTile(
-                title: Text(payment ? 'Text from image' : 'Receipt text'),
-                initiallyExpanded: rows.isEmpty,
-                children: [
-                  ...(capture!['lines'] as List).asMap().entries.map(
-                    (entry) => ListTile(
-                      title: Text(entry.value['text']),
-                      subtitle: Text('Line ${entry.key + 1}'),
-                      trailing: editable
-                          ? IconButton(
-                              icon: const Icon(Icons.add),
-                              onPressed: rows.length >= 100
-                                  ? null
-                                  : () {
-                                      setState(() {
-                                        rows.add({
-                                          'fields': [
-                                            {
-                                              'label': payment
-                                                  ? 'Image text'
-                                                  : 'Receipt text',
-                                              'value': entry.value['text'],
-                                              'source_line': entry.key,
-                                              'confidence':
-                                                  entry.value['confidence'],
-                                            },
-                                          ],
-                                          'source_line': entry.key,
-                                        });
-                                        dirty = true;
-                                      });
-                                    },
-                            )
-                          : null,
-                    ),
+          if (capture != null)
+            ExpansionTile(
+              title: const Text('Payment details & history'),
+              initiallyExpanded:
+                  capture!['status'] == 'OCR_FAILED' ||
+                  capture!['status'] == 'EXTRACTED' ||
+                  capture!['status'] == 'VALIDATED',
+              children: [
+                const Divider(),
+                Text(
+                  capture!['source_reference'],
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                gap(),
+                Text(
+                  'Status: ${capture!['status'] == 'OCR_FAILED' ? 'Needs another image' : capture!['status']}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                gap(),
+                if (capture!['status'] == 'QUEUED')
+                  Text(
+                    payment
+                        ? 'Preparing payment details…'
+                        : 'Preparing receipt…',
+                  ),
+                if (capture!['status'] == 'OCR_FAILED') ...[
+                  const Text(
+                    "We couldn't read this image automatically. Add the details below or try again.",
+                  ),
+                  TextButton(
+                    onPressed: busy ? null : () => command('retry'),
+                    child: const Text('Try again'),
                   ),
                 ],
-              ),
-            gap(),
-            Text(
-              payment ? 'Payment details' : 'Transaction rows',
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            ...rows.asMap().entries.map((entry) {
-              final i = entry.key, r = entry.value;
-              return Card(
-                key: ValueKey(
-                  '${capture!['id']}-$i-${rows.length}-${capture!['version']}',
+                OutlinedButton(
+                  onPressed: busy ? null : () => export('original'),
+                  child: const Text('Download / share original'),
                 ),
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
+                if ((capture!['lines'] as List? ?? []).isNotEmpty)
+                  ExpansionTile(
+                    title: Text(payment ? 'Text from image' : 'Receipt text'),
+                    initiallyExpanded: rows.isEmpty,
                     children: [
-                      Text('Transaction ${i + 1}'),
-                      gap(),
-                      if (r['fields'] is List)
-                        ...receiptFields(r, editable)
-                      else
-                        ...['reference', 'customer', 'account', 'details'].map(
-                          (field) => Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: TextFormField(
-                              initialValue: r[field],
-                              enabled: !busy,
-                              readOnly: !editable,
-                              maxLength: field == 'details'
-                                  ? 1000
-                                  : field == 'account'
-                                  ? 80
-                                  : 120,
-                              maxLines: field == 'details' ? 3 : 1,
-                              decoration: InputDecoration(
-                                counterText: editable ? null : '',
-                                labelText: {
-                                  'reference': 'Transaction reference',
-                                  'customer': 'Customer',
-                                  'account': 'Account / MSISDN',
-                                  'details': 'Transaction details',
-                                }[field],
+                      ...(capture!['lines'] as List).asMap().entries.map(
+                        (entry) => ListTile(
+                          title: Text(entry.value['text']),
+                          subtitle: Text('Line ${entry.key + 1}'),
+                          trailing: editable
+                              ? IconButton(
+                                  icon: const Icon(Icons.add),
+                                  onPressed: rows.length >= 100
+                                      ? null
+                                      : () {
+                                          setState(() {
+                                            rows.add({
+                                              'fields': [
+                                                {
+                                                  'label': payment
+                                                      ? 'Image text'
+                                                      : 'Receipt text',
+                                                  'value': entry.value['text'],
+                                                  'source_line': entry.key,
+                                                  'confidence':
+                                                      entry.value['confidence'],
+                                                },
+                                              ],
+                                              'source_line': entry.key,
+                                            });
+                                            dirty = true;
+                                          });
+                                        },
+                                )
+                              : null,
+                        ),
+                      ),
+                    ],
+                  ),
+                gap(),
+                Text(
+                  payment ? 'Payment details' : 'Transaction rows',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                ...rows.asMap().entries.map((entry) {
+                  final i = entry.key, r = entry.value;
+                  return Card(
+                    key: ValueKey(
+                      '${capture!['id']}-$i-${rows.length}-${capture!['version']}',
+                    ),
+                    margin: const EdgeInsets.symmetric(vertical: 10),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Text('Transaction ${i + 1}'),
+                          gap(),
+                          if (r['fields'] is List)
+                            ...receiptFields(r, editable)
+                          else
+                            ...[
+                              'reference',
+                              'customer',
+                              'account',
+                              'details',
+                            ].map(
+                              (field) => Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: TextFormField(
+                                  initialValue: r[field],
+                                  enabled: !busy,
+                                  readOnly: !editable,
+                                  maxLength: field == 'details'
+                                      ? 1000
+                                      : field == 'account'
+                                      ? 80
+                                      : 120,
+                                  maxLines: field == 'details' ? 3 : 1,
+                                  decoration: InputDecoration(
+                                    counterText: editable ? null : '',
+                                    labelText: {
+                                      'reference': 'Transaction reference',
+                                      'customer': 'Customer',
+                                      'account': 'Account / MSISDN',
+                                      'details': 'Transaction details',
+                                    }[field],
+                                  ),
+                                  onChanged: (value) {
+                                    setState(() {
+                                      rows[i][field] = value;
+                                      dirty = true;
+                                    });
+                                  },
+                                ),
                               ),
-                              onChanged: (value) {
+                            ),
+                          if (editable)
+                            TextButton(
+                              onPressed: () {
                                 setState(() {
-                                  rows[i][field] = value;
+                                  rows.removeAt(i);
                                   dirty = true;
                                 });
                               },
+                              child: const Text('Remove row'),
                             ),
-                          ),
-                        ),
-                      if (editable)
-                        TextButton(
-                          onPressed: () {
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+                if (editable) ...[
+                  OutlinedButton(
+                    onPressed: rows.length >= 100
+                        ? null
+                        : () {
                             setState(() {
-                              rows.removeAt(i);
+                              rows.add({
+                                'fields': [
+                                  {
+                                    'label': '',
+                                    'value': '',
+                                    'source_line': null,
+                                    'confidence': null,
+                                  },
+                                ],
+                                'source_line': null,
+                              });
                               dirty = true;
                             });
                           },
-                          child: const Text('Remove row'),
-                        ),
-                    ],
+                    child: const Text('Add transaction row'),
+                  ),
+                  gap(),
+                  FilledButton(
+                    onPressed: busy || rows.isEmpty
+                        ? null
+                        : () => act(() async {
+                            if (rows.any(
+                              (r) => r['fields'] is List
+                                  ? ((r['fields'] as List).isEmpty ||
+                                        (r['fields'] as List).any(
+                                          (f) => f['label']
+                                              .toString()
+                                              .trim()
+                                              .isEmpty,
+                                        ) ||
+                                        !(r['fields'] as List).any(
+                                          (f) => f['value']
+                                              .toString()
+                                              .trim()
+                                              .isNotEmpty,
+                                        ))
+                                  : (r['reference'].toString().trim().length <
+                                            2 ||
+                                        r['details'].toString().trim().length <
+                                            2),
+                            )) {
+                              throw Exception(
+                                'Check field names and enter at least one value per transaction.',
+                              );
+                            }
+                            final result = await ref
+                                .read(serviceProvider)
+                                .dio
+                                .patch(
+                                  '/kyc-captures/${capture!['id']}/rows',
+                                  data: {
+                                    'version': capture!['version'],
+                                    'rows': rows,
+                                    'reason':
+                                        'Reviewed against original screenshot on mobile',
+                                  },
+                                );
+                            if (mounted) {
+                              setState(() {
+                                capture = Map<String, dynamic>.from(
+                                  result.data,
+                                );
+                                dirty = false;
+                              });
+                            }
+                          }),
+                    child: const Text('Save details'),
+                  ),
+                ],
+                if ((capture!['rows'] as List? ?? []).isNotEmpty &&
+                    capture!['status'] != 'EXTRACTED') ...[
+                  gap(),
+                  OutlinedButton(
+                    onPressed: busy || dirty ? null : () => export('excel'),
+                    child: const Text('Share Excel'),
+                  ),
+                ],
+                if (capture!['status'] == 'VALIDATED')
+                  FilledButton(
+                    onPressed: busy || dirty ? null : () => command('submit'),
+                    child: const Text('Submit for review'),
+                  ),
+                if (capture!['review'] != null)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 18),
+                    child: Text(
+                      '${capture!['review']['outcome']}: ${capture!['review']['reason']}',
+                    ),
+                  ),
+                gap(),
+                const Text(
+                  'History',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                ...(capture!['history'] as List? ?? []).map(
+                  (event) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(
+                      event['action']
+                          .toString()
+                          .replaceAll('KYC', 'Receipt')
+                          .replaceAll('OCR', 'Details'),
+                    ),
+                    subtitle: Text('${event['actor']} · ${event['at']} UTC'),
                   ),
                 ),
-              );
-            }),
-            if (editable) ...[
-              OutlinedButton(
-                onPressed: rows.length >= 100
-                    ? null
-                    : () {
-                        setState(() {
-                          rows.add({
-                            'fields': [
-                              {
-                                'label': '',
-                                'value': '',
-                                'source_line': null,
-                                'confidence': null,
-                              },
-                            ],
-                            'source_line': null,
-                          });
-                          dirty = true;
-                        });
-                      },
-                child: const Text('Add transaction row'),
-              ),
-              gap(),
-              FilledButton(
-                onPressed: busy || rows.isEmpty
-                    ? null
-                    : () => act(() async {
-                        if (rows.any(
-                          (r) => r['fields'] is List
-                              ? ((r['fields'] as List).isEmpty ||
-                                    (r['fields'] as List).any(
-                                      (f) =>
-                                          f['label'].toString().trim().isEmpty,
-                                    ) ||
-                                    !(r['fields'] as List).any(
-                                      (f) => f['value']
-                                          .toString()
-                                          .trim()
-                                          .isNotEmpty,
-                                    ))
-                              : (r['reference'].toString().trim().length < 2 ||
-                                    r['details'].toString().trim().length < 2),
-                        )) {
-                          throw Exception(
-                            'Check field names and enter at least one value per transaction.',
-                          );
-                        }
-                        final result = await ref
-                            .read(serviceProvider)
-                            .dio
-                            .patch(
-                              '/kyc-captures/${capture!['id']}/rows',
-                              data: {
-                                'version': capture!['version'],
-                                'rows': rows,
-                                'reason':
-                                    'Reviewed against original screenshot on mobile',
-                              },
-                            );
-                        if (mounted) {
-                          setState(() {
-                            capture = Map<String, dynamic>.from(result.data);
-                            dirty = false;
-                          });
-                        }
-                      }),
-                child: const Text('Save details'),
-              ),
-            ],
-            if ((capture!['rows'] as List? ?? []).isNotEmpty &&
-                capture!['status'] != 'EXTRACTED') ...[
-              gap(),
-              OutlinedButton(
-                onPressed: busy || dirty ? null : () => export('excel'),
-                child: const Text('Share Excel'),
-              ),
-            ],
-            if (capture!['status'] == 'VALIDATED')
-              FilledButton(
-                onPressed: busy || dirty ? null : () => command('submit'),
-                child: const Text('Submit for review'),
-              ),
-            if (capture!['review'] != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 18),
-                child: Text(
-                  '${capture!['review']['outcome']}: ${capture!['review']['reason']}',
-                ),
-              ),
-            gap(),
-            const Text(
-              'History',
-              style: TextStyle(fontWeight: FontWeight.bold),
+              ],
             ),
-            ...(capture!['history'] as List? ?? []).map(
-              (event) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(
-                  event['action']
-                      .toString()
-                      .replaceAll('KYC', 'Receipt')
-                      .replaceAll('OCR', 'Details'),
-                ),
-                subtitle: Text('${event['actor']} · ${event['at']} UTC'),
-              ),
-            ),
-          ],
-          gap(),
           gap(),
           Card(
             key: historyKey,

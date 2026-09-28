@@ -1680,3 +1680,15 @@ button:active:not(:disabled) {
 }
 @media (prefers-reduced-motion: reduce) { .receipt-kiosk-assembly .verified-receipt { animation: none; } .invoice-more-content { transition: none; } }
 @media print { .receipt-kiosk-machine { display: none !important; } .receipt-kiosk-assembly .verified-receipt { position: static; max-width: none; margin: 0; animation: none !important; clip-path: none !important; } .invoice-more-content { max-height: none !important; overflow: visible !important; } .invoice-more > button { display: none !important; } }
+
+/* Feed the full sheet through the slot rather than scaling the invoice. */
+.receipt-paper-outlet { overflow: hidden; }
+.receipt-kiosk-assembly .verified-receipt { animation: kiosk-paper-feed 2.2s cubic-bezier(.45,0,.35,1) both; transform-origin: top center; }
+@keyframes kiosk-paper-feed { from { transform: translateY(-100%); clip-path: none; opacity: 1; } to { transform: translateY(0); clip-path: none; opacity: 1; } }
+.receipt-kiosk-screen button { display: inline-flex; padding: 6px; background: #ffffff10; color: #aef4df; border: 1px solid #80d7be55; border-radius: 7px; }
+.capture-supporting { margin-top: 16px; border: 1px solid #ddd2ec; border-radius: 12px; padding: 12px; background: #faf7ff; }
+.capture-supporting > summary { cursor: pointer; font-weight: 700; color: #693396; }
+@media (prefers-reduced-motion: reduce) { .receipt-kiosk-assembly .verified-receipt { animation: none; } }
+@media print { .receipt-paper-outlet { overflow: visible; } .capture-supporting { display: none; } }
+details:not([open]) .receipt-kiosk-assembly .verified-receipt { animation: none; }
+.review-evidence-switch { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0 10px; } .review-evidence-switch button { min-height:42px; } .review-image-stage svg { width:100%; background:white; border-radius:12px; } .review-comparison { align-items:stretch; } .review-pane-heading { min-height:76px; }

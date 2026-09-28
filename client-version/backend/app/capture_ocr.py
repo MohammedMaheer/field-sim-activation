@@ -34,12 +34,24 @@ def inspect_image(data):
 def organize_lines(lines):
     """Preserve arbitrary receipt labels, repeated fields and unclassified text."""
     rows, fields = [], []
+    skip = set()
     for index, line in enumerate(lines[:200]):
+        if index in skip:
+            continue
         text = line["text"].strip()
         if not text:
             continue
         match = re.match(r"^([^:：]{1,120})[:：]\s*(.*)$", text)
+        if not match:
+            # Layout gaps carry arbitrary field names; do not restrict to a
+            # predefined payment/customer schema or infer missing values.
+            match = re.match(r"^(.{1,120}?)\s{2,}(.+)$", text)
         label, value = (match[1].strip(), match[2].strip()) if match else ("Receipt text", text)
+        if match and not value and index + 1 < len(lines):
+            following = lines[index + 1]['text'].strip()
+            if following and not re.match(r'^.{1,120}[:：]', following):
+                value = following
+                skip.add(index + 1)
         primary = re.fullmatch(r"Transaction\s+(?:Reference|ID|Number)", label, re.I)
         if fields and ((primary and any(f["label"].casefold() == label.casefold() for f in fields)) or len(fields) >= 100):
             rows.append({"fields": fields, "source_line": fields[0]["source_line"]})
@@ -57,7 +69,11 @@ class TesseractExtractor:
         with tempfile.TemporaryDirectory(prefix="relay-ocr-") as folder:
             source = Path(folder) / "source.png"
             with Image.open(io.BytesIO(data)) as image:
-                ImageOps.autocontrast(ImageOps.exif_transpose(image).convert("L")).save(source)
+                prepared = ImageOps.exif_transpose(image).convert("L")
+                if prepared.width < 1600:
+                    scale = min(2, 1600 / prepared.width)
+                    prepared = prepared.resize((int(prepared.width * scale), int(prepared.height * scale)), Image.Resampling.LANCZOS)
+                ImageOps.autocontrast(prepared).save(source)
             result = subprocess.run(
                 [
                     os.getenv("TESSERACT_BIN", "tesseract"),
@@ -82,9 +98,15 @@ class TesseractExtractor:
                 groups[(word["block_num"], word["par_num"], word["line_num"])].append(word)
         lines = []
         for words in list(groups.values())[:200]:
+            chunks, previous = [], None
+            for word in words:
+                gap = int(word['left']) - (int(previous['left']) + int(previous['width'])) if previous else 0
+                separator = '  ' if previous and gap > max(25, int(word['height']) * 1.8) else ' '
+                chunks.append((separator if previous else '') + word['text'])
+                previous = word
             lines.append(
                 {
-                    "text": " ".join(w["text"] for w in words)[:1000],
+                    "text": ''.join(chunks)[:1000],
                     "confidence": round(
                         sum(max(0, float(w["conf"])) for w in words) / len(words), 1
                     ),

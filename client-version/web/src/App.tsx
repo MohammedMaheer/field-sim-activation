@@ -157,6 +157,18 @@ const navigation = [
   },
 ];
 
+export function canVisitPage(path: string, user: Row) {
+  path = path.replace(/^\//, "");
+  if (path === "screenshot-capture") path = "kyc-capture";
+  const permissions = user.permissions || [];
+  if (["plans", "administration"].includes(path)) return permissions.includes("settings.write");
+  if (path === "audit") return permissions.includes("audit.read");
+  if (path === "reports") return permissions.includes("report.read");
+  if (user.role === "Field Agent") return ["", "customers", "activations", "kyc-capture", "inventory", "incentives", "support"].includes(path);
+  if (user.role === "Compliance Officer") return ["", "agents", "branches", "customers", "activations", "kyc-capture", "audit", "reports"].includes(path);
+  return true;
+}
+
 function Login({ onLogin }: { onLogin: (u: Row) => void }) {
   const [email, setEmail] = useState("admin@relay.demo");
   const [password, setPassword] = useState(
@@ -419,10 +431,11 @@ export default function App() {
             <ChevronDown size={14} />
           </button>
           <nav aria-label="Main navigation">
-            {navigation.map((g) => (
+            {navigation.filter(g => g.items.some(([path]) => canVisitPage(String(path), user))).map((g) => (
               <div className="nav-group" key={g.label}>
                 <div className="nav-label">{g.label}</div>
                 {g.items
+                  .filter(([path]) => canVisitPage(String(path), user))
                   .filter(
                     ([path]) =>
                       path !== "audit" ||
@@ -436,7 +449,7 @@ export default function App() {
                   .map(([path, label, Icon]: any) => (
                     <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
                       <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
-                      <span>{label}</span>
+                      <span>{path === "kyc-capture" && user.role === "Field Agent" ? "New transaction" : label}</span>
                       {path === "live" && <i className="live-dot" />}
                       {path === "compliance" && (
                         <span className="nav-tag">!</span>
@@ -550,7 +563,7 @@ export default function App() {
           </header>
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>
-              <Routes>
+              {canVisitPage(location.pathname, user) ? <Routes>
                 <Route path="/kyc-capture" element={<KycCapture />} />
                 <Route path="/screenshot-capture" element={<KycCapture />} />
                 <Route
@@ -593,7 +606,7 @@ export default function App() {
                     />
                   }
                 />
-              </Routes>
+              </Routes> : <div className="panel"><h2>This page is not available for your role</h2><Link className="primary" to="/">Return to overview</Link></div>}
             </div>
             <footer className="page-footer">
               <span>

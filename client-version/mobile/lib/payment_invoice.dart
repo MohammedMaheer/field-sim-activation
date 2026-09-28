@@ -160,7 +160,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
   bool expanded = false;
 
   Widget section(Map section) => Padding(
-    padding: const EdgeInsets.only(top: 10),
+    padding: const EdgeInsets.only(top: 6),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -175,7 +175,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
         const SizedBox(height: 3),
         for (final field in section['fields'])
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.symmetric(vertical: 2),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -216,7 +216,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
   Widget build(BuildContext context) {
     final sections = (widget.invoice['sections'] as List).cast<Map>();
     const primary = <String, List<String>>{
-      'Invoice': ['Invoice number', 'Date', 'Review'],
+      'Invoice': ['Invoice number', 'Date'],
       'Customer': ['Customer name', 'Document number', 'Phone number'],
       'SIM & plan': ['SIM type', 'SIM serial', 'Plan', 'Plan price'],
       'Payment': ['Payment reference', 'Total paid'],
@@ -234,7 +234,11 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
           ...item,
           'fields': fields.where((f) => labels.contains(f['label'])).toList(),
         });
-        otherFields.addAll(fields.where((f) => !labels.contains(f['label'])));
+        otherFields.addAll(
+          fields.where(
+            (f) => !labels.contains(f['label']) && f['label'] != 'Review',
+          ),
+        );
       }
     }
     if (otherFields.isNotEmpty) {

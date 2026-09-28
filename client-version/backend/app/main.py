@@ -411,6 +411,9 @@ def records(resource, db, user, branch_id=""):
         if resource == "ekyc"
         else {}
     )
+    documents = {
+        d.customer_id: d for d in db.scalars(select(Document).where(Document.customer_id.in_(customer_names or list(db.scalars(select(Customer.id).where(Customer.agent_id.in_(ids)))))))
+    } if resource == "customers" else {}
     for row in db.scalars(query):
         if resource == "compliance" and any(
             term in row.title.lower() for term in ("territory", "geofence", "location", "boundary")
@@ -423,8 +426,10 @@ def records(resource, db, user, branch_id=""):
             agent = agent_by_id.get(row.agent_id)
             item["agent"] = agent_names.get(agent.user_id, "System") if agent else "System"
         if resource == "customers":
-            item["document"] = "•••• •••• DEMO"
-            item["mobile"] = "DEMO ••• " + row.mobile[-3:]
+            document = documents.get(row.id)
+            number = cipher.decrypt(document.encrypted_number.encode()).decode() if document else ""
+            item["document"] = "•••• " + number[-4:] if number else "Not recorded"
+            item["mobile"] = "•••• " + row.mobile[-4:] if row.mobile else "Not recorded"
         if resource == "ekyc":
             item["customer"] = customer_names.get(row.customer_id, "Unknown")
         if resource == "inventory":
