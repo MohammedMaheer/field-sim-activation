@@ -166,7 +166,30 @@ class PreviewService extends RelayService {
     }
     if (path == '/resources/plans') {
       return [
-        {'id': 'sample-plan', 'name': 'Connect Plus', 'monthly_cost': 150},
+        {
+          'id': 'zip-5g-unlimited',
+          'name': '5G Unlimited Ultra',
+          'monthly_cost': 350,
+          'promotion': 'Unlimited 5G Data + 1500 Flexi Mins',
+        },
+        {
+          'id': 'zip-flexi-postpaid',
+          'name': 'Flexi Postpaid',
+          'monthly_cost': 250,
+          'promotion': '100GB 5G Data + 500 Local Mins',
+        },
+        {
+          'id': 'zip-tourist-prepaid',
+          'name': 'Tourist Prepaid',
+          'monthly_cost': 199,
+          'promotion': '50GB High Speed + Free Roaming',
+        },
+        {
+          'id': 'zip-enterprise-m2m',
+          'name': 'Enterprise M2M',
+          'monthly_cost': 85,
+          'promotion': 'Telemetry VPN + Fixed IP',
+        },
       ];
     }
     if (path.startsWith('/kyc-captures')) {

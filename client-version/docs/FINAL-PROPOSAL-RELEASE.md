@@ -1,4 +1,15 @@
-## Focused KYC and visual usability release — 26 September 2026, build 14
+## Qanawat plans and transaction spacing — 28 September 2026, build 27
+
+- Added the four Qanawat ZIP plans to the active catalog: 5G Unlimited Ultra (AED 350/month), Flexi Postpaid (AED 250/month), Tourist Prepaid (AED 199), and Enterprise M2M (AED 85/month), with the supplied plan descriptions. Updated the API catalog, web transaction screen, Flutter app and phone-sized interactive demo together. Tourist Prepaid is displayed at AED 199 without an unsupported monthly suffix.
+- Fixed the SIM serial/barcode scanner collision shown in the supplied screenshots. The web screen places the barcode action beside the serial input; Flutter places it below with clear spacing. Plan names, pricing and benefits wrap without clipping, and the sticky Continue action remains visible.
+- Verification: backend 47 tests passed; Ruff and Flutter analysis passed; 14 Flutter tests passed (one pre-existing skip); the focused web intake and interactive phone-demo Playwright checks both passed. Desktop and 390px phone screens were visually reviewed. Migration 007 upgrade, downgrade and re-upgrade were checked locally.
+- Hosted client migration 007 and all four plan records verified; health, web intake, mobile demo and APK endpoints return HTTP 200. The APK hash matches the hosted copy: `c1192e80b223c963d734f812bea973dcfb076c9db1ee64b518122ef6524e2685`. Connected-phone installation was not checked in this pass because ADB is unavailable in this workspace.
+- A PostgreSQL custom-format dump and client files/APK backup were created before release at `/opt/relay-client/backups/plans-before-20260928T104259Z`; the final web/APK-only update also backed up `/opt/relay-client/backups/plan-assets-before-20260928T104846Z`. The migration release script rolls the client migration back to 006 and restores client files on failure; the static update restores the previous web bundle and APK. Other VPS containers retained their previous IDs; no other applications were changed.
+- Web: https://relay-client.187-127-162-233.sslip.io/kyc-capture
+- Interactive phone demo: https://relay-client.187-127-162-233.sslip.io/mobile-demo/
+- Android APK: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-scope.apk?v=27
+
+## Focused KYC and visual usability release â€” 26 September 2026, build 14
 
 - Web: simplified KYC into a single capture/review workspace. Searchable history opens in a drawer, upload disappears during review, and secondary file integrity, OCR and audit details are collapsible. The three stages remain Capture transaction, Review details, Submit & track. The Qanawat ZIP was inspected for its focused stage structure; external biometrics and carrier activation were not copied into Relay.
 - Mobile: compact current-stage progress, upload hidden during review, guarded New capture action, clearer record detail sheets, readable detail text and customer-card spacing. Fixed Support's unbounded loading viewport. The login description now describes screenshot review accurately.
@@ -11,7 +22,7 @@
 - Web: https://relay-client.187-127-162-233.sslip.io/kyc-capture
 - Before the current deployment/data refresh, database, web and prior APK were backed up under `/opt/relay-client/backups/visual-20260926T084142Z`. No schema migration or API restart was required. Web rollback restores `web.tar.gz`; APK rollback restores `previous.apk`. Demo data is additive; preserve subsequent user data when planning a database restore. Client and full-edition API/database container identities remain unchanged and healthy. Only `/opt/relay-client` was modified.
 
-## Admin usability and setup release — 25 September 2026, build 13
+## Admin usability and setup release â€” 25 September 2026, build 13
 
 - Added audited administrator branch, team-leader, outlet and agent creation within the existing Agents and Branch teams screens. Teams use the established leader/branch membership. Newly created agents can sign in to the shared mobile backend.
 - Shortened dashboard previews, improved branch charts, aligned setup fields, removed duplicate headings, linked team rosters to agent details and fixed detail-close URLs. Capture upload/history use both desktop columns; review hides the upload form and retains access to new capture. The mobile profile no longer repeats Branch.
@@ -52,7 +63,7 @@ Download: https://relay-client.187-127-162-233.sslip.io/downloads/relay-client-s
 
 ## Earlier release: three-stage capture, APK build 11, 24 September 2026
 
-Combined the reference demo's three-stage presentation with the proposal's functional screenshot flow: **Capture transaction → Review details → Submit & track**. Removed the separate six-stage instructional navigator and duplicate progress bar. Progress follows persisted capture status; failed extraction remains in capture, rejection returns to review, and only a saved backend decision is shown as verified. External Etisalat prerequisites are summarized once; no selfie, signature, plan-selection or telecom-activation forms were added.
+Combined the reference demo's three-stage presentation with the proposal's functional screenshot flow: **Capture transaction â†’ Review details â†’ Submit & track**. Removed the separate six-stage instructional navigator and duplicate progress bar. Progress follows persisted capture status; failed extraction remains in capture, rejection returns to review, and only a saved backend decision is shown as verified. External Etisalat prerequisites are summarized once; no selfie, signature, plan-selection or telecom-activation forms were added.
 
 Web and Flutter share the stages and wording. Existing encrypted capture, VPS OCR, editable rows, validation, Excel, submission and backend review remain intact. No backend schema or API changes were needed.
 
@@ -71,7 +82,7 @@ The proposal edition now uses explicit branches, branch-scoped teams, and a shar
 
 Territory/geofence navigation, reports, map data and mobile location collection have been removed from this edition. Android build 10 requests no fine/coarse location permission. Historical database/audit data is preserved. The separate full Relay edition is unchanged.
 
-The reference archive's identity / SIM-plan / synchronization sequence is represented by the six detailed proposal stages on web and Flutter. Stages 1–4 remain external Etisalat work; Relay implements screenshot capture, VPS OCR, correction, Excel handoff and human backend review. No carrier or biometric integration is implied.
+The reference archive's identity / SIM-plan / synchronization sequence is represented by the six detailed proposal stages on web and Flutter. Stages 1â€“4 remain external Etisalat work; Relay implements screenshot capture, VPS OCR, correction, Excel handoff and human backend review. No carrier or biometric integration is implied.
 
 - Backend: 36 tests passed; Ruff passed. Branch migration upgrade, downgrade and re-upgrade checked on a copied local database; hosted PostgreSQL migration completed with a database/source backup.
 - Web: production build passed. All 15 hosted Playwright scenarios passed, including real VPS OCR, editable rows, Excel output, backend verification, branches, popups, task/incentive/support persistence and CSV/PDF exports. Responsive desktop and phone-width screens were visually inspected.

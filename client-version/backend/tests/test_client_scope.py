@@ -64,6 +64,31 @@ def test_roles_and_scope(client, account, count):
     assert client.get("/api/dashboard").status_code == 200
 
 
+def test_qanawat_subscriber_plans_are_available_to_field_agents(client):
+    login(client, "agent1")
+    response = client.get("/api/resources/plans")
+    assert response.status_code == 200
+    plans = {p["name"]: p for p in response.json()}
+    assert set(plans) == {
+        "5G Unlimited Ultra",
+        "Flexi Postpaid",
+        "Tourist Prepaid",
+        "Enterprise M2M",
+    }
+    assert {name: plans[name]["monthly_cost"] for name in plans} == {
+        "5G Unlimited Ultra": 350,
+        "Flexi Postpaid": 250,
+        "Tourist Prepaid": 199,
+        "Enterprise M2M": 85,
+    }
+    assert {name: plans[name]["promotion"] for name in plans} == {
+        "5G Unlimited Ultra": "Unlimited 5G Data + 1500 Flexi Mins",
+        "Flexi Postpaid": "100GB 5G Data + 500 Local Mins",
+        "Tourist Prepaid": "50GB High Speed + Free Roaming",
+        "Enterprise M2M": "Telemetry VPN + Fixed IP",
+    }
+
+
 def test_proposal_tasks_are_scoped_audited_and_transition_once(client):
     login(client)
     agent = next(
@@ -904,40 +929,82 @@ def test_reference_transaction_cannot_skip_identity(client):
 
 def test_intake_draft_and_independent_review_without_payment(client, monkeypatch):
     from PIL import Image
-    from app import captures
-    from app.db import KycCapture, CaptureDraft
     from uuid import uuid4
+    from app.db import CaptureDraft, KycCapture
+
     login(client, "agent1")
     agent = client.get("/api/auth/me").json()["agent_id"]
-    image=io.BytesIO()
-    Image.new("RGB",(400,200),"white").save(image,format="PNG")
-    encoded=base64.b64encode(image.getvalue()).decode()
-    intake={"name":"Sample Customer","document_number":"SAMPLE-ONLY","nationality":"Sample","birth_date":"1990-01-01","expiry_date":"2090-12-31","document_image":encoded,"sim_identifier":"SAMPLE-SIM","plan_id":"sample-plan","msisdn":"SAMPLE-PHONE","signature":[[[i/10,0.5] for i in range(8)]]}
-    intake["plan_id"]=client.get("/api/resources/plans").json()[0]["id"]
-    draft=client.get("/api/kyc-captures/draft").json()
-    saved=client.put("/api/kyc-captures/draft",json={"version":draft["version"],"data":intake})
-    assert saved.status_code==200,saved.text
-    assert client.put("/api/kyc-captures/draft",json={"version":draft["version"],"data":intake}).status_code==409
+    image = io.BytesIO()
+    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    intake = {
+        "name": "Sample Customer",
+        "document_number": "SAMPLE-ONLY",
+        "nationality": "Sample",
+        "birth_date": "1990-01-01",
+        "expiry_date": "2090-12-31",
+        "document_image": encoded,
+        "sim_identifier": "SAMPLE-SIM",
+        "plan_id": "sample-plan",
+        "msisdn": "SAMPLE-PHONE",
+        "signature": [[[i / 10, 0.5] for i in range(8)]],
+    }
+    intake["plan_id"] = client.get("/api/resources/plans").json()[0]["id"]
+    draft = client.get("/api/kyc-captures/draft").json()
+    saved = client.put(
+        "/api/kyc-captures/draft",
+        json={"version": draft["version"], "data": intake},
+    )
+    assert saved.status_code == 200, saved.text
+    assert (
+        client.put(
+            "/api/kyc-captures/draft",
+            json={"version": draft["version"], "data": intake},
+        ).status_code
+        == 409
+    )
     with DB() as db:
-        assert all("SAMPLE-ONLY" not in d.payload_encrypted for d in db.scalars(select(CaptureDraft)))
-    body={"agent_id":agent,"operation_id":str(uuid4()),"source_reference":"SAMPLE-PAYMENT","image_base64":encoded,"intake":intake}
-    invalid={**body,"intake":{**intake,"document_number":""}}
-    assert client.post("/api/kyc-captures",json=invalid).status_code==422
-    created=client.post("/api/kyc-captures",json=body)
-    assert created.status_code==201,created.text
-    row=created.json();path="/api/kyc-captures/"+row["id"]
-    assert client.post("/api/kyc-captures",json=body).json()["id"]==row["id"]
-    assert client.get("/api/kyc-captures/draft").json()["data"]=={}
-    assert client.post("/api/kyc-captures",json={**body,"intake":{**intake,"name":"Different customer"}}).status_code==409
+        assert all(
+            "SAMPLE-ONLY" not in draft.payload_encrypted
+            for draft in db.scalars(select(CaptureDraft))
+        )
+    body = {
+        "agent_id": agent,
+        "operation_id": str(uuid4()),
+        "source_reference": "SAMPLE-PAYMENT",
+        "image_base64": encoded,
+        "intake": intake,
+    }
+    invalid = {**body, "intake": {**intake, "document_number": ""}}
+    assert client.post("/api/kyc-captures", json=invalid).status_code == 422
+    created = client.post("/api/kyc-captures", json=body)
+    assert created.status_code == 201, created.text
+    row = created.json()
+    path = "/api/kyc-captures/" + row["id"]
+    assert client.post("/api/kyc-captures", json=body).json()["id"] == row["id"]
+    assert client.get("/api/kyc-captures/draft").json()["data"] == {}
+    assert (
+        client.post(
+            "/api/kyc-captures",
+            json={**body, "intake": {**intake, "name": "Different customer"}},
+        ).status_code
+        == 409
+    )
     with DB() as db:
-        stored=db.get(KycCapture,row["id"]);stored.status="SUBMITTED";db.commit()
-    login(client,"agent2")
-    assert client.get("/api/kyc-captures/draft").json()["data"]=={}
-    assert client.get(path).status_code==404
-    login(client,"compliance")
-    review={"version":row["version"],"outcome":"VERIFIED","reason":"Checked kiosk reference and receipt"}
-    verified=client.post(path+"/review",json=review)
-    assert verified.status_code==200,verified.text
+        stored = db.get(KycCapture, row["id"])
+        stored.status = "SUBMITTED"
+        db.commit()
+    login(client, "agent2")
+    assert client.get("/api/kyc-captures/draft").json()["data"] == {}
+    assert client.get(path).status_code == 404
+    login(client, "compliance")
+    review = {
+        "version": row["version"],
+        "outcome": "VERIFIED",
+        "reason": "Checked kiosk reference and receipt",
+    }
+    verified = client.post(path + "/review", json=review)
+    assert verified.status_code == 200, verified.text
     assert "payment_confirmed" not in verified.json()["review"]
 
 

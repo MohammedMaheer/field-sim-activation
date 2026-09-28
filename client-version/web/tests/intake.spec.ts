@@ -48,9 +48,39 @@ test("identity and signature gate receipt submission", async ({ page }) => {
     page.getByRole("heading", { name: "SIM & plan", exact: true }),
   ).toBeVisible();
   await page
+    .getByRole("heading", { name: "SIM & plan", exact: true })
+    .scrollIntoViewIfNeeded();
+  await expect(page.locator(".intake-plans button")).toHaveCount(4);
+  for (const [name, details] of [
+    ["5G Unlimited Ultra", "Unlimited 5G Data + 1500 Flexi Mins"],
+    ["Flexi Postpaid", "100GB 5G Data + 500 Local Mins"],
+    ["Tourist Prepaid", "50GB High Speed + Free Roaming"],
+    ["Enterprise M2M", "Telemetry VPN + Fixed IP"],
+  ]) {
+    await expect(page.getByText(name, { exact: true })).toBeVisible();
+    await expect(page.getByText(details, { exact: true })).toBeVisible();
+  }
+  await expect(page.locator(".intake-plans button").nth(2)).toContainText("AED 199");
+  await expect(page.locator(".intake-plans button").nth(2)).not.toContainText("month");
+  expect(
+    await page
+      .locator(".intake-plans button")
+      .evaluateAll((cards) =>
+        cards.every((card) => card.scrollWidth <= card.clientWidth),
+      ),
+  ).toBeTruthy();
+  await page.locator(".intake-plans").scrollIntoViewIfNeeded();
+  await page.screenshot({
+    path: "../output/qa/web-intake-sim-plans-viewport-390.png",
+  });
+  await page.screenshot({
+    path: "../output/qa/web-intake-sim-plans-390.png",
+    fullPage: true,
+  });
+  await page
     .getByLabel("SIM serial / ICCID", { exact: true })
     .fill("SAMPLE-SIM-001");
-  await page.locator(".intake-plans button").first().click();
+  await page.getByRole("button", { name: /5G Unlimited Ultra/ }).click();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("phone number");
   await expect(page.getByRole("alert")).toContainText("customer signature");

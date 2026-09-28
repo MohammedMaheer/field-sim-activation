@@ -112,11 +112,18 @@ def seed():
         db.add(product)
         db.flush()
         plans = [
-            Plan(product_id=product.id, name=n, monthly_cost=p, data_gb=g, promotion=pr)
-            for n, p, g, pr in [
-                ("Essential 125", 125, 15, "First month data boost"),
-                ("Everyday 200", 200, 40, "Free SIM delivery"),
-                ("Unlimited 350", 350, 250, "5 GB roaming included"),
+            Plan(
+                product_id=product.id,
+                name=name,
+                monthly_cost=price,
+                data_gb=data_gb,
+                promotion=details,
+            )
+            for name, price, data_gb, details in [
+                ("5G Unlimited Ultra", 350, 0, "Unlimited 5G Data + 1500 Flexi Mins"),
+                ("Flexi Postpaid", 250, 100, "100GB 5G Data + 500 Local Mins"),
+                ("Tourist Prepaid", 199, 50, "50GB High Speed + Free Roaming"),
+                ("Enterprise M2M", 85, 0, "Telemetry VPN + Fixed IP"),
             ]
         ]
         db.add_all(plans)

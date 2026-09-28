@@ -389,7 +389,26 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     }
   }
 
-  Widget field(String key, String label, {bool date = false}) => Padding(
+  Future<void> scanSim() async {
+    final service = ref.read(serviceProvider);
+    final code = service.isPreview
+        ? 'SIM-SAMPLE-1001'
+        : await Navigator.push<String>(
+            context,
+            MaterialPageRoute(builder: (_) => const SimBarcodeScreen()),
+          );
+    if (mounted && code != null) {
+      revision++;
+      set('sim_identifier', code);
+    }
+  }
+
+  Widget field(
+    String key,
+    String label, {
+    bool date = false,
+    TextInputType? keyboardType,
+  }) => Padding(
     key: fieldAnchors.putIfAbsent(key, GlobalKey.new),
     padding: const EdgeInsets.only(bottom: 16),
     child: TextFormField(
@@ -397,6 +416,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       focusNode: fieldFocus.putIfAbsent(key, FocusNode.new),
       initialValue: data[key] ?? '',
       readOnly: date,
+      keyboardType: keyboardType,
       decoration: InputDecoration(
         labelText: label,
         errorText: missing.contains(key) ? 'Required' : null,
@@ -566,28 +586,21 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               onSelectionChanged: (v) => set('sim_type', v.first),
             ),
             const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final code = ref.read(serviceProvider).isPreview
-                          ? 'SIM-SAMPLE-1001'
-                          : await Navigator.push<String>(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const SimBarcodeScreen(),
-                              ),
-                            );
-                      if (code != null) {
-                        revision++;
-                        set('sim_identifier', code);
-                      }
-                    },
-              icon: const Icon(Icons.qr_code_scanner),
-              label: const Text('Scan SIM barcode'),
+            field(
+              'sim_identifier',
+              data['sim_type'] == 'ESIM'
+                  ? 'eSIM identifier'
+                  : 'SIM serial / ICCID',
             ),
-            field('sim_identifier', 'SIM serial / ICCID'),
-            field('msisdn', 'Phone number'),
+            Align(
+              alignment: Alignment.centerRight,
+              child: OutlinedButton.icon(
+                onPressed: busy ? null : scanSim,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Scan SIM barcode'),
+              ),
+            ),
+            field('msisdn', 'Phone number', keyboardType: TextInputType.phone),
             const Text(
               'Subscriber plan',
               style: TextStyle(fontWeight: FontWeight.bold),
@@ -617,7 +630,22 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                     p['name'],
                     style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
-                  subtitle: Text('AED ${p['monthly_cost']}'),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text('AED ${p['monthly_cost']}${p['name'] == 'Tourist Prepaid' ? '' : ' / month'}'),
+                        if ((p['promotion'] ?? '').toString().isNotEmpty)
+                          Text(
+                            p['promotion'],
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                      ],
+                    ),
+                  ),
                   trailing: Icon(
                     data['plan_id'] == p['id']
                         ? Icons.check_circle

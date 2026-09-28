@@ -272,7 +272,14 @@ def records(resource, db, user, branch_id=""):
             ),
         )
     if resource == "plans":
-        return [raw(p) for p in db.scalars(select(Plan).where(Plan.active == True))]
+        return [
+            raw(p)
+            for p in db.scalars(
+                select(Plan)
+                .where(Plan.active.is_(True))
+                .order_by(Plan.monthly_cost.desc(), Plan.name)
+            )
+        ]
     if resource == "outlets":
         if db.get(Role, user.role_id).name == "Administrator":
             outlet_ids = set(db.scalars(select(Outlet.id)))

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api, post, Row } from "./api";
 import { useResource } from "./App";
 import { Signature } from "./TransactionJourney";
-import { Camera, ArrowLeft, ArrowRight, Check } from "lucide-react";
+import { Camera, ArrowLeft, ArrowRight, Check, ScanLine } from "lucide-react";
 export default function CustomerIntake({
   value,
   onChange,
@@ -347,17 +347,27 @@ export default function CustomerIntake({
             </button>
           </div>
           <div className="intake-grid">
-            {input(
-              "sim_identifier",
-              value.sim_type === "ESIM"
-                ? "eSIM identifier"
-                : "SIM serial / ICCID",
-              "text",
-              100,
-            )}
+            <div className="intake-serial-control">
+              {input(
+                "sim_identifier",
+                value.sim_type === "ESIM"
+                  ? "eSIM identifier"
+                  : "SIM serial / ICCID",
+                "text",
+                100,
+              )}
+              <button
+                type="button"
+                className="intake-barcode-scan"
+                aria-label="Scan SIM barcode"
+                onClick={() => setCamera("barcode")}
+              >
+                <ScanLine size={18} />
+                <span>Scan barcode</span>
+              </button>
+            </div>
             {input("msisdn", "Phone number", "tel", 40)}
           </div>
-          <button onClick={() => setCamera("barcode")}>Scan SIM barcode</button>
           <h3>Select plan</h3>
           {plans.isPending ? (
             <p>Loading plans…</p>
@@ -375,7 +385,10 @@ export default function CustomerIntake({
                   }}
                 >
                   <strong>{p.name}</strong>
-                  <span>AED {p.monthly_cost}</span>
+                  <span>AED {p.monthly_cost}{p.name === "Tourist Prepaid" ? "" : " / month"}</span>
+                  {p.promotion && (
+                    <small className="plan-details">{p.promotion}</small>
+                  )}
                   {value.plan_id === p.id && <Check size={18} />}
                 </button>
               ))}

@@ -36,14 +36,35 @@ test("isolated Flutter phone preview", async ({ page }) => {
   await page
     .getByRole("button", { name: "Scan SIM barcode", exact: true })
     .click();
+  await page.mouse.move(700, 80);
   await page.waitForTimeout(300);
   const phone = page.getByRole("textbox", {
     name: "Phone number",
     exact: true,
   });
-  await page.getByText(/Connect Plus/).click();
+  for (const [plan, detail] of [
+    ["5G Unlimited Ultra", "Unlimited 5G Data + 1500 Flexi Mins"],
+    ["Flexi Postpaid", "100GB 5G Data + 500 Local Mins"],
+    ["Tourist Prepaid", "50GB High Speed + Free Roaming"],
+    ["Enterprise M2M", "Telemetry VPN + Fixed IP"],
+  ]) {
+    const card = page.getByRole("button", { name: new RegExp(plan) }).first();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText(detail);
+  }
+  const touristPlan = page.getByRole("button", { name: /Tourist Prepaid/ }).first();
+  await expect(touristPlan).toContainText("AED 199");
+  await expect(touristPlan).not.toContainText("month");
+  await page.screenshot({
+    path: "../output/qa/phone-preview-sim-plans.png",
+    fullPage: false,
+  });
+  await page
+    .getByRole("button", { name: /5G Unlimited Ultra/ })
+    .first()
+    .click();
   await page.waitForTimeout(300);
-  const pad = page.getByText("Customer signature", { exact: true });
+  const pad = await revealText("Customer signature pad");
   const bounds = await pad.boundingBox();
   expect(bounds).toBeTruthy();
   await page.mouse.move(bounds!.x + 20, bounds!.y + 40);
@@ -54,6 +75,10 @@ test("isolated Flutter phone preview", async ({ page }) => {
       bounds!.y + 40 + (i % 3) * 10,
     );
   await page.mouse.up();
+  await page.screenshot({
+    path: "../output/qa/phone-preview-signature.png",
+    fullPage: false,
+  });
   await (await reveal("Continue")).click();
   await expect(page.getByText(/phone number/i)).toBeVisible();
   await expect(phone).toBeFocused();
@@ -97,6 +122,19 @@ test("isolated Flutter phone preview", async ({ page }) => {
       await page.waitForTimeout(100);
     }
     return button;
+  }
+  async function revealText(name: string) {
+    const text = page.getByText(name, { exact: true });
+    for (let i = 0; i < 14; i++) {
+      const b = await text.boundingBox({ timeout: 250 }).catch(() => null);
+      const h = await page.locator("#flutter-host").boundingBox();
+      if (b && h && b.y >= h.y && b.y + b.height <= h.y + h.height - 120)
+        return text;
+      await page.mouse.move(h!.x + h!.width / 2, h!.y + h!.height * 0.65);
+      await page.mouse.wheel(0, 240);
+      await page.waitForTimeout(100);
+    }
+    return text;
   }
   await page.waitForTimeout(800);
   await (await reveal("Save details")).click();
