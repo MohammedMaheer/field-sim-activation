@@ -176,9 +176,8 @@ def abandon(transaction_id: str, request: Request, user=Depends(principal), db=D
 @router.get("/scan-notifications")
 def scan_notifications(user=Depends(principal), db=Depends(get_db)):
     require(db, user, "inventory.write")
-    return [
-        {"id": n.id, "message": n.message, "created_at": n.created_at}
-        for n in db.scalars(
+    notifications = list(
+        db.scalars(
             select(Notification)
             .where(
                 Notification.user_id == user.id, Notification.message.contains("SIM transaction")
@@ -186,4 +185,18 @@ def scan_notifications(user=Depends(principal), db=Depends(get_db)):
             .order_by(Notification.created_at.desc())
             .limit(30)
         )
+    )
+    iccids = {n.message.rsplit(" · ", 1)[-1] for n in notifications}
+    sim_ids = {
+        sim.iccid: sim.id
+        for sim in db.scalars(select(Sim).where(Sim.iccid.in_(iccids)))
+    }
+    return [
+        {
+            "id": n.id,
+            "message": n.message,
+            "created_at": n.created_at,
+            "sim_id": sim_ids.get(n.message.rsplit(" · ", 1)[-1]),
+        }
+        for n in notifications
     ]

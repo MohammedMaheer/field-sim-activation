@@ -231,7 +231,7 @@ export default function KycCapture() {
                 placeholder="Transaction reference"
               />
             </label>
-            <label className="review-sample-toggle"><input type="checkbox" checked={showSamples} onChange={(event) => { setShowSamples(event.target.checked); setHistoryPage(0); }} /> Older sample records</label>
+            <label className="review-sample-toggle"><input type="checkbox" checked={showSamples} onChange={(event) => { setShowSamples(event.target.checked); setHistoryPage(0); }} /> Include earlier records</label>
           </div>
           {list.isPending ? (
             <Loading />

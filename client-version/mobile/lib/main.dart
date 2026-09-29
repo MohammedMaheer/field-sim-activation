@@ -1168,25 +1168,23 @@ class _OrdersState extends ConsumerState<OrdersScreen> {
             ),
           ),
         ),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.all(16),
-          child: Row(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          child: Wrap(
+            spacing: 7,
+            runSpacing: 6,
             children: ['All', 'Draft', 'Processing', 'Completed', 'Failed']
                 .map(
-                  (s) => Padding(
-                    padding: const EdgeInsets.only(right: 7),
-                    child: ChoiceChip(
-                      label: Text(s),
-                      selected: status == s,
-                      onSelected: (_) {
-                        if (s == 'Draft') {
-                          context.push('/drafts');
-                        } else {
-                          setState(() => status = s);
-                        }
-                      },
-                    ),
+                  (s) => ChoiceChip(
+                    label: Text(s),
+                    selected: status == s,
+                    onSelected: (_) {
+                      if (s == 'Draft') {
+                        context.push('/drafts');
+                      } else {
+                        setState(() => status = s);
+                      }
+                    },
                   ),
                 )
                 .toList(),

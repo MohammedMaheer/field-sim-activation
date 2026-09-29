@@ -553,8 +553,8 @@ export default function App() {
               </button>
               <button
                 className="icon-btn notification-btn"
-                title="Backend verification"
-                aria-label="Backend verification"
+                title={user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
+                aria-label={user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
                 onClick={() => user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate("/kyc-capture")}
               >
                 <Bell size={18} />
@@ -564,7 +564,7 @@ export default function App() {
             </div>
           </header>
           {simNotificationsOpen && <Drawer title="SIM activity" onClose={() => setSimNotificationsOpen(false)}>
-            {simNotifications.isLoading ? <Loading/> : simNotifications.isError ? <ErrorState error={simNotifications.error} retry={() => simNotifications.refetch()}/> : (simNotifications.data || []).length === 0 ? <p>No SIM scans yet</p> : (simNotifications.data || []).map((n:Row) => <button key={n.id} className="sim-notification" onClick={() => {setSimNotificationsOpen(false);navigate('/inventory');}}><b>{n.message}</b><small>{new Date(n.created_at).toLocaleString()}</small></button>)}
+            {simNotifications.isLoading ? <Loading/> : simNotifications.isError ? <ErrorState error={simNotifications.error} retry={() => simNotifications.refetch()}/> : (simNotifications.data || []).length === 0 ? <p>No SIM scans yet</p> : (simNotifications.data || []).map((n:Row) => <button key={n.id} className="sim-notification" onClick={() => {setSimNotificationsOpen(false);navigate(n.sim_id ? `/inventory?selected=${encodeURIComponent(n.sim_id)}` : '/inventory');}}><b>{n.message}</b><small>{new Date(n.created_at).toLocaleString()}</small></button>)}
           </Drawer>}
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>

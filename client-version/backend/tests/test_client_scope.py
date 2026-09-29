@@ -1472,6 +1472,8 @@ def test_sim_pack_parsing_and_claims_are_scoped(client):
     claim=client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx})
     assert claim.status_code==200, claim.text
     assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==200
+    notification = client.get('/api/inventory/scan-notifications').json()[0]
+    assert notification['sim_id'] == stock['id']
     login(client,'agent2')
     if client.get('/api/auth/me').json()['agent_id'] != agent_id:
         assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==404

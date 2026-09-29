@@ -6,7 +6,7 @@ test('visual audit of all edition routes',async({page})=>{
  await authenticate(page);
  for(const width of [1440,390]) {
   await page.setViewportSize({width,height:960});
-  for(const route of ['/', '/live', '/agents', '/team-leaders', '/customers', '/activations', '/kyc-capture', '/screenshot-capture', '/inventory', '/incentives', '/field-tasks', '/support', '/reports', '/compliance', '/audit']) {
+  for(const route of ['/', '/live', '/agents', '/branches', '/customers', '/activations', '/kyc-capture', '/inventory', '/incentives', '/support', '/reports', '/audit', '/plans', '/administration']) {
    await page.goto(route);await expect(page.locator('h1').first(), `${route} heading`).toBeVisible({timeout:20000});
    await expect(page.locator('.skeleton').first()).toHaveCount(0,{timeout:15000});
    await expect(page.getByText('Loading assigned agents…',{exact:true})).toHaveCount(0);
@@ -19,12 +19,12 @@ test('visual audit of all edition routes',async({page})=>{
  expect(errors).toEqual([]);
 });
 
-test('mobile KPI cards retain data, sorting and drawer keyboard focus',async({page})=>{
- await authenticate(page);await page.setViewportSize({width:390,height:900});await page.goto('/team-leaders');
+test('mobile agent details retain sorting and drawer keyboard focus',async({page})=>{
+ await authenticate(page);await page.setViewportSize({width:390,height:900});await page.goto('/agents');
  await page.getByLabel('Sort records').selectOption('activations');
  await page.getByRole('button',{name:'Reverse sort direction'}).click();
  await expect(page.locator('td[data-label="Activations"]').first()).toBeVisible();
- await page.getByRole('button',{name:'View Rayan Vale',exact:true}).click();
+ await page.getByRole('button',{name:'View Zayn Mercer',exact:true}).click();
  const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();await expect(dialog.getByText('Zayn Mercer',{exact:true})).toBeVisible();
  await dialog.getByRole('button',{name:'Close details'}).focus();
  await page.keyboard.press('Shift+Tab');

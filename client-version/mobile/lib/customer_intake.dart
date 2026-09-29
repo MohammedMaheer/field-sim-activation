@@ -105,6 +105,9 @@ class _IntakeCameraState extends State<IntakeCamera>
   String? error;
   bool taking = false, checking = false, finished = false;
   Timer? autoScan;
+  DateTime? nextAutoScan;
+  String? scanGuidance;
+  bool captureRequested = false;
   bool expanded = false, starting = false;
   StateSetter? refreshExpanded;
   late final AnimationController scan;
@@ -215,6 +218,7 @@ class _IntakeCameraState extends State<IntakeCamera>
         finished ||
         checking ||
         taking ||
+        (nextAutoScan != null && DateTime.now().isBefore(nextAutoScan!)) ||
         active?.value.isInitialized != true) {
       return;
     }
@@ -226,17 +230,33 @@ class _IntakeCameraState extends State<IntakeCamera>
       final fields = await widget.onAutoDetect?.call(bytes);
       if (mounted && controller == active && fields != null) {
         complete(DocumentScanResult(bytes, fields));
+      } else if (mounted && !finished) {
+        scanGuidance = 'No document detected · move closer';
+        nextAutoScan = DateTime.now().add(const Duration(seconds: 4));
       }
     } catch (_) {
-      // Continue scanning an unreadable or moving document.
+      if (mounted && !finished) {
+        scanGuidance = 'Hold the document steady';
+        nextAutoScan = DateTime.now().add(const Duration(seconds: 4));
+      }
     } finally {
       checking = false;
       refresh();
+      if (captureRequested && mounted && !finished) {
+        captureRequested = false;
+        unawaited(capture());
+      }
     }
   }
 
   Future<void> capture() async {
-    if (taking || checking || controller?.value.isInitialized != true) return;
+    if (taking || controller?.value.isInitialized != true) return;
+    if (checking) {
+      captureRequested = true;
+      scanGuidance = 'Capturing photo…';
+      refresh();
+      return;
+    }
     taking = true;
     refresh();
     try {
@@ -292,7 +312,8 @@ class _IntakeCameraState extends State<IntakeCamera>
   }
 
   Widget captureButton() => FilledButton.icon(
-    onPressed: taking || checking || controller?.value.isInitialized != true
+    onPressed:
+        taking || captureRequested || controller?.value.isInitialized != true
         ? null
         : capture,
     icon: const Icon(Icons.camera_alt),
@@ -401,7 +422,8 @@ class _IntakeCameraState extends State<IntakeCamera>
                   child: Text(
                     checking
                         ? 'Reading document…'
-                        : 'Position ${widget.document.toLowerCase()}',
+                        : scanGuidance ??
+                              'Position ${widget.document.toLowerCase()}',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,

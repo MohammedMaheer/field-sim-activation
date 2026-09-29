@@ -121,11 +121,11 @@ test("task, incentive and support actions are saved", async ({ page }) => {
   await expect(ticket).toContainText("Issue resolved in QA");
 });
 
-test("CSV and compliance PDF downloads", async ({ page }) => {
+test("current CSV and PDF reports download", async ({ page }) => {
   await page.getByRole("link", { name: "Reports", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "PDF", exact: true }),
-  ).toHaveCount(9);
+  ).toHaveCount(8);
   for (const format of ["CSV", "PDF"]) {
     const dl = page.waitForEvent("download");
     await page
