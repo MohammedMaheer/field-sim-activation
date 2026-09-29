@@ -28,6 +28,8 @@ from .administration import router as administration_router
 from .inventory_bulk import router as inventory_bulk_router
 from .sim_scanning import router as sim_scanning_router
 from .transactions import router as transaction_router
+from .sales_management import router as sales_management_router
+from .field_assets import router as field_assets_router
 from .client_scope import configure as configure_client_scope
 
 
@@ -82,6 +84,8 @@ app.include_router(proposal_router)
 app.include_router(organization_router)
 app.include_router(administration_router)
 app.include_router(transaction_router)
+app.include_router(sales_management_router)
+app.include_router(field_assets_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,

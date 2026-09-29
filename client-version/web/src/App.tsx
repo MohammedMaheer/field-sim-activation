@@ -6,6 +6,8 @@ import Administration from "./Administration";
 import PlanManagement from "./PlanManagement";
 import InventoryImport from "./InventoryImport";
 import KycCapture from "./KycCapture";
+import SalesManagement from "./SalesManagement";
+import FieldAssets from "./FieldAssets";
 import { Incentives, Support } from "./ProposalOperations";
 
 import Dashboard, { BranchFilter } from "./Dashboard";
@@ -139,10 +141,12 @@ const navigation = [
     label: "FIELD ACTIVITY",
     items: [
       ["activations", "Activations", Zap],
+      ["sales", "Sales management", ShoppingBag],
 
       ["kyc-capture", "Backend verification", ScanFace],
 
       ["inventory", "SIM inventory", Layers3],
+      ["equipment", "Assets & supplies", Package],
       ["incentives", "Incentives", Coins],
       ["support", "Support", LifeBuoy],
     ],
@@ -168,8 +172,8 @@ export function canVisitPage(path: string, user: Row) {
   if (["plans", "administration"].includes(path)) return permissions.includes("settings.write");
   if (path === "audit") return permissions.includes("audit.read");
   if (path === "reports") return permissions.includes("report.read");
-  if (user.role === "Field Agent") return ["", "customers", "activations", "kyc-capture", "inventory", "incentives", "support"].includes(path);
-  if (user.role === "Compliance Officer") return ["", "agents", "branches", "customers", "activations", "kyc-capture", "audit", "reports"].includes(path);
+  if (user.role === "Field Agent") return ["", "customers", "activations", "sales", "equipment", "kyc-capture", "inventory", "incentives", "support"].includes(path);
+  if (user.role === "Compliance Officer") return ["", "agents", "branches", "customers", "activations", "sales", "kyc-capture", "audit", "reports"].includes(path);
   return true;
 }
 
@@ -574,6 +578,8 @@ export default function App() {
             <div className="route-stage" key={location.pathname}>
               {canVisitPage(location.pathname, user) ? <Routes>
                 <Route path="/kyc-capture" element={<KycCapture />} />
+                <Route path="/sales" element={<SalesManagement />} />
+                <Route path="/equipment" element={<FieldAssets />} />
                 <Route path="/screenshot-capture" element={<KycCapture />} />
                 <Route
                   path="/incentives"

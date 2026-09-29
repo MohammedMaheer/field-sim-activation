@@ -1,4 +1,6 @@
 import 'saved_drafts.dart';
+import 'sales_management.dart';
+import 'field_assets.dart';
 import 'dart:async';
 import 'kyc_capture.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +25,8 @@ final router = GoRouter(
     GoRoute(path: '/', builder: (c, s) => const Gate()),
     GoRoute(path: '/drafts', builder: (c, s) => const SavedDraftsScreen()),
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
+    GoRoute(path: '/sales-management', builder: (c, s) => const SalesManagementScreen()),
+    GoRoute(path: '/assets', builder: (c, s) => const FieldAssetsScreen()),
     GoRoute(
       path: '/transactions',
       builder: (c, s) =>
@@ -959,7 +963,7 @@ class HomeScreen extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: OutlinedButton.icon(
-                      onPressed: () => context.push('/records'),
+                      onPressed: () => context.push('/sales-management'),
                       icon: const Icon(Icons.receipt_long_outlined),
                       label: const Text('Sales records'),
                     ),
@@ -975,6 +979,7 @@ class HomeScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 8),
+              TextButton.icon(onPressed: () => context.push('/assets'), icon: const Icon(Icons.inventory_2_outlined), label: const Text('Assets & supplies')),
               TextButton.icon(
                 onPressed: () => context.push('/support'),
                 icon: const Icon(Icons.support_agent_outlined),

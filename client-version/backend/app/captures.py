@@ -1024,6 +1024,8 @@ def submit(
     if row.status != "VALIDATED":
         raise HTTPException(409, "Review and validate transaction rows before submission")
     row.status = "SUBMITTED"
+    from .sales_management import register_capture_sale
+    register_capture_sale(db, row)
     record(db, row, user, "KYC Submitted for Backend Review", request)
     db.commit()
     return view(row)
@@ -1357,5 +1359,7 @@ def complete_activation(
         "at": now().isoformat(),
     }
     record(db, row, user, "Backend activation " + body.outcome, request, data)
+    from .sales_management import record_capture_activation
+    record_capture_activation(db, row, body.outcome)
     db.commit()
     return view(row)

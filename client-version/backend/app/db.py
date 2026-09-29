@@ -12,6 +12,7 @@ from sqlalchemy import (
     Boolean,
     Text,
     Numeric,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -338,6 +339,91 @@ class SimProgress(Entity):
     stage: Mapped[str] = mapped_column(String(40), default="IN_PROGRESS")
     payment_status: Mapped[str] = mapped_column(String(30), default="NOT_UPLOADED")
     capture_id: Mapped[str | None] = mapped_column(ForeignKey("kyc_captures.id"), nullable=True)
+
+
+class SalesRecord(Entity):
+    __tablename__ = "sales_records"
+    capture_id: Mapped[str | None] = mapped_column(ForeignKey("kyc_captures.id"), unique=True, nullable=True)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
+    leader_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"), index=True)
+    outlet_id: Mapped[str] = mapped_column(ForeignKey("outlets.id"))
+    order_type: Mapped[str] = mapped_column(String(20), index=True)
+    customer_name: Mapped[str] = mapped_column(String(120))
+    document_encrypted: Mapped[str] = mapped_column(Text, default="")
+    nationality: Mapped[str] = mapped_column(String(80), default="")
+    plan_name: Mapped[str] = mapped_column(String(160), default="")
+    request_id: Mapped[str | None] = mapped_column(String(120), unique=True, nullable=True)
+    status: Mapped[str] = mapped_column(String(20), default="IN_PROGRESS", index=True)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    status_updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class NoSaleFeedback(Entity):
+    __tablename__ = "no_sale_feedback"
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
+    leader_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"), index=True)
+    customer_name: Mapped[str] = mapped_column(String(120), default="")
+    contact_encrypted: Mapped[str] = mapped_column(Text, default="")
+    product_suggested: Mapped[str] = mapped_column(String(160))
+    feedback: Mapped[str] = mapped_column(String(1000))
+    rejection_reason: Mapped[str] = mapped_column(String(300))
+
+
+class SalesTarget(Entity):
+    __tablename__ = "sales_targets"
+    __table_args__ = (UniqueConstraint("agent_id", "period", "order_type", name="uq_sales_target_period"),)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
+    period: Mapped[str] = mapped_column(String(7), index=True)
+    order_type: Mapped[str] = mapped_column(String(20), default="ALL")
+    daily_target: Mapped[int] = mapped_column(Integer, default=0)
+    monthly_target: Mapped[int] = mapped_column(Integer, default=0)
+    set_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+
+
+class CallAttempt(Entity):
+    __tablename__ = "sales_call_attempts"
+    sale_id: Mapped[str] = mapped_column(ForeignKey("sales_records.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(20))
+    outcome: Mapped[str] = mapped_column(String(30))
+    remark: Mapped[str] = mapped_column(String(1000))
+    actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+
+
+class FieldAsset(Entity):
+    __tablename__ = "field_assets"
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    label: Mapped[str] = mapped_column(String(160))
+    serial: Mapped[str | None] = mapped_column(String(120), unique=True, nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(30), default="AVAILABLE", index=True)
+    branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"), index=True)
+    agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True, index=True)
+    note: Mapped[str] = mapped_column(String(500), default="")
+
+
+class FieldAssetMovement(Entity):
+    __tablename__ = "field_asset_movements"
+    asset_id: Mapped[str] = mapped_column(ForeignKey("field_assets.id"), index=True)
+    from_branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"))
+    to_branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"))
+    from_agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
+    to_agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str] = mapped_column(String(300))
+
+
+class FieldAssetRequest(Entity):
+    __tablename__ = "field_asset_requests"
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
+    branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"), index=True)
+    category: Mapped[str] = mapped_column(String(40))
+    quantity: Mapped[int] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(300))
+    status: Mapped[str] = mapped_column(String(30), default="REQUESTED")
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    fulfilled_asset_id: Mapped[str | None] = mapped_column(ForeignKey("field_assets.id"), nullable=True)
 
 
 engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///./relay.db"), pool_pre_ping=True)

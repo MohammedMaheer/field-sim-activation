@@ -1,0 +1,29 @@
+# Modern Trade proposal implementation status
+
+Checked against `Modern_Trade_Software_Project.docx` on 30 September 2026. This is an internal implementation record, not client-facing copy.
+
+## Implemented in the Relay client edition
+
+- Agents submit the current screenshot-order workflow. New submissions create a sales-register entry linked to the agent, current team leader, branch and outlet at submission time. The assignment snapshot remains on the sale when current assignments change.
+- Agents can record no-sale feedback separately. It does not count as a sale.
+- Sales support New, MNP, P2P, Home Wireless, eLife, Wasel and Visitor categories. Backend managers can correct a category and router serial with an audited reason. Missing data remains Not recorded.
+- Management can set monthly and daily targets; team leaders can set targets only for their assigned agents. Role-scoped sales, target, feedback and performance views are available in the web panel; agents have sales and feedback in the app and phone-framed demo.
+- Performance counts closed, in-progress and cancelled sales, monthly target, remaining sales, achievement percentage and closed sales by product.
+- Managers can export the sale register, preview validated CSV/XLSX status changes and apply them with audit history. The import uses unique sale IDs and rejects duplicate, unmatched or stale rows.
+- Authorized backend/compliance staff can record independent tele-verification and welcome-call attempts and remarks without overwriting the other stage.
+- Non-SIM field assets have branch stock records, agent assignment, movement history and agent requests. SIM inventory remains separate.
+- The existing screenshot capture, backend evidence review, external activation record and leader read-only notification remain the transaction path. Carrier activation and payment settlement are not claimed by Relay.
+
+## Still open
+
+- Grabba device integration and Etisalat carrier activation require provider SDK/API access and a supported device. The app records submitted sales; it cannot initiate or attest carrier activation.
+- Gateway payment settlement requires a payment-provider integration. An order-created request ID is only an agent payment record pending backend confirmation.
+- Exact commission forecasts, CRR/DRR projections and month-end deduction warnings require the missing commission structure and management-approved formulas. Existing incentives do not establish those rules.
+- The proposal's separate Sales Manager reporting role, dedicated tele-verification and welcome-call teams, work-queue alerts, and automatic call-stage release have not been built. Authorized staff can record call attempts manually.
+- Detailed stock policy is still unspecified by the proposal: SIM deduction trigger by sale status, minimum levels, low-stock alerts, warehouse and batch balances, urgency routing, transfer/exit checklists, and all stock exports are not complete. Do not treat generic asset requests as the full stock tracker.
+- Old historical activation records were preserved; they were not all backfilled into the new sales register. New screenshot-order submissions enter it automatically.
+- No OCR or screenshot parser can guarantee correct recognition of every carrier screen. Staff must review captured values and evidence.
+
+## Verification boundary
+
+Backend tests, web build, Flutter checks and focused hosted browser checks passed for this addition. These checks do not prove Grabba, carrier, payment-gateway or live call-center integration. The older broad browser suite includes selectors for superseded screens and was not treated as a passing release gate.

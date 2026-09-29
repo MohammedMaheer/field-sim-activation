@@ -1664,3 +1664,113 @@ def test_order_payment_record_has_no_inferred_payment_values():
     legacy = invoice(row, {"intake": {}, "rows": []})
     assert legacy["heading"] == "Payment successful"
     assert "Customer signature" in {field["label"] for section in legacy["sections"] for field in section["fields"]}
+
+
+def test_sales_management_scope_targets_and_status_file(client):
+    from app.db import SalesRecord, CallAttempt
+    from sqlalchemy import delete
+
+    login(client, "admin")
+    agents = client.get("/api/resources/agents").json()
+    first = next(row for row in agents if row["employee_id"] == "RLY-1041")
+    other_branch = next(row for row in agents if row["employee_id"] == "RLY-1044")
+    body = {"agent_id": first["id"], "order_type": "NEW", "customer_name": "Sample Sales Customer",
+            "plan_name": "Sample plan", "request_id": "SALES-TEST-REQ-1"}
+    created = client.post("/api/sales-management/sales", json=body)
+    assert created.status_code == 201, created.text
+    sale_id = created.json()["id"]
+    assert created.json()["document"] == "Not recorded"
+    assert client.patch(f"/api/sales-management/sales/{sale_id}", json={"order_type":"HW", "router_serial":"", "reason":"Correct product"}).status_code == 422
+    corrected = client.patch(f"/api/sales-management/sales/{sale_id}", json={"order_type":"HW", "router_serial":"ROUTER-123", "reason":"Confirmed product from order screen"})
+    assert corrected.status_code == 200 and corrected.json()["router_serial"] == "ROUTER-123"
+    assert client.post("/api/sales-management/sales", json=body).status_code == 409
+    assert client.post("/api/sales-management/sales", json={**body, "order_type": "HW", "request_id": "SALES-TEST-REQ-2"}).status_code == 422
+    feedback = client.post("/api/sales-management/feedback", json={"agent_id": first["id"],
+        "product_suggested": "Sample plan", "feedback": "Customer asked for a later call",
+        "rejection_reason": "Timing"})
+    assert feedback.status_code == 201, feedback.text
+    assert client.put("/api/sales-management/targets", json={"agent_id": first["id"],
+        "period": "2026-09", "order_type": "ALL", "daily_target": 2, "monthly_target": 20}).status_code == 200
+
+    login(client, "agent1")
+    assert sale_id in {r["id"] for r in client.get("/api/sales-management/sales").json()}
+    assert client.patch(f"/api/sales-management/sales/{sale_id}", json={"order_type":"NEW", "router_serial":"", "reason":"Agent change"}).status_code == 403
+    assert client.post("/api/sales-management/sales", json={**body, "agent_id": other_branch["id"], "request_id": "SALES-TEST-REQ-3"}).status_code == 404
+    assert client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"WELCOME_CALL","outcome":"PASSED","remark":"Reached customer"}).status_code == 403
+    assert client.post("/api/sales-management/status-file", json={"filename":"sales.csv","content_base64":"","apply":False}).status_code == 403
+    login(client, "leader2")
+    assert sale_id not in {r["id"] for r in client.get("/api/sales-management/sales").json()}
+    login(client, "leader")
+    assert sale_id in {r["id"] for r in client.get("/api/sales-management/sales").json()}
+    assert client.put("/api/sales-management/targets", json={"agent_id": other_branch["id"],
+        "period": "2026-09", "order_type": "ALL", "daily_target": 2, "monthly_target": 20}).status_code == 404
+    login(client, "compliance")
+    attempt = client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"TELE_VERIFICATION","outcome":"NO_ANSWER","remark":"Call not answered"})
+    assert attempt.status_code == 201, attempt.text
+    assert client.get("/api/sales-management/calls").json()[0]["tele_verification"]
+
+    login(client, "admin")
+    exported = client.get("/api/sales-management/export")
+    assert exported.status_code == 200 and "sale_id,current_status,new_status" in exported.text
+    csv_content = f"sale_id,current_status,new_status,created_at\n{sale_id},IN_PROGRESS,CLOSED,ignored\n"
+    payload = {"filename":"sales.csv", "content_base64":base64.b64encode(csv_content.encode()).decode()}
+    preview = client.post("/api/sales-management/status-file", json={**payload,"apply":False})
+    assert preview.status_code == 200 and len(preview.json()["changes"]) == 1
+    assert client.post("/api/sales-management/status-file", json={**payload,"apply":True}).json()["applied"]
+    assert client.get("/api/sales-management/performance?period=2026-09").status_code == 200
+    assert client.post("/api/sales-management/status-file", json={**payload,"apply":True}).status_code == 422
+    with DB() as db:
+        db.execute(delete(CallAttempt).where(CallAttempt.sale_id == sale_id))
+        db.delete(db.get(SalesRecord, sale_id))
+        db.commit()
+
+
+def test_field_assets_track_assignment_requests_and_scope(client):
+    from app.db import FieldAsset, FieldAssetMovement, FieldAssetRequest
+    from sqlalchemy import delete
+    login(client, "admin")
+    branches = client.get("/api/resources/branches").json()
+    agents = client.get("/api/resources/agents").json()
+    first = next(row for row in agents if row["employee_id"] == "RLY-1041")
+    other = next(row for row in agents if row["employee_id"] == "RLY-1044")
+    first_branch = next(row for row in branches if row["name"] == "Dubai Central")
+    body = {"category": "GRABBA_DEVICE", "label": "Test reader", "serial": "TEST-GRABBA-1",
+            "quantity": 1, "branch_id": first_branch["id"]}
+    created = client.post("/api/field-assets", json=body)
+    assert created.status_code == 201, created.text
+    asset_id = created.json()["id"]
+    assert client.post("/api/field-assets", json=body).status_code == 409
+    assert client.post("/api/field-assets", json={**body,"serial":"TEST-GRABBA-2","quantity":2}).status_code == 422
+    assert client.patch(f"/api/field-assets/{asset_id}", json={"branch_id":first_branch["id"],
+        "agent_id":other["id"],"status":"ASSIGNED","reason":"Incorrect branch"}).status_code == 422
+    moved = client.patch(f"/api/field-assets/{asset_id}", json={"branch_id":first_branch["id"],
+        "agent_id":first["id"],"status":"ASSIGNED","reason":"Issue to agent"})
+    assert moved.status_code == 200 and moved.json()["agent_id"] == first["id"]
+    assert len(client.get(f"/api/field-assets/{asset_id}/history").json()) == 1
+    login(client, "agent1")
+    assert asset_id in {r["id"] for r in client.get("/api/field-assets").json()}
+    assert client.patch(f"/api/field-assets/{asset_id}", json={"branch_id":first_branch["id"],
+        "status":"RETURNED","reason":"Return item"}).status_code == 403
+    requested = client.post("/api/field-assets/requests", json={"agent_id":first["id"],
+        "category":"UNIFORM","quantity":1,"reason":"Replacement needed"})
+    assert requested.status_code == 201, requested.text
+    request_id = requested.json()["id"]
+    login(client, "leader2")
+    assert asset_id not in {r["id"] for r in client.get("/api/field-assets").json()}
+    assert request_id not in {r["id"] for r in client.get("/api/field-assets/requests/list").json()}
+    login(client, "admin")
+    assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"FULFILLED","reason":"No approval"}).status_code == 409
+    assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"APPROVED","reason":"Stock approved"}).status_code == 200
+    assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"FULFILLED","reason":"Issued item"}).status_code == 422
+    uniform = client.post("/api/field-assets", json={"category":"UNIFORM","label":"Test uniform", "quantity":1,"branch_id":first_branch["id"]})
+    uniform_id = uniform.json()["id"]
+    assert client.patch(f"/api/field-assets/{uniform_id}", json={"branch_id":first_branch["id"],
+        "agent_id":first["id"],"status":"ASSIGNED","reason":"Issue uniform"}).status_code == 200
+    assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"FULFILLED","reason":"Issued item","asset_id":uniform_id}).status_code == 200
+    with DB() as db:
+        db.execute(delete(FieldAssetRequest).where(FieldAssetRequest.id == request_id))
+        db.execute(delete(FieldAssetMovement).where(FieldAssetMovement.asset_id == asset_id))
+        db.execute(delete(FieldAssetMovement).where(FieldAssetMovement.asset_id == uniform_id))
+        db.delete(db.get(FieldAsset, asset_id))
+        db.delete(db.get(FieldAsset, uniform_id))
+        db.commit()
