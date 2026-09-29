@@ -38,5 +38,7 @@ test('team leader sees backend-confirmed records with no approval action',async(
   await page.getByRole('button',{name:'View details'}).first().click();
   await expect(page.getByText('Transaction confirmed by backend',{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Verify submission',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Record completed activation',exact:true})).toHaveCount(0);
+  await expect(page.locator('.review-image-stage img').first()).toBeVisible({timeout:20000});
   await page.screenshot({path:'../output/qa/team-leader-read-only-record.png',fullPage:true});
 });

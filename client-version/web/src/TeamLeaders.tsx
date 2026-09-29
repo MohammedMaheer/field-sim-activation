@@ -12,10 +12,11 @@ import ReceiptReview from "./ReceiptReview";
 export default function TeamLeaders() {
   const {user} = useContext(Context);
   const leaders = useResource("team-leaders");
+  const agents = useResource("agents");
   const [setup,setSetup] = useState(false);
   const [selected,setSelected] = useState<Row | null>(null);
   const queue = useQuery<Row[]>({queryKey:["leader-confirmations"],queryFn:() => api("/kyc-captures/leader-confirmations"),enabled:user.role === "Team Leader",refetchInterval:8000});
-  if(selected) return <ReceiptReview capture={selected} user={user} onBack={() => setSelected(null)} onSaved={async () => {await queue.refetch();}}/>;
+  if(selected) return <ReceiptReview capture={selected} agent={agents.data?.find(agent => agent.id === selected.agent_id)} user={user} onBack={() => setSelected(null)} onSaved={async () => {await queue.refetch();}}/>;
   return <>
     <header className="page-header"><div><span className="eyebrow">BRANCH LEADERSHIP</span><h1>Team leaders</h1></div><div className="leader-header-actions">
       <button onClick={() => {leaders.refetch();if(user.role === "Team Leader")queue.refetch();}}><RefreshCw size={16}/> Refresh</button>

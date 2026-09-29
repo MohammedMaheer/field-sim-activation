@@ -406,7 +406,7 @@ export default function ReceiptReview({
               </p>
             )}
             {capture.activation?.status !== "ACTIVATED" &&
-              user.permissions?.includes("ekyc.write") && (
+              user.permissions?.includes("compliance.write") && (
                 <>
                   <label>
                     Carrier activation reference
