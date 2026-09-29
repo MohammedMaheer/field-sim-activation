@@ -231,6 +231,40 @@ class PreviewService extends RelayService {
       (data[path] as List).insert(0, row);
       return row;
     }
+    if (path == '/inventory/scan') {
+      return {
+        'sim_identifier': 'SIM-SAMPLE-1001',
+        'sim_type': 'PHYSICAL',
+        'stage': 'IN_PROGRESS',
+        'payment_status': 'NOT_UPLOADED',
+      };
+    }
+    if (path.startsWith('/inventory/scan/')) return {'discarded': true};
+    if (path == '/kyc-captures/saved-drafts') {
+      final drafts = data.putIfAbsent(path, () => <Json>[]) as List;
+      if (o.method == 'POST') {
+        final values = Map<String, dynamic>.from(body['data']);
+        final id =
+            values['saved_draft_id'] ??
+            'draft-${DateTime.now().microsecondsSinceEpoch}';
+        values['saved_draft_id'] = id;
+        drafts.removeWhere((r) => r['id'] == id);
+        final row = {
+          'id': id,
+          'data': values,
+          'created_at': DateTime.now().toIso8601String(),
+        };
+        drafts.insert(0, row);
+        return row;
+      }
+      return drafts;
+    }
+    if (path.startsWith('/kyc-captures/saved-drafts/')) {
+      (data['/kyc-captures/saved-drafts'] as List?)?.removeWhere(
+        (r) => r['id'] == path.split('/').last,
+      );
+      return {'discarded': true};
+    }
     if (path == '/kyc-captures/draft') {
       if (o.method == 'PUT') {
         data[path] = {'version': body['version'] + 1, 'data': body['data']};
@@ -262,6 +296,10 @@ class PreviewService extends RelayService {
       final captures = data['/kyc-captures'] as List;
       if (path == '/kyc-captures') {
         if (o.method == 'POST') {
+          final savedId = body['intake']?['saved_draft_id'];
+          (data['/kyc-captures/saved-drafts'] as List?)?.removeWhere(
+            (r) => r['id'] == savedId,
+          );
           final template = jsonDecode(jsonEncode(captures.last)) as Json;
           template.addAll({
             'id': 'capture-${DateTime.now().microsecondsSinceEpoch}',

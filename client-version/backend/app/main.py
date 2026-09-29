@@ -26,6 +26,7 @@ from .proposal import router as proposal_router
 from .organization import router as organization_router
 from .administration import router as administration_router
 from .inventory_bulk import router as inventory_bulk_router
+from .sim_scanning import router as sim_scanning_router
 from .transactions import router as transaction_router
 from .client_scope import configure as configure_client_scope
 
@@ -76,6 +77,7 @@ async def lifespan(app):
 app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
 app.include_router(capture_router)
 app.include_router(inventory_bulk_router)
+app.include_router(sim_scanning_router)
 app.include_router(proposal_router)
 app.include_router(organization_router)
 app.include_router(administration_router)
@@ -414,6 +416,7 @@ def records(resource, db, user, branch_id=""):
     documents = {
         d.customer_id: d for d in db.scalars(select(Document).where(Document.customer_id.in_(customer_names or list(db.scalars(select(Customer.id).where(Customer.agent_id.in_(ids)))))))
     } if resource == "customers" else {}
+    progress_by_sim = {p.sim_id: p for p in db.scalars(select(SimProgress).where(SimProgress.agent_id.in_(ids)))} if resource == "inventory" else {}
     for row in db.scalars(query):
         if resource == "compliance" and any(
             term in row.title.lower() for term in ("territory", "geofence", "location", "boundary")
@@ -434,6 +437,11 @@ def records(resource, db, user, branch_id=""):
             item["customer"] = customer_names.get(row.customer_id, "Unknown")
         if resource == "inventory":
             item["outlet"] = outlet_names.get(row.outlet_id, "Unassigned")
+            progress = progress_by_sim.get(row.id)
+            item["activation_stage"] = progress.stage if progress else "NOT_STARTED"
+            item["payment_status"] = progress.payment_status if progress else "NOT_UPLOADED"
+            item["scan_transaction_id"] = progress.transaction_id if progress else None
+            item["capture_id"] = progress.capture_id if progress else None
         result.append(item)
     return result
 
@@ -770,6 +778,8 @@ def edit_sim(sim_id: str, body: SimEditBody, request: Request,
              user=Depends(principal), db=Depends(get_db)):
     require(db, user, "inventory.write")
     sim = db.scalar(select(Sim).where(Sim.id == sim_id).with_for_update())
+    if db.scalar(select(SimProgress.id).where(SimProgress.sim_id == sim_id, SimProgress.stage != "ACTIVATED")):
+        raise HTTPException(409, "This SIM has an active transaction. Resolve or discard it before changing stock.")
     if not sim:
         raise HTTPException(404, "SIM not found")
     if sim.agent_id:
@@ -805,6 +815,8 @@ def move(
     sim_id: str, body: MoveBody, request: Request, user=Depends(principal), db=Depends(get_db)
 ):
     sim = db.scalar(select(Sim).where(Sim.id == sim_id).with_for_update())
+    if db.scalar(select(SimProgress.id).where(SimProgress.sim_id == sim_id, SimProgress.stage != "ACTIVATED")):
+        raise HTTPException(409, "This SIM has an active transaction. Resolve or discard it before changing stock.")
     if not sim:
         raise HTTPException(404, "SIM not found")
     if sim.agent_id:

@@ -16,12 +16,14 @@ import 'services.dart';
 import 'experience.dart';
 
 class KycCaptureScreen extends ConsumerStatefulWidget {
-  const KycCaptureScreen({super.key});
+  final Json initial;
+  const KycCaptureScreen({super.key, this.initial = const {}});
   @override
   ConsumerState<KycCaptureScreen> createState() => _KycCaptureState();
 }
 
 class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
+  late final RelayService capturedService;
   final source = TextEditingController();
   final formKey = GlobalKey();
   final historyKey = GlobalKey();
@@ -39,6 +41,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   @override
   void initState() {
     super.initState();
+    capturedService = ref.read(serviceProvider);
     Future.microtask(initialize);
     timer = Timer.periodic(const Duration(seconds: 12), (_) {
       if (!busy) {
@@ -54,6 +57,18 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   @override
   void dispose() {
     timer?.cancel();
+    if (capture == null &&
+        !pending &&
+        intake['transaction_id'] != null &&
+        intake['saved_draft_id'] == null) {
+      unawaited(
+        capturedService.dio
+            .delete('/inventory/scan/${intake['transaction_id']}')
+            .catchError(
+              (_) => Response(requestOptions: RequestOptions(path: '')),
+            ),
+      );
+    }
     source.dispose();
     receiptScroll.dispose();
     super.dispose();
@@ -62,7 +77,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Future<void> initialize() async {
     try {
       final saved = await ref.read(serviceProvider).store.get(key);
-      if (saved != null && mounted) {
+      if (saved != null && saved['pending'] == true && mounted) {
         source.text = saved['reference'] ?? '';
         intake = Map<String, dynamic>.from(saved['intake'] ?? {});
         intakeReady = saved['intakeReady'] == true;
@@ -70,6 +85,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         operation = saved['operation'];
         pending = saved['pending'] == true;
       }
+      if (!pending) intake = Map<String, dynamic>.from(widget.initial);
       await refresh();
     } catch (e) {
       if (mounted) setState(() => error = friendlyError(e));

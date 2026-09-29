@@ -34,3 +34,14 @@ Extraction accepts arbitrary colon/gap-separated labels and multiline values. Or
 
 
 Identity capture requires readable printed name, document number, birth date and expiry date. The server binds those extracted values to the exact image and capturing account with an encrypted, time-limited capture check. Advancing a draft or submitting new payment confirmation rejects missing checks, image substitutions, changed identity details and checks belonging to another account. This is a readability and consistency check, not proof of document authenticity; independent staff review remains required. Historical records are unchanged. The isolated browser preview animates capture and upload using a synthetic identity image and never issues a production capture check.
+
+
+## Explicit drafts and SIM progress (29 September 2026)
+
+New transactions start empty. Save draft creates an encrypted, account-private saved transaction; Drafts is the only entry point for resuming it. Discard releases unsubmitted SIM claims. Offline mobile drafts remain on the device and synchronize when Drafts is reopened online. Working caches are not automatically treated as a new transaction.
+
+SIM pack scanning recognizes labelled ICCID/serial/type values and plain ICCID barcodes. Unknown/ambiguous packs require correction rather than invented identifiers. Agent scans require assigned available stock and a transaction identifier; repeat scans are idempotent and conflicting claims are rejected. Administrators receive a notification and see activation progress alongside stock and payment states. Unsubmitted abandoned claims can be cleared from stock management.
+
+Stock remains available while a distinct progress record moves through In progress, Pending verification, Ready for activation and Activated/Failed. Payment states are Not uploaded, Uploaded, Verified or Rejected. Uploaded payment evidence does not imply authorized or settled gateway payment. Only independent review followed by an authorized external activation completion changes the SIM to Activated. Historical activation receipts are preserved.
+
+Document continuation requires readable printed identity fields with identity-document context bound to the captured image/account. Random pictures and manually substituted fields cannot satisfy it. This is a readability and consistency gate, not document authenticity certification; staff still compare the original evidence.

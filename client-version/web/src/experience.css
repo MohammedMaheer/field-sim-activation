@@ -1711,3 +1711,5 @@ details:not([open]) .receipt-kiosk-assembly .verified-receipt { animation: none;
   .review-evidence-switch button { flex: 1 1 130px; }
   .review-record-header { padding: 14px; }
 }
+
+.sim-notification,.draft-card{display:flex;gap:12px;align-items:center;width:100%;padding:16px;margin-bottom:12px;border-radius:14px;background:#edf5ff;border:1px solid #d7dded;text-align:left}.sim-notification{flex-direction:column;align-items:flex-start}.draft-card button:first-child{display:flex;flex:1;flex-direction:column;gap:6px;align-items:flex-start}.sim-notification small,.draft-card small{color:#526079}

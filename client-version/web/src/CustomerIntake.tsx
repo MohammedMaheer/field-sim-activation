@@ -8,10 +8,12 @@ export default function CustomerIntake({
   value,
   onChange,
   onReady,
+  onSaved,
 }: {
   value: Row;
   onChange: (v: Row) => void;
   onReady: () => void;
+  onSaved: () => void;
 }) {
   const [camera, setCamera] = useState("");
   const [reading, setReading] = useState(false),
@@ -40,7 +42,7 @@ export default function CustomerIntake({
     api("/kyc-captures/draft")
       .then((r) => {
         if (live) {
-          const restored = { ...r.data, ...value };
+          const restored: Row = { ...value, transaction_id: value.transaction_id || crypto.randomUUID() };
           if (!restored.document_check) {
             restored.document_image = "";
             restored.step = 0;
@@ -207,13 +209,18 @@ export default function CustomerIntake({
         if (step === 1 && (value.signature || []).flat().length < 8)
           throw Error("Please add the customer signature.");
       }
-      const data = { ...value, step: next ? step + 1 : step };
+      const scan = next && step === 1 ? await post('/inventory/scan',{code:value.sim_identifier,transaction_id:value.transaction_id,agent_id:value.agent_id}) : {};
+      const data = { ...value, ...scan, step: next ? step + 1 : step };
       const r = await api("/kyc-captures/draft", {
         method: "PUT",
         body: JSON.stringify({ version, data }),
       });
       setVersion(r.version);
       onChange(data);
+      if (!next) {
+        await post('/kyc-captures/saved-drafts',{data});
+        onSaved();
+      }
       if (next) {
         if (step === 1) onReady();
         else setStep(1);
@@ -403,7 +410,12 @@ export default function CustomerIntake({
             <IntakeCamera
               barcode
               onPhoto={() => {}}
-              onCode={(code) => set("sim_identifier", code)}
+              onCode={async code => {
+                try { const agent = value.agent_id || (await api('/auth/me')).agent_id;
+                  const result=await post('/inventory/scan',{code, transaction_id:value.transaction_id,agent_id:agent});
+                  onChange({...value,...result});setError('');
+                } catch(e:any) {setError(e.message);}
+              }}
               onClose={() => setCamera("")}
             />
           )}

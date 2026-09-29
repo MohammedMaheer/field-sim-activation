@@ -271,6 +271,8 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [live, setLive] = useState(false);
   const [toast, setToast] = useState("");
+  const [simNotificationsOpen,setSimNotificationsOpen] = useState(false);
+  const simNotifications = useQuery({queryKey:['sim-scan-notifications'],queryFn:() => api('/inventory/scan-notifications'),enabled:!!user?.permissions?.includes('inventory.write'),refetchInterval:10000});
   const [mobileMenu, setMobileMenu] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const client = useQueryClient();
@@ -553,7 +555,7 @@ export default function App() {
                 className="icon-btn notification-btn"
                 title="Backend verification"
                 aria-label="Backend verification"
-                onClick={() => navigate("/kyc-capture")}
+                onClick={() => user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate("/kyc-capture")}
               >
                 <Bell size={18} />
                 <i />
@@ -561,6 +563,9 @@ export default function App() {
               <Avatar name={user.name} size="small" />
             </div>
           </header>
+          {simNotificationsOpen && <Drawer title="SIM activity" onClose={() => setSimNotificationsOpen(false)}>
+            {simNotifications.isLoading ? <Loading/> : simNotifications.isError ? <ErrorState error={simNotifications.error} retry={() => simNotifications.refetch()}/> : (simNotifications.data || []).length === 0 ? <p>No SIM scans yet</p> : (simNotifications.data || []).map((n:Row) => <button key={n.id} className="sim-notification" onClick={() => {setSimNotificationsOpen(false);navigate('/inventory');}}><b>{n.message}</b><small>{new Date(n.created_at).toLocaleString()}</small></button>)}
+          </Drawer>}
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>
               {canVisitPage(location.pathname, user) ? <Routes>
@@ -957,7 +962,9 @@ const inventoryColumns: Column[] = [
   { key: "sim_type", label: "Type" },
   { key: "agent", label: "Assigned agent" },
   { key: "outlet", label: "Outlet" },
-  { key: "status", label: "Status", render: (r) => <Badge value={r.status} /> },
+  { key: "status", label: "Stock", render: (r) => <Badge value={r.status} /> },
+  { key: "activation_stage", label: "Progress", render: r => <Badge value={(r.activation_stage || "NOT_STARTED").replaceAll('_',' ')} /> },
+  { key: "payment_status", label: "Payment", render: r => <Badge value={(r.payment_status || "NOT_UPLOADED").replaceAll('_',' ')} /> },
 ];
 const agentColumns: Column[] = [
   {
@@ -1340,9 +1347,12 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
           status: sim.status,
           agent: sim.agent,
           outlet: sim.outlet,
+          progress: (sim.activation_stage || "NOT_STARTED").replaceAll("_"," "),
+          payment: (sim.payment_status || "NOT_UPLOADED").replaceAll("_"," "),
         }}
       />
-      {user.permissions.includes("inventory.write") && !["ACTIVATED", "RESERVED"].includes(sim.status) && (
+      {user.permissions.includes("inventory.write") && sim.scan_transaction_id && !sim.capture_id && <button disabled={busy} onClick={async () => {if(!window.confirm('Discard the unfinished SIM transaction and free this stock?')) return;setBusy(true);try{await api(`/inventory/scan/${sim.scan_transaction_id}`,{method:'DELETE'});await client.invalidateQueries({queryKey:['inventory']});notify('Unfinished SIM scan cleared');onClose();}catch(e:any){notify(e.message);}finally{setBusy(false);}}}>Clear unfinished scan</button>}
+      {user.permissions.includes("inventory.write") && !["ACTIVATED", "RESERVED"].includes(sim.status) && (!sim.scan_transaction_id || sim.activation_stage === "ACTIVATED") && (
         <form className="proposal-form" onSubmit={async e => {
           e.preventDefault();
           const form = new FormData(e.currentTarget);

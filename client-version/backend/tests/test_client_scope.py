@@ -45,7 +45,7 @@ def read_fixture_document(client, encoded, name="Sample Customer", number="SAMPL
     from app import captures
     with pytest.MonkeyPatch.context() as patch:
         patch.setattr(captures.extractor, "extract", lambda _: {"lines": [
-            {"text": f"Full name: {name}"}, {"text": f"Document number: {number}"},
+            {"text":"Identity document"}, {"text": f"Full name: {name}"}, {"text": f"Document number: {number}"},
             {"text": "Date of birth: 1990-01-01"}, {"text": "Expiry date: 2090-12-31"},
         ]})
         return client.post("/api/kyc-captures/read-document", json={"image_base64":encoded}).json()["document_check"]
@@ -1208,7 +1208,7 @@ def test_inventory_edit_is_scoped_audited_and_rejects_stale_details(client):
 def test_identity_extraction_maps_printed_dates_without_verification_claim(client,monkeypatch):
     from app import captures
     login(client,"agent1")
-    monkeypatch.setattr(captures.extractor,"extract",lambda _: {"lines":[{"text":"Full legal name: Alex Sample"},{"text":"ID No: SAMPLE-001"},{"text":"Date of Birth: 14 NOV 1991"},{"text":"Date of expiry: 14/11/2030"}]})
+    monkeypatch.setattr(captures.extractor,"extract",lambda _: {"lines":[{"text":"Identity document"},{"text":"Full legal name: Alex Sample"},{"text":"ID No: SAMPLE-001"},{"text":"Date of Birth: 14 NOV 1991"},{"text":"Date of expiry: 14/11/2030"}]})
     response=client.post("/api/kyc-captures/read-document",json={"image_base64":"eA=="})
     assert response.status_code==200
     result = response.json()
@@ -1330,13 +1330,19 @@ def test_payment_invoice_review_and_backend_activation(client, monkeypatch):
     intake = {"name":"Synthetic Payment Customer", "document_number":"SAMPLE-ID-9090", "nationality":"Synthetic", "birth_date":"1990-01-01", "expiry_date":"2090-12-31", "document_image":encoded, "sim_identifier":stock_serial, "plan_id":plan["id"], "msisdn":"SAMPLE-PHONE", "signature":[[[i/10,0.5] for i in range(8)]]}
     from app import captures
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(captures.extractor, "extract", lambda _: {"lines": [
+        patch.setattr(captures.extractor, "extract", lambda _: {"lines": [{"text":"Identity document"}] + [
             {"text": f"{label}: {intake[key]}"} for label, key in [
                 ("Full name", "name"), ("Document number", "document_number"),
                 ("Date of birth", "birth_date"), ("Expiry date", "expiry_date")]
         ]})
         intake["document_check"] = client.post("/api/kyc-captures/read-document",
             json={"image_base64": encoded}).json()["document_check"]
+    intake['transaction_id'] = str(uuid4())
+    scanned = client.post('/api/inventory/scan',json={'code':stock_serial,'transaction_id':intake['transaction_id']})
+    assert scanned.status_code == 200, scanned.text
+    assert scanned.json()['stage'] == 'IN_PROGRESS'
+    assert client.post('/api/inventory/scan',json={'code':stock_serial,'transaction_id':str(uuid4())}).status_code == 409
+    assert next(s for s in client.get('/api/resources/inventory').json() if s['id']==stock_id)['status'] == 'AVAILABLE'
     body = {"document_kind":"PAYMENT_CONFIRMATION", "agent_id":agent["id"], "operation_id":str(uuid4()), "image_base64":encoded}
     assert client.post("/api/kyc-captures",json=body).status_code == 422
     body["intake"] = intake
@@ -1370,6 +1376,11 @@ def test_payment_invoice_review_and_backend_activation(client, monkeypatch):
     login(client,"compliance")
     verified = client.post(path+"/review",json={"version":submitted["version"],"outcome":"VERIFIED","reason":"Compared original and customer details"})
     assert verified.status_code == 200, verified.text
+    login(client,'admin')
+    state=next(s for s in client.get('/api/resources/inventory').json() if s['id']==stock_id)
+    assert state['status']=='AVAILABLE' and state['activation_stage']=='READY_FOR_ACTIVATION' and state['payment_status']=='VERIFIED'
+    assert any(stock_serial in n['message'] for n in client.get('/api/inventory/scan-notifications').json())
+    login(client,'compliance')
     assert any(item["id"] == row["id"] for item in client.get("/api/kyc-captures?stage=READY").json())
     action["version"] = verified.json()["version"]
     assert client.post(path+"/activation",json=action).status_code == 403
@@ -1412,7 +1423,7 @@ def test_document_readability_proof_rejects_manual_fields_and_image_swaps(client
         return client.put("/api/kyc-captures/draft",json={"version":version,"data":data})
     assert save(intake).status_code == 422
     monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines":[
-        {"text": "Full name: Avery Stone"}, {"text":"Document number: SAMPLE-ID-1001"},
+        {"text":"Identity document"}, {"text": "Full name: Avery Stone"}, {"text":"Document number: SAMPLE-ID-1001"},
         {"text":"Date of birth: 1990-01-01"}, {"text":"Expiry date: 2030-12-31"}]})
     fields=client.post("/api/kyc-captures/read-document",json={"image_base64":encoded}).json()
     intake.update(fields)
@@ -1431,3 +1442,39 @@ def test_document_readability_proof_rejects_manual_fields_and_image_swaps(client
     assert client.put("/api/kyc-captures/draft",json={"version":other_version,"data":intake}).status_code == 422
     login(client,"agent1")
     assert save(intake).status_code == 200
+
+
+def test_saved_drafts_are_explicit_private_and_can_be_discarded(client):
+    from uuid import uuid4
+    login(client,'agent1')
+    body={'data':{'name':'Saved Sample','transaction_id':str(uuid4())}}
+    saved=client.post('/api/kyc-captures/saved-drafts',json=body)
+    assert saved.status_code==201, saved.text
+    identifier=saved.json()['id']
+    assert any(r['id']==identifier for r in client.get('/api/kyc-captures/saved-drafts').json())
+    login(client,'agent2')
+    assert all(r['id']!=identifier for r in client.get('/api/kyc-captures/saved-drafts').json())
+    assert client.delete('/api/kyc-captures/saved-drafts/'+identifier).status_code==404
+    login(client,'agent1')
+    assert client.delete('/api/kyc-captures/saved-drafts/'+identifier).status_code==200
+    assert all(r['id']!=identifier for r in client.get('/api/kyc-captures/saved-drafts').json())
+
+
+def test_sim_pack_parsing_and_claims_are_scoped(client):
+    from uuid import uuid4
+    login(client,'admin')
+    parsed=client.post('/api/inventory/parse-pack',json={'code':'{"ICCID":"8997102007719330280","SIM Serial":"PACK-001","Type":"eSIM"}'})
+    assert parsed.status_code==200 and parsed.json()=={'iccid':'8997102007719330280','serial':'PACK-001','sim_type':'eSIM'}
+    assert client.post('/api/inventory/parse-pack',json={'code':'not a sim qr'}).status_code==422
+    stock=next(s for s in client.get('/api/resources/inventory').json() if s['agent_id'] and s['status']=='AVAILABLE')
+    agent_id=stock['agent_id']
+    tx=str(uuid4())
+    claim=client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx})
+    assert claim.status_code==200, claim.text
+    assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==200
+    login(client,'agent2')
+    if client.get('/api/auth/me').json()['agent_id'] != agent_id:
+        assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==404
+        assert client.delete('/api/inventory/scan/'+tx).status_code==404
+    login(client,'admin')
+    assert client.delete('/api/inventory/scan/'+tx).status_code==200

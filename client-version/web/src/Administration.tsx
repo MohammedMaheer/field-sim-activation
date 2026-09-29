@@ -1,3 +1,4 @@
+import IntakeCamera from "./IntakeCamera";
 import { useContext, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
@@ -49,6 +50,7 @@ export default function Administration() {
     [editing, setEditing] = useState<Row | null>(null),
     [removing, setRemoving] = useState<Row | null>(null),
     [setup, setSetup] = useState(false),
+    [packScanner, setPackScanner] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const allowed = user.role === "Administrator";
@@ -266,7 +268,11 @@ export default function Administration() {
           title={`${editing.id ? "Edit" : "Add"} ${kind === "inventory" ? "SIM" : kind === "branches" ? "branch" : sections[kind].replace(/s$/, "").toLowerCase()}`}
           onClose={() => !busy && setEditing(null)}
         >
-          <form className="plan-editor" onSubmit={save}>
+          {kind === "inventory" && <div className="intake-choice"><button onClick={() => setPackScanner(true)}><Plus size={18}/> Scan SIM pack</button></div>}
+          {packScanner && <IntakeCamera barcode onPhoto={() => {}} onClose={() => setPackScanner(false)} onCode={async code => {
+            try { const values = await api('/inventory/parse-pack', {method:'POST',body:JSON.stringify({code})}); setEditing({...editing,...values}); setError(''); } catch(e:any) { setError(e.message); }
+          }}/ >}
+          <form key={editing.iccid || "new-sim"} className="plan-editor" onSubmit={save}>
             {(fields[kind] || []).map((key) => (
               <label
                 key={key}

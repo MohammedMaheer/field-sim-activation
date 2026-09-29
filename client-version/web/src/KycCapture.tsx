@@ -27,6 +27,8 @@ export default function KycCapture() {
   const canReview = user.permissions.includes("compliance.write");
   const [intake, setIntake] = useState<Row>({});
   const [intakeReady, setIntakeReady] = useState(false);
+  const [draftsOpen,setDraftsOpen] = useState(false);
+  const drafts = useQuery({queryKey:['saved-capture-drafts'],queryFn:() => api('/kyc-captures/saved-drafts'),enabled:draftsOpen});
   const [selected, setSelected] = useState(""),
     [agent, setAgent] = useState(""),
     [source, setSource] = useState(""),
@@ -164,6 +166,7 @@ export default function KycCapture() {
         <span />
         <div>
           <button onClick={() => setHistoryOpen(true)}>Capture history</button>
+          {canWrite && <button onClick={() => {setDraftsOpen(true);drafts.refetch();}}>Drafts</button>}
           {canWrite && (
             <button
               className="primary"
@@ -191,6 +194,9 @@ export default function KycCapture() {
           )}
         </div>
       </div>
+      {draftsOpen && <Drawer title="Drafts" onClose={() => setDraftsOpen(false)}>
+        {drafts.isLoading ? <p>Loading drafts…</p> : drafts.isError ? <p role="alert">Could not load drafts</p> : (drafts.data || []).length === 0 ? <p>No saved drafts</p> : (drafts.data || []).map((d:Row) => <div key={d.id} className="draft-card"><button onClick={() => {setIntake(d.data);setIntakeReady(false);setSelected('');setShowUpload(true);setDraftsOpen(false);}}><b>{d.data.name || 'New customer'}</b><small>Step {(d.data.step || 0)+1} of 3</small></button><button onClick={async () => {if(!window.confirm('Discard this draft?'))return;try{await api(`/kyc-captures/saved-drafts/${d.id}`,{method:'DELETE'});drafts.refetch();}catch(e:any){setError(e.message);}}}>Discard</button></div>)}
+      </Drawer>}
       {canReview && !selected && !showUpload && (
         <section className="review-inbox">
           <div className="review-inbox-header">
@@ -301,8 +307,9 @@ export default function KycCapture() {
             {canWrite && showUpload && !intakeReady && (
               <CustomerIntake
                 value={intake}
-                onChange={setIntake}
+                onChange={v => {setIntake(v);if(v.agent_id)setAgent(v.agent_id);}}
                 onReady={() => setIntakeReady(true)}
+                onSaved={() => {setIntake({});setIntakeReady(false);setShowUpload(false);setDraftsOpen(true);drafts.refetch();}}
               />
             )}
             {canWrite && intakeReady && (

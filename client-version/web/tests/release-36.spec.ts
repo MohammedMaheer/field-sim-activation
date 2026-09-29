@@ -43,3 +43,16 @@ test('responsive client pages fit the viewport', async ({page}) => {
     }
   }
 });
+
+test('admin SIM entry offers a scanner and manual fallback', async ({page, context}) => {
+  await context.grantPermissions([]);
+  await authenticate(page);
+  await page.goto('/administration?section=inventory');
+  await page.getByRole('button', {name:'Add SIM', exact:true}).click();
+  const drawer = page.getByRole('dialog', {name:'Add SIM'});
+  await expect(drawer).toBeVisible();
+  await drawer.getByRole('button', {name:'Scan SIM pack'}).click();
+  await expect(drawer.getByLabel('Camera')).toBeVisible();
+  await expect(drawer.getByLabel('ICCID')).toBeVisible();
+  await page.screenshot({path:'../output/qa/admin-sim-scanner-42.png'});
+});

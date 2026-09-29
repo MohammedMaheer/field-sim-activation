@@ -323,6 +323,23 @@ class CaptureDraft(Entity):
     version: Mapped[int] = mapped_column(Integer, default=1)
 
 
+class SavedCaptureDraft(Entity):
+    __tablename__ = "saved_capture_drafts"
+    creator_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    payload_encrypted: Mapped[str] = mapped_column(Text, default="")
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class SimProgress(Entity):
+    __tablename__ = "sim_progress"
+    sim_id: Mapped[str] = mapped_column(ForeignKey("sim_inventory.id"), unique=True)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
+    transaction_id: Mapped[str] = mapped_column(String(80), index=True)
+    stage: Mapped[str] = mapped_column(String(40), default="IN_PROGRESS")
+    payment_status: Mapped[str] = mapped_column(String(30), default="NOT_UPLOADED")
+    capture_id: Mapped[str | None] = mapped_column(ForeignKey("kyc_captures.id"), nullable=True)
+
+
 engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///./relay.db"), pool_pre_ping=True)
 if engine.dialect.name == "sqlite":
     from sqlalchemy import event

@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import re
+import uuid
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
@@ -16,6 +17,8 @@ from openpyxl.styles import Font, PatternFill
 from .db import (
     KycCapture,
     CaptureDraft,
+    SavedCaptureDraft,
+    SimProgress,
     Plan,
     DB,
     User,
@@ -112,6 +115,8 @@ def record(db, row, user, action, request=None, data=None):
 
 
 class Intake(BaseModel):
+    transaction_id: str = Field(default="", max_length=80)
+    saved_draft_id: str = Field(default="", max_length=36)
     document_type: Literal["National ID", "Passport"] = "National ID"
     name: str = Field(default="", max_length=120)
     document_number: str = Field(default="", max_length=80)
@@ -241,6 +246,54 @@ def save_draft(body: IntakeDraftBody, user=Depends(principal), db=Depends(get_db
     return {"version": row.version, "data": payload(row)}
 
 
+class SavedDraftBody(BaseModel):
+    data: Intake
+
+
+@router.get("/saved-drafts")
+def saved_drafts(user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
+    return [{"id": row.id, "created_at": row.created_at, "data": payload(row)} for row in db.scalars(select(SavedCaptureDraft).where(SavedCaptureDraft.creator_id == user.id).order_by(SavedCaptureDraft.created_at.desc()))]
+
+
+@router.post("/saved-drafts", status_code=201)
+def save_named_draft(body: SavedDraftBody, user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
+    db.scalar(select(User).where(User.id == user.id).with_for_update())
+    if body.data.step > 0:
+        check_document_evidence(body.data, user)
+    row = db.get(SavedCaptureDraft, body.data.saved_draft_id) if body.data.saved_draft_id else None
+    if row and row.creator_id != user.id:
+        raise HTTPException(404, "Draft not found")
+    if row is None:
+        count = db.scalar(select(func.count()).select_from(SavedCaptureDraft).where(SavedCaptureDraft.creator_id == user.id))
+        if count >= 20:
+            raise HTTPException(409, "Keep up to 20 drafts. Complete or discard an existing draft first.")
+        row = SavedCaptureDraft(id=str(uuid.uuid4()), creator_id=user.id)
+        db.add(row)
+    content = body.data.model_dump(mode="json")
+    content["saved_draft_id"] = row.id
+    store(row, content)
+    db.commit()
+    return {"id": row.id, "data": content}
+
+
+@router.delete("/saved-drafts/{draft_id}")
+def discard_named_draft(draft_id: str, user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
+    row = db.get(SavedCaptureDraft, draft_id)
+    if row is None or row.creator_id != user.id:
+        raise HTTPException(404, "Draft not found")
+    transaction_id = payload(row).get("transaction_id")
+    for progress in db.scalars(select(SimProgress).where(SimProgress.transaction_id == transaction_id).with_for_update()):
+        if not progress.capture_id:
+            assert_agent(db,user,progress.agent_id)
+            db.delete(progress)
+    db.delete(row)
+    db.commit()
+    return {"discarded": True}
+
+
 class IdentityImage(BaseModel):
     image_base64: str = Field(max_length=1_333_336)
 
@@ -326,7 +379,9 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                 except ValueError:
                     pass
         break
-    if all(fields.get(key) for key in DOCUMENT_KEYS):
+    identity_text = " ".join(lines).lower()
+    identity_context = bool(re.search(r"identity\s+(?:document|card|number)|emirates\s+id|passport|resident\s+card|national\s+id|^p<", identity_text)) or any(re.search(r"\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b", line) for line in lines)
+    if identity_context and all(fields.get(key) for key in DOCUMENT_KEYS):
         fields["document_check"] = document_check(body.image_base64, fields, user.id)
     return fields
 
@@ -358,6 +413,8 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         if not plan or not plan.active:
             raise HTTPException(422, "Select an available plan")
         body.intake.plan_name = plan.name
+    if body.document_kind == "PAYMENT_CONFIRMATION":
+        body.intake.transaction_id = body.intake.transaction_id or body.operation_id
     source = body.source_reference.strip() or (
         "PAY-" + body.operation_id[:24] if body.document_kind == "PAYMENT_CONFIRMATION" else ""
     )
@@ -427,6 +484,15 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
             if all(draft_data.get(k) == content["intake"].get(k) for k in keys):
                 store(draft, {})
                 draft.version += 1
+        if body.intake and body.intake.transaction_id:
+            from .sim_scanning import claim
+            _, progress = claim(db, user, body.intake.sim_identifier, body.intake.transaction_id, body.agent_id, request)
+            if progress.capture_id and progress.capture_id != row.id:
+                raise HTTPException(409, "This SIM transaction already has a payment submission")
+            progress.capture_id, progress.stage, progress.payment_status = row.id, "PENDING_VERIFICATION", "UPLOADED"
+            saved = db.get(SavedCaptureDraft, body.intake.saved_draft_id) if body.intake.saved_draft_id else None
+            if saved and saved.creator_id == user.id:
+                db.delete(saved)
         record(db, row, user, "Receipt uploaded", request, content)
         db.commit()
     except IntegrityError:
@@ -728,6 +794,10 @@ def review(
         "reviewer": user.name,
         "at": now().isoformat(),
     }
+    progress = db.scalar(select(SimProgress).where(SimProgress.capture_id == row.id).with_for_update())
+    if progress:
+        progress.payment_status = "VERIFIED" if body.outcome == "VERIFIED" else "REJECTED"
+        progress.stage = "READY_FOR_ACTIVATION" if body.outcome == "VERIFIED" else "CORRECTION_REQUIRED"
     row.status, row.reviewer_id = body.outcome, user.id
     record(db, row, user, "KYC Backend " + body.outcome, request, data)
     db.commit()
@@ -925,6 +995,8 @@ def complete_activation(
         )
         .with_for_update()
     )
+    if sim is None:
+        raise HTTPException(409, "SIM not found in inventory. Resolve stock before recording activation.")
     if sim and (
         sim.agent_id != row.agent_id
         or sim.status not in {"AVAILABLE", "ASSIGNED TO AGENT", "RESERVED"}
@@ -993,6 +1065,9 @@ def complete_activation(
             new={"status": sim.status},
             request=request,
         )
+    progress = db.scalar(select(SimProgress).where(SimProgress.capture_id == row.id).with_for_update())
+    if progress:
+        progress.stage = body.outcome
     data["activation"] = {
         "status": body.outcome,
         "reference": body.reference.strip(),

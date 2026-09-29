@@ -1,3 +1,6 @@
+import 'saved_drafts.dart';
+import 'package:go_router/go_router.dart';
+import 'package:uuid/uuid.dart';
 import 'scan_surface.dart';
 import 'experience.dart';
 import 'dart:async';
@@ -472,6 +475,7 @@ class CustomerIntakeScreen extends ConsumerStatefulWidget {
 }
 
 class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
+  late final RelayService capturedService;
   final scannerKey = GlobalKey<_IntakeCameraState>();
   bool scannerPaused = false;
   Json data = {};
@@ -487,6 +491,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   @override
   void initState() {
     super.initState();
+    capturedService = ref.read(serviceProvider);
     load();
     planRefresh = Timer.periodic(
       const Duration(seconds: 20),
@@ -508,15 +513,16 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   Future<void> load() async {
     final service = ref.read(serviceProvider);
     try {
-      final cached = await service.store.get(cacheKey);
       final result = await service.dio.get('/kyc-captures/draft');
-      data = {...result.data['data'], ...?cached?['data'], ...widget.initial};
-      version = cached?['version'] ?? result.data['version'];
+      data = {...widget.initial};
+      data.putIfAbsent('transaction_id', () => const Uuid().v4());
+      version = result.data['version'];
       step = (data['step'] as int? ?? 0).clamp(0, 1);
       plans = await service.list('plans');
     } catch (e) {
       final cached = await service.store.get(cacheKey);
-      data = {...?cached?['data'], ...widget.initial};
+      data = {...widget.initial};
+      data.putIfAbsent('transaction_id', () => const Uuid().v4());
       version = cached?['version'] ?? 0;
       error = 'Saved details loaded. Check connection.';
     }
@@ -549,6 +555,19 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   @override
   void dispose() {
     planRefresh?.cancel();
+    final transaction = data['transaction_id'];
+    if (transaction != null &&
+        (data['sim_identifier'] ?? '').toString().isNotEmpty &&
+        data['saved_draft_id'] == null &&
+        data['step'] != 2) {
+      unawaited(
+        capturedService.dio
+            .delete('/inventory/scan/$transaction')
+            .catchError(
+              (_) => Response(requestOptions: RequestOptions(path: '')),
+            ),
+      );
+    }
     for (final focus in fieldFocus.values) {
       focus.dispose();
     }
@@ -765,10 +784,24 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           }
         }
       }
+      if (next && step == 1) {
+        final result = await ref
+            .read(serviceProvider)
+            .dio
+            .post(
+              '/inventory/scan',
+              data: {
+                'code': data['sim_identifier'],
+                'transaction_id': data['transaction_id'],
+                'agent_id': ref.read(serviceProvider).user?['agent_id'],
+              },
+            );
+        data.addAll(Map<String, dynamic>.from(result.data));
+      }
       data['step'] = next ? step + 1 : step;
       await cache();
       final service = ref.read(serviceProvider);
-      if (service.online) {
+      if (service.online && next) {
         final r = await service.dio.put(
           '/kyc-captures/draft',
           data: {'version': version, 'data': data},
@@ -777,6 +810,17 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         await cache();
       }
       if (!mounted) return;
+      if (!next) {
+        final response = await saveSavedDraft(service, data);
+        data['saved_draft_id'] = response['id'];
+        await service.store.remove(cacheKey);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Saved to Drafts')));
+        context.go('/drafts');
+        return;
+      }
       if (next) {
         if (step == 1) {
           widget.onReady(data);
@@ -785,7 +829,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         }
       }
     } catch (e) {
-      error = e.toString().replaceFirst('Exception: ', '');
+      error = e is DioException
+          ? friendlyError(e)
+          : e.toString().replaceFirst('Exception: ', '');
     } finally {
       if (mounted) {
         setState(() {
@@ -805,9 +851,25 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             MaterialPageRoute(builder: (_) => const SimBarcodeScreen()),
           );
     if (mounted && code != null) {
-      revision++;
-      if (service.isPreview) data['msisdn'] = 'SAMPLE-PHONE-1001';
-      set('sim_identifier', code);
+      try {
+        final result = await service.dio.post(
+          '/inventory/scan',
+          data: {
+            'code': code,
+            'transaction_id': data['transaction_id'],
+            'agent_id': service.user?['agent_id'],
+          },
+        );
+        if (!mounted) return;
+        revision++;
+        if (service.isPreview) data['msisdn'] = 'SAMPLE-PHONE-1001';
+        setState(() {
+          data.addAll(Map<String, dynamic>.from(result.data));
+          error = null;
+        });
+      } catch (e) {
+        if (mounted) setState(() => error = friendlyError(e));
+      }
     }
   }
 
@@ -1124,7 +1186,10 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               onSelectionChanged: (v) => set('document_type', v.first),
             ),
             const SizedBox(height: 10),
-            if (data['document_image'] == null && !reading && !scannerPaused)
+            if (!ref.read(serviceProvider).isPreview &&
+                data['document_image'] == null &&
+                !reading &&
+                !scannerPaused)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: IntakeCamera(

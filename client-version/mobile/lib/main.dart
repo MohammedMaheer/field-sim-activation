@@ -1,3 +1,4 @@
+import 'saved_drafts.dart';
 import 'kyc_capture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -19,10 +20,15 @@ void main() {
 final router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
+    GoRoute(path: '/drafts', builder: (c, s) => const SavedDraftsScreen()),
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
     GoRoute(
       path: '/screenshot-capture',
-      builder: (c, s) => const KycCaptureScreen(),
+      builder: (c, s) => KycCaptureScreen(
+        initial: s.extra is Map
+            ? Map<String, dynamic>.from(s.extra as Map)
+            : const {},
+      ),
     ),
     GoRoute(
       path: '/records',
@@ -1173,7 +1179,13 @@ class _OrdersState extends ConsumerState<OrdersScreen> {
                     child: ChoiceChip(
                       label: Text(s),
                       selected: status == s,
-                      onSelected: (_) => setState(() => status = s),
+                      onSelected: (_) {
+                        if (s == 'Draft') {
+                          context.push('/drafts');
+                        } else {
+                          setState(() => status = s);
+                        }
+                      },
                     ),
                   ),
                 )
@@ -1545,6 +1557,18 @@ class _StockState extends ConsumerState<StockScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               StatusPill(s['status']),
+                              if (s['activation_stage'] != null &&
+                                  s['activation_stage'] != 'NOT_STARTED')
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 5),
+                                  child: Text(
+                                    '${s['activation_stage'].toString().replaceAll('_', ' ')} · Payment ${s['payment_status'].toString().replaceAll('_', ' ').toLowerCase()}',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: muted,
+                                    ),
+                                  ),
+                                ),
                               if ([
                                 'AVAILABLE',
                                 'ASSIGNED TO AGENT',

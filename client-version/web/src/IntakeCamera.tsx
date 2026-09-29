@@ -25,7 +25,8 @@ export default function IntakeCamera({
   useEffect(() => {
     let closed = false,
       stream: MediaStream | undefined,
-      timer: number | undefined;
+      timer: number | undefined,
+      scannerControls: { stop: () => void } | undefined;
     navigator.mediaDevices
       .getUserMedia({
         video: { facingMode: selfie ? "user" : "environment" },
@@ -63,32 +64,49 @@ export default function IntakeCamera({
           }, 2800);
         } else if (barcode) {
           const Detector = (window as any).BarcodeDetector;
-          if (!Detector) {
-            setError(
-              "Barcode scanning is unavailable in this browser. Enter the serial below.",
-            );
-            return;
-          }
-          const detector = new Detector();
-          timer = window.setInterval(async () => {
-            if (!video.current || closed) return;
-            try {
-              const codes = await detector.detect(video.current);
-              if (codes[0] && !closed) {
-                closed = true;
-                onCode(codes[0].rawValue);
-                onClose();
+          const acceptCode = (code: string) => {
+            if (closed || !code) return;
+            closed = true;
+            onCode(code);
+            onClose();
+          };
+          if (Detector) {
+            const detector = new Detector();
+            timer = window.setInterval(async () => {
+              if (!video.current || closed) return;
+              try {
+                const codes = await detector.detect(video.current);
+                if (codes[0]) acceptCode(codes[0].rawValue);
+              } catch {
+                // Keep the camera active while a pack is being positioned.
               }
-            } catch {}
-          }, 500);
+            }, 500);
+          } else {
+            const { BrowserMultiFormatReader } = await import("@zxing/browser");
+            if (closed || !video.current) return;
+            scannerControls = await new BrowserMultiFormatReader().decodeFromStream(
+              s,
+              video.current,
+              (result) => {
+                if (result) acceptCode(result.getText());
+              },
+            );
+            if (closed) scannerControls.stop();
+          }
         }
       })
       .catch(() => {
-        if (!closed) setError("Camera unavailable. Use Upload photo.");
+        if (!closed)
+          setError(
+            barcode
+              ? "Camera unavailable. Allow camera access or enter the SIM serial below."
+              : "Camera unavailable. Use Upload photo.",
+          );
       });
     return () => {
       closed = true;
       window.clearInterval(timer);
+      scannerControls?.stop();
       stream?.getTracks().forEach((t) => t.stop());
     };
   }, []);

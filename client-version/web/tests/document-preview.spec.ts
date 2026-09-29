@@ -67,3 +67,22 @@ for (const action of ["Scan document", "Upload photo"]) {
     }
   });
 }
+
+
+test('saved identity resumes only from Drafts and a new transaction starts empty', async ({page}) => {
+  await page.goto(process.env.MOBILE_PREVIEW_URL || 'http://127.0.0.1:5176/mobile-demo/');
+  await page.getByRole('tab',{name:'Capture',exact:true}).click();
+  await expect(page.getByText(/Ready to capture/)).toBeVisible({timeout:60000});
+  await expect(page.getByText(/Allow camera access|Camera unavailable/)).toHaveCount(0);
+  await page.getByRole('button',{name:'Upload photo',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Document captured View',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();
+  await expect(page.getByText('Drafts',{exact:true}).first()).toBeVisible();
+  await page.getByRole('button',{name:/Avery Stone Step/}).click();
+  await expect(page.getByRole('button',{name:'Document captured View',exact:true})).toBeVisible();
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();
+  await page.getByRole('button',{name:'New transaction',exact:true}).click();
+  await expect(page.getByText(/Ready to capture/)).toBeVisible();
+  await expect(page.getByRole('button',{name:'Document captured View',exact:true})).toHaveCount(0);
+  await page.screenshot({path:'../output/qa/new42-clean-identity.png'});
+});

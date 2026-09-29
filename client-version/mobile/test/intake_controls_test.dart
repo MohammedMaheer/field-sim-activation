@@ -76,19 +76,9 @@ void main() {
     final label = find.text('Upload photo');
     expect(label, findsOneWidget);
     expect(t.getSize(label).height, lessThan(25));
-    final camera = find.byType(IntakeCamera);
-    expect(camera, findsOneWidget);
-    expect(t.widget<IntakeCamera>(camera).embedded, isTrue);
-    expect(find.text('Capture photo'), findsNothing);
-    await t.tap(find.byIcon(Icons.fullscreen));
-    await t.pump();
-    await t.pump(const Duration(milliseconds: 400));
-    expect(find.byType(IntakeCamera, skipOffstage: false), findsOneWidget);
-    expect(find.text('Capture photo'), findsOneWidget);
-    await t.tap(find.byIcon(Icons.arrow_back));
-    await t.pump();
-    await t.pump(const Duration(seconds: 1));
-    await t.pump();
+    expect(find.byType(IntakeCamera), findsNothing);
+    expect(find.text('Ready to capture'), findsOneWidget);
+    expect(find.text('Camera unavailable'), findsNothing);
     expect(find.text('Capture photo'), findsNothing);
   });
 
