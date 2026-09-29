@@ -9,6 +9,7 @@ test('fresh submissions support side-by-side staff review', async ({page})=>{
  await page.getByRole('button',{name:'Identity document',exact:true}).click();
  await expect(page.getByRole('img',{name:'Identity document',exact:true})).toBeVisible();
  await expect(page.getByRole('tabpanel')).toContainText('Avery Stone');
+ await expect(page.getByRole('heading',{name:'Customer & SIM details',exact:true})).toBeVisible();
  await page.waitForTimeout(500);
  await page.screenshot({path:'../output/qa/hosted39-identity-comparison.png'});
  await page.getByRole('button',{name:'Signature',exact:true}).click();

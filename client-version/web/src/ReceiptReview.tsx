@@ -228,11 +228,10 @@ export default function ReceiptReview({
           <div className="review-pane-heading">
             <div>
               <h3>
-                {payment ? "Payment details" : "Historical receipt details"}
+                {tab === "customer" ? "Customer & SIM details" : tab === "ocr" ? "Text from image" : payment ? "Payment details" : "Historical receipt details"}
               </h3>
               <small>
-                {capture.rows?.length || 0} {payment ? "payment" : "receipt"}
-                {capture.rows?.length === 1 ? " record" : " records"} · compare with image
+                {tab === "customer" ? "Customer, document and SIM" : tab === "ocr" ? "Extracted from the uploaded image" : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
               </small>
             </div>
             <button
