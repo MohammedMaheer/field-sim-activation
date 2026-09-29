@@ -11,6 +11,29 @@ import 'package:relay_agent/services.dart';
 import 'package:relay_agent/transaction_journey.dart' show SignaturePad;
 
 void main() {
+  testWidgets('camera recovery fits a narrow scanner and retries', (t) async {
+    var retries = 0;
+    await t.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 280,
+              height: 190,
+              child: CameraUnavailable(
+                message: 'Camera unavailable',
+                onRetry: () => retries++,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Camera unavailable'), findsOneWidget);
+    expect(t.takeException(), isNull);
+    await t.tap(find.text('Try again'));
+    expect(retries, 1);
+  });
   test('automatic scan ignores a dark empty camera frame', () {
     final dark = imaging.fill(
       imaging.Image(width: 100, height: 60),

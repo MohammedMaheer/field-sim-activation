@@ -32,6 +32,53 @@ bool looksLikeDocument(Uint8List bytes) {
   return bright / total > .16;
 }
 
+class CameraUnavailable extends StatelessWidget {
+  final String message;
+  final VoidCallback? onRetry;
+  const CameraUnavailable({super.key, required this.message, this.onRetry});
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.no_photography_outlined,
+          color: Color(0xff63f3d6),
+          size: 28,
+        ),
+        const SizedBox(height: 8),
+        Text(
+          message,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text(
+          'Enable camera or upload photo',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: Color(0xffb4ccd9), fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: onRetry,
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xff63f3d6),
+            side: const BorderSide(color: Color(0xff63f3d6)),
+            visualDensity: VisualDensity.compact,
+          ),
+          icon: const Icon(Icons.refresh, size: 18),
+          label: const Text('Try again'),
+        ),
+      ],
+    ),
+  );
+}
+
 class IntakeCamera extends StatefulWidget {
   final bool selfie, embedded;
   final String document;
@@ -55,15 +102,16 @@ class _IntakeCameraState extends State<IntakeCamera>
   String? error;
   bool taking = false, checking = false, finished = false;
   Timer? autoScan;
-  bool expanded = false;
+  bool expanded = false, starting = false;
   StateSetter? refreshExpanded;
-  late final AnimationController scan = AnimationController(
-    vsync: this,
-    duration: const Duration(seconds: 2),
-  )..repeat(reverse: true);
+  late final AnimationController scan;
   @override
   void initState() {
     super.initState();
+    scan = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 2),
+    );
     WidgetsBinding.instance.addObserver(this);
     start();
   }
@@ -75,6 +123,10 @@ class _IntakeCameraState extends State<IntakeCamera>
   }
 
   Future<void> start() async {
+    if (starting || finished || !mounted) return;
+    starting = true;
+    error = null;
+    refresh();
     try {
       final cameras = await availableCameras();
       if (!mounted || finished) return;
@@ -98,6 +150,7 @@ class _IntakeCameraState extends State<IntakeCamera>
         return;
       }
       error = null;
+      scan.repeat(reverse: true);
       refresh();
       if (!widget.selfie && widget.onAutoDetect != null) {
         autoScan?.cancel();
@@ -107,7 +160,10 @@ class _IntakeCameraState extends State<IntakeCamera>
         );
       }
     } catch (_) {
-      error = 'Allow camera access or upload photo';
+      scan.stop();
+      error = 'Camera unavailable';
+    } finally {
+      starting = false;
       refresh();
     }
   }
@@ -117,6 +173,7 @@ class _IntakeCameraState extends State<IntakeCamera>
     if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
       autoScan?.cancel();
+      scan.stop();
       final active = controller;
       controller = null;
       active?.dispose();
@@ -190,7 +247,9 @@ class _IntakeCameraState extends State<IntakeCamera>
             refreshExpanded = update;
             return Scaffold(
               appBar: AppBar(
-                leading: BackButton(onPressed: () => Navigator.of(routeContext).pop()),
+                leading: BackButton(
+                  onPressed: () => Navigator.of(routeContext).pop(),
+                ),
                 title: Text(widget.document),
               ),
               body: Column(
@@ -257,55 +316,53 @@ class _IntakeCameraState extends State<IntakeCamera>
             ),
           if (error != null)
             Center(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Text(
-                  error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white),
-                ),
+              child: CameraUnavailable(
+                message: error!,
+                onRetry: starting ? null : start,
               ),
             ),
-          IgnorePointer(
-            child: Center(
-              child: AspectRatio(
-                aspectRatio: widget.document == 'Passport' ? 1.4 : 1.58,
-                child: Container(
-                  margin: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: const Color(0xff63f3d6),
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: AnimatedBuilder(
-                    animation: scan,
-                    builder: (_, child) => Align(
-                      alignment: Alignment(
-                        0,
-                        MediaQuery.disableAnimationsOf(context)
-                            ? 0
-                            : scan.value * 1.7 - .85,
+          if (controller?.value.isInitialized == true && error == null)
+            IgnorePointer(
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: widget.document == 'Passport' ? 1.4 : 1.58,
+                  child: Container(
+                    margin: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: const Color(0xff63f3d6),
+                        width: 2,
                       ),
-                      child: Container(
-                        height: 2,
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              Color(0x002df3d2),
-                              Color(0xffbdfff0),
-                              Color(0xff2df3d2),
-                              Color(0x002df3d2),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: AnimatedBuilder(
+                      animation: scan,
+                      builder: (_, child) => Align(
+                        alignment: Alignment(
+                          0,
+                          MediaQuery.disableAnimationsOf(context)
+                              ? 0
+                              : scan.value * 1.7 - .85,
+                        ),
+                        child: Container(
+                          height: 2,
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                Color(0x002df3d2),
+                                Color(0xffbdfff0),
+                                Color(0xff2df3d2),
+                                Color(0x002df3d2),
+                              ],
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0xff3cf6d7),
+                                blurRadius: 14,
+                                spreadRadius: 2,
+                              ),
                             ],
                           ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Color(0xff3cf6d7),
-                              blurRadius: 14,
-                              spreadRadius: 2,
-                            ),
-                          ],
                         ),
                       ),
                     ),
@@ -313,34 +370,34 @@ class _IntakeCameraState extends State<IntakeCamera>
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 12,
-            right: 12,
-            bottom: 12,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xe6142538),
-                  borderRadius: BorderRadius.circular(30),
-                ),
-                child: Text(
-                  checking
-                      ? 'Reading document…'
-                      : 'Position ${widget.document.toLowerCase()}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
+          if (controller?.value.isInitialized == true && error == null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xe6142538),
+                    borderRadius: BorderRadius.circular(30),
+                  ),
+                  child: Text(
+                    checking
+                        ? 'Reading document…'
+                        : 'Position ${widget.document.toLowerCase()}',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
           if (widget.embedded && !full)
             Positioned.fill(
               child: Material(
