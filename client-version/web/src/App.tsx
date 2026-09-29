@@ -7,6 +7,7 @@ import PlanManagement from "./PlanManagement";
 import InventoryImport from "./InventoryImport";
 import KycCapture from "./KycCapture";
 import SalesManagement from "./SalesManagement";
+import CallWorkspace from "./CallWorkspace";
 import FieldAssets from "./FieldAssets";
 import { Incentives, Support } from "./ProposalOperations";
 
@@ -142,6 +143,7 @@ const navigation = [
     items: [
       ["activations", "Activations", Zap],
       ["sales", "Sales management", ShoppingBag],
+      ["call-work", "Call work queue", Bell],
 
       ["kyc-capture", "Backend verification", ScanFace],
 
@@ -168,6 +170,9 @@ export function canVisitPage(path: string, user: Row) {
   path = path.replace(/^\//, "");
   if (path === "screenshot-capture") path = "kyc-capture";
   const permissions = user.permissions || [];
+  if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) return path === "call-work";
+  if (user.role === "Sales Manager") return ["", "sales", "equipment", "reports"].includes(path);
+  if (path === "call-work") return permissions.includes("compliance.write") || permissions.includes("call.tele.read") || permissions.includes("call.welcome.read");
   if (path === "team-leaders") return ["Administrator", "Team Leader"].includes(user.role);
   if (["plans", "administration"].includes(path)) return permissions.includes("settings.write");
   if (path === "audit") return permissions.includes("audit.read");
@@ -281,6 +286,8 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [simNotificationsOpen,setSimNotificationsOpen] = useState(false);
   const simNotifications = useQuery({queryKey:['sim-scan-notifications'],queryFn:() => api('/inventory/scan-notifications'),enabled:!!user?.permissions?.includes('inventory.write'),refetchInterval:10000});
+  const callAlerts = useQuery({queryKey:['sales-management','call-summary'],queryFn:() => api('/sales-management/call-tasks/summary'),enabled:!!user && (user.permissions?.includes('compliance.write') || user.permissions?.includes('call.tele.read') || user.permissions?.includes('call.welcome.read')),refetchInterval:15000});
+  const stockAlerts = useQuery({queryKey:['field-assets','alerts'],queryFn:async()=>{const [requests,levels]=await Promise.all([api('/field-assets/requests/list'),api('/field-assets/report/summary')]);return requests.filter((r:Row)=>['REQUESTED','APPROVED'].includes(r.status)).length+levels.filter((r:Row)=>r.low_stock).length},enabled:!!user && !!user.permissions?.includes('read') && canVisitPage('equipment',user),refetchInterval:20000});
   const [mobileMenu, setMobileMenu] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const client = useQueryClient();
@@ -300,6 +307,14 @@ export default function App() {
   }, [client]);
   useEffect(() => {
     if (!user) return;
+    if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role) && location.pathname !== "/call-work") navigate("/call-work", {replace:true});
+  }, [user, location.pathname, navigate]);
+  useEffect(() => {
+    if (!user) return;
+    if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) {
+      setLive(true); // Their dedicated queries refresh every 15 seconds.
+      return;
+    }
     const controller = new AbortController();
     let update: ReturnType<typeof setTimeout>;
     stream(
@@ -460,6 +475,7 @@ export default function App() {
                     <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
                       <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
                       <span>{path === "kyc-capture" && user.role === "Field Agent" ? "New transaction" : label}</span>
+                      {path === "equipment" && !!stockAlerts.data && <span className="nav-tag" title="Stock requests and shortage alerts">{stockAlerts.data}</span>}
                       {path === "live" && <i className="live-dot" />}
                       {path === "compliance" && (
                         <span className="nav-tag">!</span>
@@ -551,22 +567,22 @@ export default function App() {
                 {live ? "Live updates" : "Reconnecting"}
               </span>
               <span className="top-divider" />
-              <button
+              {canVisitPage('activations',user) && <button
                 className="icon-btn"
                 title="Search activation records"
                 aria-label="Search activation records"
                 onClick={() => navigate("/activations")}
               >
                 <Search size={18} />
-              </button>
+              </button>}
               <button
                 className="icon-btn notification-btn"
-                title={user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
-                aria-label={user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
-                onClick={() => user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate(user.role === "Team Leader" ? "/team-leaders" : "/kyc-capture")}
+                title={callAlerts.data?.actionable || user.permissions.includes("call.tele.read") || user.permissions.includes("call.welcome.read") ? "Call queue alerts" : user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
+                aria-label={callAlerts.data?.actionable || user.permissions.includes("call.tele.read") || user.permissions.includes("call.welcome.read") ? "Call queue alerts" : user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
+                onClick={() => (user.permissions.includes("call.tele.read") || user.permissions.includes("call.welcome.read") || !!callAlerts.data?.actionable) ? navigate("/call-work") : user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate(user.role === "Sales Manager" ? "/sales" : user.role === "Team Leader" ? "/team-leaders" : "/kyc-capture")}
               >
                 <Bell size={18} />
-                <i />
+                {callAlerts.data?.actionable ? <b className="call-alert-count">{callAlerts.data.actionable}</b> : <i />}
               </button>
               <Avatar name={user.name} size="small" />
             </div>
@@ -579,6 +595,7 @@ export default function App() {
               {canVisitPage(location.pathname, user) ? <Routes>
                 <Route path="/kyc-capture" element={<KycCapture />} />
                 <Route path="/sales" element={<SalesManagement />} />
+                <Route path="/call-work" element={<CallWorkspace />} />
                 <Route path="/equipment" element={<FieldAssets />} />
                 <Route path="/screenshot-capture" element={<KycCapture />} />
                 <Route
@@ -1330,7 +1347,7 @@ export function OrderDrawer({
 function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
   const { data: agents = [] } = useResource("agents");
   const { data: movements = [] } = useResource("movements");
-  const [status, setStatus] = useState("RETURNED");
+  const [status, setStatus] = useState(["BLOCKED","DAMAGED"].includes(sim.status)?"RETIRED":"RETURNED");
   const [agent, setAgent] = useState(sim.agent_id);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1377,7 +1394,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
         </form>
       )}
       {user.permissions.includes("inventory.write") &&
-        !["ACTIVATED", "RESERVED", "BLOCKED", "DAMAGED"].includes(
+        !["ACTIVATED", "RESERVED", "RETIRED"].includes(
           sim.status,
         ) && (
           <form
@@ -1388,7 +1405,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
               try {
                 await post(`/inventory/${sim.id}/move`, {
                   status,
-                  agent_id: agent || null,
+                  agent_id: ["RETURNED","WAREHOUSE","RETIRED"].includes(status) ? null : agent || null,
                   reason,
                 });
                 await Promise.all([
@@ -1410,13 +1427,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
               >
-                {[
-                  "AVAILABLE",
-                  "ASSIGNED TO AGENT",
-                  "RETURNED",
-                  "DAMAGED",
-                  "BLOCKED",
-                ].map((s) => (
+                {( ["BLOCKED","DAMAGED"].includes(sim.status) ? ["RETIRED"] : ["AVAILABLE","ASSIGNED TO AGENT","RETURNED","DAMAGED","BLOCKED","RETIRED"] ).map((s) => (
                   <option key={s}>{s}</option>
                 ))}
               </select>

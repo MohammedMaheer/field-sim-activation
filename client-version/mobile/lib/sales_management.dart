@@ -87,7 +87,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
   Widget build(BuildContext context) {
     final isAgent = ref.watch(serviceProvider).user?['agent_id'] != null;
     return Scaffold(
-      appBar: AppBar(title: const Text('Sales management'), actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh), tooltip: 'Refresh')]),
+      appBar: AppBar(title: const Text('Sales management'), actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh), tooltip: 'Refresh'), IconButton(onPressed: () => ref.read(serviceProvider).logout(), icon: const Icon(Icons.logout), tooltip: 'Sign out')]),
       floatingActionButton: tab == 1 && isAgent ? FloatingActionButton.extended(onPressed: saving ? null : addFeedback, icon: const Icon(Icons.add), label: const Text('Add feedback')) : null,
       body: loading ? const Center(child: CircularProgressIndicator()) : error.isNotEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text(error), TextButton(onPressed: load, child: const Text('Retry'))])) : Column(children: [
         Container(

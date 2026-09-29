@@ -106,6 +106,7 @@ class Agent(Entity):
     outlet_id: Mapped[str] = mapped_column(ForeignKey("outlets.id"), index=True)
     target: Mapped[int] = mapped_column(Integer, default=20)
     status: Mapped[str] = mapped_column(String(40), default="OFFLINE")
+    employment_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
     lat: Mapped[float] = mapped_column(Float)
     lng: Mapped[float] = mapped_column(Float)
     accuracy: Mapped[float] = mapped_column(Float, default=12)
@@ -391,6 +392,25 @@ class CallAttempt(Entity):
     actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
 
 
+class SalesCallTask(Entity):
+    __tablename__ = "sales_call_tasks"
+    __table_args__ = (UniqueConstraint("sale_id", "stage", name="uq_sales_call_task_stage"),)
+    sale_id: Mapped[str] = mapped_column(ForeignKey("sales_records.id"), index=True)
+    stage: Mapped[str] = mapped_column(String(20), index=True)
+    status: Mapped[str] = mapped_column(String(20), index=True)
+    last_outcome: Mapped[str] = mapped_column(String(30), default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class StockThreshold(Entity):
+    __tablename__ = "stock_thresholds"
+    __table_args__ = (UniqueConstraint("branch_id", "category", name="uq_stock_threshold_branch_category"),)
+    branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"), index=True)
+    category: Mapped[str] = mapped_column(String(40), index=True)
+    minimum: Mapped[int] = mapped_column(Integer, default=0)
+    actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+
+
 class FieldAsset(Entity):
     __tablename__ = "field_assets"
     category: Mapped[str] = mapped_column(String(40), index=True)
@@ -401,6 +421,10 @@ class FieldAsset(Entity):
     branch_id: Mapped[str] = mapped_column(ForeignKey("branches.id"), index=True)
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True, index=True)
     note: Mapped[str] = mapped_column(String(500), default="")
+    warehouse: Mapped[str] = mapped_column(String(100), default="")
+    batch: Mapped[str] = mapped_column(String(100), default="")
+    size: Mapped[str] = mapped_column(String(40), default="")
+    condition: Mapped[str] = mapped_column(String(100), default="")
 
 
 class FieldAssetMovement(Entity):
@@ -412,6 +436,7 @@ class FieldAssetMovement(Entity):
     to_agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True)
     actor_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     reason: Mapped[str] = mapped_column(String(300))
+    quantity_delta: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class FieldAssetRequest(Entity):
@@ -421,6 +446,7 @@ class FieldAssetRequest(Entity):
     category: Mapped[str] = mapped_column(String(40))
     quantity: Mapped[int] = mapped_column(Integer)
     reason: Mapped[str] = mapped_column(String(300))
+    urgency: Mapped[str] = mapped_column(String(12), default="NORMAL")
     status: Mapped[str] = mapped_column(String(30), default="REQUESTED")
     actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     fulfilled_asset_id: Mapped[str | None] = mapped_column(ForeignKey("field_assets.id"), nullable=True)

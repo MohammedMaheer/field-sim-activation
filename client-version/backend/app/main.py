@@ -91,7 +91,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
     allow_headers=["Authorization", "Content-Type", "X-Device-ID"],
 )
 limits = defaultdict(deque)
@@ -155,6 +155,9 @@ def login(body: Login, response: Response, request: Request, db=Depends(get_db))
         or not bcrypt.checkpw(body.password.encode(), user.password_hash.encode())
     ):
         raise HTTPException(401, "Incorrect email or password")
+    agent_account = db.scalar(select(Agent).where(Agent.user_id == user.id))
+    if agent_account and agent_account.employment_status != "ACTIVE":
+        raise HTTPException(403, "This agent account is inactive. Contact your administrator.")
     access, refresh = issue(db, user, body.device)
     audit(db, user, "Signed In", user.id, request=request)
     db.commit()
@@ -762,6 +765,7 @@ class MoveBody(BaseModel):
         "RETURNED",
         "DAMAGED",
         "BLOCKED",
+        "RETIRED",
     ]
     agent_id: str | None = None
     reason: str = Field(min_length=5, max_length=300)
@@ -835,7 +839,8 @@ def move(
             raise HTTPException(404, "SIM not assigned to this agent")
         if body.status not in {"RETURNED", "DAMAGED"} or body.agent_id not in {None, sim.agent_id}:
             raise HTTPException(403, "Only return or damage reporting is permitted")
-    if sim.status in {"ACTIVATED", "RESERVED", "BLOCKED", "DAMAGED"}:
+    may_write_off = "inventory.write" in permissions(db, user) and body.status == "RETIRED"
+    if sim.status in {"ACTIVATED", "RESERVED", "RETIRED"} or sim.status in {"BLOCKED", "DAMAGED"} and not may_write_off:
         raise HTTPException(409, "This SIM cannot be moved from its current state")
     if body.agent_id:
         assert_agent(db, user, body.agent_id)
@@ -848,14 +853,18 @@ def move(
     if sim.status == body.status and (not body.agent_id or body.agent_id == sim.agent_id):
         raise HTTPException(409, "No inventory change requested")
     sim.status = body.status
+    if body.agent_id and body.status in {"RETURNED", "WAREHOUSE", "RETIRED"}:
+        raise HTTPException(422, "Returned or retired stock cannot be assigned to an agent")
     if body.agent_id:
         sim.agent_id = body.agent_id
         sim.outlet_id = assigned_agent.outlet_id
         sim.assigned_at = now()
+    if body.status in {"RETURNED", "WAREHOUSE", "RETIRED"}:
+        sim.agent_id, sim.assigned_at = None, None
     db.add(
         Movement(
             sim_id=sim.id,
-            agent_id=sim.agent_id,
+            agent_id=sim.agent_id or old["agent_id"],
             user_id=user.id,
             old_status=old["status"],
             new_status=sim.status,
@@ -1259,6 +1268,8 @@ def save_agent_management(
     if len(body.reason.strip()) < 5:
         raise HTTPException(422, "Enter a meaningful reason")
     # Prevent moving stock silently across outlets; use the audited inventory workflow first.
+    if outlet.id != agent.outlet_id and db.scalar(select(FieldAsset.id).where(FieldAsset.agent_id == agent.id).limit(1)):
+        raise HTTPException(409, "Use Assets & supplies → Returns & transfers to move assigned equipment first")
     if outlet.id != agent.outlet_id and db.scalar(
         select(Sim.id)
         .where(
@@ -1391,6 +1402,10 @@ def update_role(
         "audit.read",
         "device.ping",
         "compliance.write",
+        "call.tele.read",
+        "call.tele.write",
+        "call.welcome.read",
+        "call.welcome.write",
         "shift.write",
         "location.write",
     }

@@ -1667,7 +1667,7 @@ def test_order_payment_record_has_no_inferred_payment_values():
 
 
 def test_sales_management_scope_targets_and_status_file(client):
-    from app.db import SalesRecord, CallAttempt
+    from app.db import SalesRecord, CallAttempt, SalesCallTask
     from sqlalchemy import delete
 
     login(client, "admin")
@@ -1721,12 +1721,13 @@ def test_sales_management_scope_targets_and_status_file(client):
     assert client.post("/api/sales-management/status-file", json={**payload,"apply":True}).status_code == 422
     with DB() as db:
         db.execute(delete(CallAttempt).where(CallAttempt.sale_id == sale_id))
+        db.execute(delete(SalesCallTask).where(SalesCallTask.sale_id == sale_id))
         db.delete(db.get(SalesRecord, sale_id))
         db.commit()
 
 
 def test_field_assets_track_assignment_requests_and_scope(client):
-    from app.db import FieldAsset, FieldAssetMovement, FieldAssetRequest
+    from app.db import FieldAsset, FieldAssetMovement, FieldAssetRequest, StockThreshold
     from sqlalchemy import delete
     login(client, "admin")
     branches = client.get("/api/resources/branches").json()
@@ -1746,19 +1747,26 @@ def test_field_assets_track_assignment_requests_and_scope(client):
     moved = client.patch(f"/api/field-assets/{asset_id}", json={"branch_id":first_branch["id"],
         "agent_id":first["id"],"status":"ASSIGNED","reason":"Issue to agent"})
     assert moved.status_code == 200 and moved.json()["agent_id"] == first["id"]
-    assert len(client.get(f"/api/field-assets/{asset_id}/history").json()) == 1
+    assert len(client.get(f"/api/field-assets/{asset_id}/history").json()) == 2
     login(client, "agent1")
     assert asset_id in {r["id"] for r in client.get("/api/field-assets").json()}
     assert client.patch(f"/api/field-assets/{asset_id}", json={"branch_id":first_branch["id"],
         "status":"RETURNED","reason":"Return item"}).status_code == 403
     requested = client.post("/api/field-assets/requests", json={"agent_id":first["id"],
-        "category":"UNIFORM","quantity":1,"reason":"Replacement needed"})
+        "category":"UNIFORM","quantity":1,"urgency":"URGENT","reason":"Replacement needed"})
     assert requested.status_code == 201, requested.text
     request_id = requested.json()["id"]
     login(client, "leader2")
     assert asset_id not in {r["id"] for r in client.get("/api/field-assets").json()}
     assert request_id not in {r["id"] for r in client.get("/api/field-assets/requests/list").json()}
     login(client, "admin")
+    assert any(row["urgency"] == "URGENT" for row in client.get("/api/field-assets/requests/list").json())
+    threshold = client.put("/api/field-assets/report/threshold", json={"branch_id": first_branch["id"],
+        "category": "UNIFORM", "minimum": 99})
+    assert threshold.status_code == 200
+    assert any(row["category"] == "UNIFORM" and row["low_stock"] for row in client.get("/api/field-assets/report/summary").json())
+    assert client.get("/api/field-assets/report/export?kind=summary").status_code == 200
+    assert client.get("/api/field-assets/report/export?kind=movements").status_code == 200
     assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"FULFILLED","reason":"No approval"}).status_code == 409
     assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"APPROVED","reason":"Stock approved"}).status_code == 200
     assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"FULFILLED","reason":"Issued item"}).status_code == 422
@@ -1768,9 +1776,143 @@ def test_field_assets_track_assignment_requests_and_scope(client):
         "agent_id":first["id"],"status":"ASSIGNED","reason":"Issue uniform"}).status_code == 200
     assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"FULFILLED","reason":"Issued item","asset_id":uniform_id}).status_code == 200
     with DB() as db:
+        db.execute(delete(StockThreshold).where(StockThreshold.id == threshold.json()["id"]))
         db.execute(delete(FieldAssetRequest).where(FieldAssetRequest.id == request_id))
         db.execute(delete(FieldAssetMovement).where(FieldAssetMovement.asset_id == asset_id))
         db.execute(delete(FieldAssetMovement).where(FieldAssetMovement.asset_id == uniform_id))
         db.delete(db.get(FieldAsset, asset_id))
         db.delete(db.get(FieldAsset, uniform_id))
         db.commit()
+
+
+def test_call_tasks_roles_and_sequential_release(client):
+    from app.db import SalesRecord, SalesCallTask, CallAttempt, User
+    from sqlalchemy import delete
+    login(client, "admin")
+    agents = client.get("/api/resources/agents").json()
+    first = next(row for row in agents if row["employee_id"] == "RLY-1041")
+    other = next(row for row in agents if row["employee_id"] == "RLY-1044")
+    sale = client.post("/api/sales-management/sales", json={"agent_id":first["id"],
+        "order_type":"NEW", "customer_name":"Call Queue Sample", "plan_name":"Sample plan",
+        "request_id":"SAMPLE-CALL-QUEUE-001"})
+    assert sale.status_code == 201, sale.text
+    sale_id = sale.json()["id"]
+    assert {task["status"] for task in client.get("/api/sales-management/call-tasks").json() if task["sale_id"] == sale_id} == {"PENDING", "BLOCKED"}
+    staff = client.get("/api/sales-management/staff")
+    assert staff.status_code == 200 and any(row["role"] == "Sales Manager" for row in staff.json())
+    assert client.post("/api/sales-management/staff", json={"name":"New Sales Manager", "email":"new.manager@relay.demo",
+        "password":"strong-test-password", "role":"Sales Manager"}).status_code == 422
+    branch = next(row["id"] for row in client.get("/api/resources/branches").json() if row["name"] == "Dubai Central")
+    created_staff = client.post("/api/sales-management/staff", json={"name":"New Sales Manager", "email":"new.manager@relay.demo",
+        "password":"strong-test-password", "role":"Sales Manager", "branch_id":branch})
+    assert created_staff.status_code == 201
+    login(client, "salesmanager")
+    assert sale_id in {row["id"] for row in client.get("/api/sales-management/sales").json()}
+    assert client.post("/api/sales-management/sales", json={"agent_id":other["id"],"order_type":"NEW",
+        "customer_name":"Wrong branch", "plan_name":"Sample plan"}).status_code == 403
+    login(client, "welcome")
+    assert client.get("/api/resources/agents").status_code == 403
+    assert client.get("/api/sales-management/targets").status_code == 403
+    assert client.post("/api/sales-management/sales", json={"agent_id":first["id"],"order_type":"NEW","customer_name":"Unauthorized", "plan_name":"Plan"}).status_code == 403
+    assert all(task["stage"] == "WELCOME_CALL" for task in client.get("/api/sales-management/call-tasks").json())
+    assert client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"WELCOME_CALL",
+        "outcome":"REACHED", "remark":"Welcome customer"}).status_code == 409
+    login(client, "tele")
+    assert all(task["stage"] == "TELE_VERIFICATION" for task in client.get("/api/sales-management/call-tasks").json())
+    assert client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"WELCOME_CALL",
+        "outcome":"REACHED", "remark":"Wrong team"}).status_code == 403
+    passed = client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"TELE_VERIFICATION",
+        "outcome":"PASSED", "remark":"Identity confirmed"})
+    assert passed.status_code == 201, passed.text
+    login(client, "welcome")
+    ready = [task for task in client.get("/api/sales-management/call-tasks").json() if task["sale_id"] == sale_id]
+    assert ready[0]["status"] == "PENDING"
+    assert client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"WELCOME_CALL",
+        "outcome":"REACHED", "remark":"Customer welcomed"}).status_code == 201
+    assert [task for task in client.get("/api/sales-management/call-tasks").json() if task["sale_id"] == sale_id][0]["status"] == "COMPLETED"
+    with DB() as db:
+        db.execute(delete(CallAttempt).where(CallAttempt.sale_id == sale_id))
+        db.execute(delete(SalesCallTask).where(SalesCallTask.sale_id == sale_id))
+        db.delete(db.get(SalesRecord, sale_id))
+        db.delete(db.get(User, created_staff.json()["id"]))
+        db.commit()
+
+
+def test_bulk_stock_reports_and_return_checklist(client):
+    from app.db import FieldAsset, FieldAssetMovement
+    from sqlalchemy import delete
+    from openpyxl import load_workbook
+    login(client)
+    agents = client.get("/api/resources/agents").json()
+    agent = next(row for row in agents if row["employee_id"] == "RLY-1041")
+    asset = client.post("/api/field-assets", json={"category":"CUSTOM_SUPPLY", "label":"Uniform batch", "quantity":10,
+        "branch_id":agent["branch_id"], "warehouse":"Central store", "batch":"B-1", "size":"M", "condition":"New"})
+    assert asset.status_code == 201, asset.text
+    stock_id = asset.json()["id"]
+    issued = client.post(f"/api/field-assets/{stock_id}/issue", json={"quantity":3,"agent_id":agent["id"],"reason":"Issue branch supplies"})
+    assert issued.status_code == 201, issued.text
+    issued_id = issued.json()["id"]
+    assert issued.json()["quantity"] == 3 and issued.json()["batch"] == "B-1"
+    assert client.post(f"/api/field-assets/{stock_id}/issue", json={"quantity":8,"agent_id":agent["id"],"reason":"Excess allocation"}).status_code == 409
+    assert client.post(f"/api/field-assets/{stock_id}/adjust", json={"delta":-8,"reason":"Negative balance"}).status_code == 422
+    rows = client.get("/api/field-assets/report/summary").json()
+    row = next(row for row in rows if row["category"] == "CUSTOM_SUPPLY")
+    assert row["available"] == 7 and row["assigned"] == 3
+    export = client.get("/api/field-assets/report/export?kind=stock&format=xlsx&category=CUSTOM_SUPPLY")
+    workbook = load_workbook(io.BytesIO(export.content))
+    assert workbook.active.max_row == 3
+    check = client.get(f"/api/field-assets/report/checklist?agent_id={agent['id']}")
+    assert not check.json()["clear"] and issued_id in {row["id"] for row in check.json()["outstanding"]}
+    login(client,"leader2")
+    assert client.get(f"/api/field-assets/report/checklist?agent_id={agent['id']}").status_code == 404
+    assert client.get(f"/api/field-assets/report/movements?branch_id={agent['branch_id']}").json() == []
+    login(client)
+    returned = client.patch(f"/api/field-assets/{issued_id}", json={"branch_id":agent["branch_id"],"status":"RETURNED","condition":"Good","reason":"Returned before transfer"})
+    assert returned.status_code == 200 and returned.json()["agent_id"] is None
+    with DB() as db:
+        db.execute(delete(FieldAssetMovement).where(FieldAssetMovement.asset_id.in_([stock_id,issued_id])))
+        db.execute(delete(FieldAsset).where(FieldAsset.id.in_([stock_id,issued_id])))
+        db.commit()
+
+
+def test_agent_transfer_moves_stock_and_exit_requires_returns(client):
+    from app.db import User, Role, Agent, Branch, Outlet, Sim, FieldAsset, FieldAssetMovement, Movement, Session, Audit
+    from app.security import password_hash
+    from sqlalchemy import delete
+    with DB() as db:
+        origin_branch = db.scalar(select(Branch).where(Branch.name == "Abu Dhabi Region"))
+        origin = db.scalar(select(Outlet).where(Outlet.branch_id == origin_branch.id))
+        target = db.scalar(select(Branch.id).where(Branch.name == "Dubai Central"))
+        role_id = db.scalar(select(Role.id).where(Role.name == "Field Agent"))
+        person = User(name="Transfer Test", email="transfer-test@relay.demo", password_hash=password_hash("test-client-password"), role_id=role_id, branch_id=origin.branch_id)
+        db.add(person); db.flush()
+        agent = Agent(user_id=person.id, employee_id="TRANSFER-TEST", outlet_id=origin.id, lat=0, lng=0)
+        db.add(agent); db.flush()
+        sim = Sim(serial="TRANSFER-SIM", iccid="TRANSFER-ICCID", sim_type="Physical", outlet_id=origin.id, agent_id=agent.id)
+        asset = FieldAsset(category="ROUTER", label="Transfer router", serial="TRANSFER-ROUTER", quantity=1, status="ASSIGNED", branch_id=origin.branch_id, agent_id=agent.id)
+        db.add_all([sim,asset]); db.commit()
+        agent_id, asset_id, sim_id, user_id = agent.id,asset.id,sim.id,person.id
+    login(client)
+    assert client.post(f"/api/field-assets/agents/{agent_id}/exit", json={"reason":"Employee leaving"}).status_code == 409
+    moved = client.post(f"/api/field-assets/agents/{agent_id}/transfer", json={"branch_id":target,"stock_action":"TRANSFER","reason":"New branch assignment"})
+    assert moved.status_code == 200, moved.text
+    with DB() as db:
+        assert db.get(FieldAsset,asset_id).branch_id == target
+        assert db.get(Outlet,db.get(Sim,sim_id).outlet_id).branch_id == target
+        assert db.get(User,user_id).branch_id == target
+        assert db.get(Agent,agent_id).leader_id
+    assert client.patch(f"/api/field-assets/{asset_id}",json={"branch_id":target,"status":"RETURNED","reason":"Return before exit"}).status_code == 200
+    with DB() as db:
+        db.get(Sim,sim_id).agent_id = None
+        db.commit()
+    assert client.post(f"/api/field-assets/agents/{agent_id}/exit",json={"reason":"Exit checklist complete"}).status_code == 200
+    denied=client.post("/api/auth/login",json={"email":"transfer-test@relay.demo","password":"test-client-password"})
+    assert denied.status_code == 403
+    with DB() as db:
+        db.execute(delete(FieldAssetMovement).where(FieldAssetMovement.asset_id==asset_id))
+        db.execute(delete(Movement).where(Movement.sim_id==sim_id))
+        db.execute(delete(FieldAsset).where(FieldAsset.id==asset_id))
+        db.execute(delete(Sim).where(Sim.id==sim_id))
+        db.execute(delete(Audit).where(Audit.agent_id==agent_id))
+        db.execute(delete(Session).where(Session.user_id==user_id))
+        db.delete(db.get(Agent,agent_id)); db.flush(); db.delete(db.get(User,user_id)); db.commit()

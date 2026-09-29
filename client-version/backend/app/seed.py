@@ -39,6 +39,9 @@ ROLE_PERMISSIONS = {
     ],
     "Compliance Officer": ["read", "report.read", "audit.read", "compliance.write"],
     "Inventory Manager": ["read", "report.read", "audit.read", "inventory.write"],
+    "Sales Manager": ["read", "report.read"],
+    "Tele Verification Officer": ["call.tele.read", "call.tele.write"],
+    "Welcome Call Officer": ["call.welcome.read", "call.welcome.write"],
         "Administrator": [
             "read",
             "settings.write",
@@ -63,12 +66,15 @@ def seed():
             return
         roles = {}
         for name, perms in ROLE_PERMISSIONS.items():
-            role = Role(name=name)
-            db.add(role)
-            db.flush()
+            role = db.scalar(select(Role).where(Role.name == name))
+            if not role:
+                role = Role(name=name)
+                db.add(role)
+                db.flush()
             roles[name] = role
             for p in perms:
-                db.add(Permission(role_id=role.id, name=p))
+                if not db.scalar(select(Permission.id).where(Permission.role_id == role.id, Permission.name == p)):
+                    db.add(Permission(role_id=role.id, name=p))
         branches = [Branch(name=n) for n in ["Dubai Central", "Abu Dhabi Region"]]
         db.add_all(branches)
         db.flush()
@@ -82,6 +88,9 @@ def seed():
             ("cluster", "Ari Quinn", "Branch Manager"),
             ("compliance", "Noor Avery", "Compliance Officer"),
             ("inventory", "Dara Lane", "Inventory Manager"),
+            ("salesmanager", "Nina Hart", "Sales Manager"),
+            ("tele", "Faris Reed", "Tele Verification Officer"),
+            ("welcome", "Amina Vale", "Welcome Call Officer"),
         ]:
             u = User(
                 email=f"{email}@relay.demo",

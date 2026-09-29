@@ -35,7 +35,7 @@ test('field asset register and requests are available without layout overflow', 
   await expect(page.getByRole('heading',{name:'Assets & supplies'})).toBeVisible();
   await page.getByRole('button',{name:'Add asset'}).click();
   await expect(page.getByLabel('Serial (if applicable)')).toBeVisible();
-  await page.getByRole('button',{name:'Requests', exact:true}).click();
+  await page.getByRole('button',{name:/^Requests/}).click();
   await expect(page.getByRole('heading',{name:'Asset requests'})).toBeVisible();
   await expect(page.locator('.sales-section .sales-table tbody tr').first()).toBeVisible();
   await page.screenshot({path:'../output/qa/field-assets-desktop.png',fullPage:true});

@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
-from .db import (Agent, CallAttempt, DB, FieldAsset, FieldAssetMovement, FieldAssetRequest,
+from .db import (Agent, CallAttempt, DB, FieldAsset, FieldAssetMovement, FieldAssetRequest, SalesCallTask,
                  NoSaleFeedback, Outlet, Plan, Role, SalesRecord, SalesTarget, User)
 
 
@@ -41,6 +41,11 @@ def seed():
                 outcome="PASSED", remark="Details confirmed", actor_id=admin.id))
             db.add(CallAttempt(sale_id=first_sale.id, stage="WELCOME_CALL",
                 outcome="REACHED", remark="Customer welcomed", actor_id=admin.id))
+        for sale in db.scalars(select(SalesRecord).where(SalesRecord.request_id.like("SAMPLE-SALES-%"))):
+            for stage, status in (("TELE_VERIFICATION", "COMPLETED" if sale.id == first_sale.id else "PENDING"),
+                                  ("WELCOME_CALL", "COMPLETED" if sale.id == first_sale.id else "BLOCKED")):
+                if not db.scalar(select(SalesCallTask.id).where(SalesCallTask.sale_id == sale.id, SalesCallTask.stage == stage)):
+                    db.add(SalesCallTask(sale_id=sale.id, stage=stage, status=status))
         first = agents[0]
         outlet = db.get(Outlet, first.outlet_id)
         if not db.scalar(select(NoSaleFeedback.id).where(NoSaleFeedback.agent_id == first.id,

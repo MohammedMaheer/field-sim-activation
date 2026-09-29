@@ -1,6 +1,7 @@
 import 'saved_drafts.dart';
 import 'sales_management.dart';
 import 'field_assets.dart';
+import 'call_work.dart';
 import 'dart:async';
 import 'kyc_capture.dart';
 import 'package:flutter/material.dart';
@@ -230,7 +231,10 @@ class _GateState extends ConsumerState<Gate> {
   Widget build(BuildContext context) {
     final s = ref.watch(serviceProvider);
     if (!s.ready) return const Scaffold(body: LoadingCards());
-    return s.user == null ? const LoginScreen() : const FieldShell();
+    if (s.user == null) return const LoginScreen();
+    if (['Tele Verification Officer', 'Welcome Call Officer'].contains(s.user?['role'])) return const CallWorkScreen();
+    if (s.user?['role'] == 'Sales Manager') return const SalesManagementScreen();
+    return const FieldShell();
   }
 }
 

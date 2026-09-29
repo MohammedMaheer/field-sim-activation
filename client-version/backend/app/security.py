@@ -52,6 +52,9 @@ def principal(credentials: HTTPAuthorizationCredentials = Depends(bearer), db=De
         user = db.get(User, token["sub"])
         if not user or session.user_id != user.id:
             raise ValueError("Invalid subject")
+        agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
+        if agent and agent.employment_status != "ACTIVE":
+            raise ValueError("Agent account inactive")
         return user
     except (AttributeError, ValueError, KeyError, jwt.PyJWTError):
         raise HTTPException(401, "Session expired. Please sign in again.")
@@ -81,11 +84,13 @@ def tokens(user, session):
 def visible_agents(db, user):
     role = db.get(Role, user.role_id).name
     query = select(Agent.id)
+    if role in {"Tele Verification Officer", "Welcome Call Officer"}:
+        return []
     if role == "Field Agent":
         query = query.where(Agent.user_id == user.id)
     elif role == "Team Leader":
         query = query.where(Agent.leader_id == user.id)
-    elif role == "Branch Manager":
+    elif role in {"Branch Manager", "Sales Manager"}:
         query = query.join(Outlet, Outlet.id == Agent.outlet_id).where(
             Outlet.branch_id == user.branch_id
         )

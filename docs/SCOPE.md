@@ -11,7 +11,7 @@ For new screenshot-order submissions, the uploaded order-created confirmation an
 1. Capture/upload the external checkout customer-details screen. Extract the name, document details, nationality and dates. Required readable values are bound to the saved image and account.
 2. Capture/upload the order-details screen. Extract product/package, MSISDN, request ID, monthly charge and prepayment exactly as shown. Match the package to the active plan catalog by name; require explicit plan selection if no unique match exists. No barcode or signature is required for new screen-based transactions. Missing SIM identifiers remain Not recorded and do not mutate inventory.
 3. Upload confirmation evidence. The animated compact invoice follows stored evidence. A carrier order-success image is not payment settlement; amounts and tax are never inferred from monthly charges.
-4. Independent backend staff compare customer, order and confirmation images and review fields. Once verified, the designated branch team leader receives an in-app confirmation request and records confirmation. External carrier activation stays external.
+4. Independent backend staff compare customer, order and confirmation images and review fields. Once verified, the designated branch team leader receives a read-only in-app transaction update. External carrier activation stays external.
 
 The phone-framed web experience signs in to the same role-scoped API as the APK and admin panel. Its synthetic capture shortcuts are parsed and stored by that API, enabling bidirectional meeting demonstrations. No credentials are embedded in the build. Previous records retain their original workflow.
 
