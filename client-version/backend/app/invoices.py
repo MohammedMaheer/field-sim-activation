@@ -125,7 +125,8 @@ def invoice(row, data):
                 ),
                 field("Order details screen", "Captured" if intake.get("order_image") else None),
                 field("Selfie", "Captured" if intake.get("selfie_image") else None),
-                field("Customer signature", "Captured" if intake.get("signature") else None),
+                *([field("Customer signature", "Captured" if intake.get("signature") else None)]
+                  if intake.get("capture_mode") != "SCREENSHOT_ORDER" else []),
                 field("Payment confirmation", "Uploaded"),
                 field("Verified by", (data.get("review") or {}).get("reviewer")),
                 field("Activation reference", activation.get("reference")),

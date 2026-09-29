@@ -1652,6 +1652,7 @@ def test_order_payment_record_has_no_inferred_payment_values():
     result = invoice(row, data)
     assert result["heading"] == "Payment recorded"
     assert result["status"] == "Pending backend confirmation"
+    assert "Customer signature" not in {field["label"] for section in result["sections"] for field in section["fields"]}
     payment = next(section for section in result["sections"] if section["title"] == "Payment")
     assert {field["label"] for field in payment["fields"]} == {
         "Request ID",
@@ -1662,3 +1663,4 @@ def test_order_payment_record_has_no_inferred_payment_values():
     assert invoice(row, data)["status"] == "Verified"
     legacy = invoice(row, {"intake": {}, "rows": []})
     assert legacy["heading"] == "Payment successful"
+    assert "Customer signature" in {field["label"] for section in legacy["sections"] for field in section["fields"]}

@@ -405,6 +405,7 @@ export default function ReceiptReview({
                 {capture.activation.status} · {capture.activation.reference}
               </p>
             )}
+            {!capture.activation && <p>Awaiting backend activation</p>}
             {capture.activation?.status !== "ACTIVATED" &&
               user.permissions?.includes("compliance.write") && (
                 <>
@@ -459,7 +460,7 @@ export default function ReceiptReview({
               )}
           </section>
         )}
-      {capture.document_kind === "PAYMENT_CONFIRMATION" && (
+      {capture.document_kind === "PAYMENT_CONFIRMATION" && !orderMode && (
         <details className="review-history">
           <summary>Customer documents & signature</summary>
           <div className="review-intake-evidence">

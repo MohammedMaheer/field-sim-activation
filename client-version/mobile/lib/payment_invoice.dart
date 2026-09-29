@@ -162,7 +162,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
             'Selfie',
             (intake['selfie_image'] ?? '').isNotEmpty ? 'Captured' : null,
           ),
-          field(
+          if (intake['capture_mode'] != 'SCREENSHOT_ORDER') field(
             'Customer signature',
             (intake['signature'] as List? ?? []).isNotEmpty ? 'Captured' : null,
           ),

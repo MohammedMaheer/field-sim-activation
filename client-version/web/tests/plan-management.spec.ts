@@ -26,6 +26,7 @@ test("administrator manages plans and field selections stay in sync", async ({ p
 
   page.once("dialog", (dialog) => dialog.accept());
   await card.getByRole("button", { name: "Remove" }).click();
+  await page.getByRole("button", { name: "Show removed plans", exact: true }).click();
   await expect(card.getByText("removed", { exact: true })).toBeVisible();
   const active = await page.request.get("/api/public/plans");
   expect((await active.json()).some((p: { name: string }) => p.name === "5G Unlimited Ultra")).toBeFalsy();

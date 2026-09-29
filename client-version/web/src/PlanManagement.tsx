@@ -26,6 +26,7 @@ export default function PlanManagement() {
   const [editing, setEditing] = useState<Row | null>(null);
   const [deleting, setDeleting] = useState<Row | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showRemoved, setShowRemoved] = useState(false);
   const [error, setError] = useState("");
   const plans = useQuery({
     queryKey: ["admin-plans"],
@@ -122,8 +123,9 @@ export default function PlanManagement() {
       {plans.isPending ? <Loading /> : plans.error ? <ErrorState error={plans.error} retry={plans.refetch} /> : (
         <>
           <RecordOverview rows={plans.data.map((plan:Row) => ({...plan,availability:plan.active ? "Available" : "Removed"}))} field="availability" title="Plan availability" />
+          <div className="plan-summary-row"><button aria-pressed={showRemoved} onClick={() => setShowRemoved(!showRemoved)}>{showRemoved ? "Hide removed plans" : "Show removed plans"}</button></div>
           <section className="plan-management-grid" aria-label="Subscriber plans">
-            {plans.data.map((plan: Row) => (
+            {plans.data.filter((plan:Row) => plan.active || showRemoved).map((plan: Row) => (
               <article className={`panel managed-plan ${plan.active ? "" : "inactive"}`} key={plan.id}>
                 <div className="managed-plan-top">
                   <span className="managed-plan-icon"><Tag size={19} /></span>
