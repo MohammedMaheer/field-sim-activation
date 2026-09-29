@@ -195,7 +195,10 @@ class PreviewService extends RelayService {
 
   @override
   Future<Uint8List> previewReceipt() async =>
-      (await rootBundle.load('assets/demo/receipt.png')).buffer.asUint8List();
+      (await rootBundle.load('assets/demo/payment.png')).buffer.asUint8List();
+  @override
+  Future<Uint8List> previewIdentity() async =>
+      (await rootBundle.load('assets/demo/identity.png')).buffer.asUint8List();
   Future<dynamic> dispatch(RequestOptions o) async {
     await Future<void>.delayed(const Duration(milliseconds: 180));
     final path = o.path;
@@ -236,8 +239,9 @@ class PreviewService extends RelayService {
     }
     if (path == '/kyc-captures/read-document') {
       return {
-        'name': 'Alex Sample',
+        'name': 'Avery Stone',
         'document_number': 'SAMPLE-ID-1001',
+        'document_check': 'preview-only-document',
         'nationality': 'United Arab Emirates',
         'birth_date': '1990-01-01',
         'expiry_date': '2030-12-31',
@@ -252,32 +256,7 @@ class PreviewService extends RelayService {
       } on DioException {
         // Keep the preview usable offline; online edits come from the shared catalog.
       }
-      return [
-        {
-          'id': 'zip-5g-unlimited',
-          'name': '5G Unlimited Ultra',
-          'monthly_cost': 350,
-          'promotion': 'Unlimited 5G Data + 1500 Flexi Mins',
-        },
-        {
-          'id': 'zip-flexi-postpaid',
-          'name': 'Flexi Postpaid',
-          'monthly_cost': 250,
-          'promotion': '100GB 5G Data + 500 Local Mins',
-        },
-        {
-          'id': 'zip-tourist-prepaid',
-          'name': 'Tourist Prepaid',
-          'monthly_cost': 199,
-          'promotion': '50GB High Speed + Free Roaming',
-        },
-        {
-          'id': 'zip-enterprise-m2m',
-          'name': 'Enterprise M2M',
-          'monthly_cost': 85,
-          'promotion': 'Telemetry VPN + Fixed IP',
-        },
-      ];
+      return data['/resources/plans'] ?? const <Json>[];
     }
     if (path.startsWith('/kyc-captures')) {
       final captures = data['/kyc-captures'] as List;
@@ -287,12 +266,24 @@ class PreviewService extends RelayService {
           template.addAll({
             'id': 'capture-${DateTime.now().microsecondsSinceEpoch}',
             'source_reference': body['source_reference'],
-            'status': 'EXTRACTED',
+            'status': 'SUBMITTED',
             'version': 1,
             'review': null,
             'intake': body['intake'],
             'document_kind': body['document_kind'],
-            'payment_reference': body['source_reference'],
+            'payment_reference': 'PAY-CAPTURE-1001',
+            'rows': [
+              {
+                'fields': [
+                  {'label': 'Payment reference', 'value': 'PAY-CAPTURE-1001'},
+                  {'label': 'Customer', 'value': 'Avery Stone'},
+                  {'label': 'Total paid', 'value': 'AED 350.00'},
+                  {'label': 'Payment method', 'value': 'Card'},
+                  {'label': 'Date', 'value': '2026-09-29'},
+                ],
+              },
+            ],
+            'lines': [],
             'created_at': DateTime.now().toIso8601String(),
             'plan_snapshot': (data['/resources/plans'] as List? ?? [])
                 .firstWhere(

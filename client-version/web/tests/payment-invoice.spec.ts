@@ -23,6 +23,19 @@ test("payment invoice and backend activation remain connected", async ({
   const image = (
     await readFile(path.resolve("tests/fixtures/transaction-sample.png"))
   ).toString("base64");
+  const identityImage = (
+    await readFile(path.resolve("../mobile/assets/demo/identity.png"))
+  ).toString("base64");
+  const identityResponse = await request.post(
+    "/api/kyc-captures/read-document",
+    {
+      headers,
+      data: { image_base64: identityImage },
+    },
+  );
+  expect(identityResponse.ok()).toBeTruthy();
+  const identity = await identityResponse.json();
+  expect(identity.document_check).toBeTruthy();
   const made = await request.post("/api/kyc-captures", {
     headers,
     data: {
@@ -32,12 +45,9 @@ test("payment invoice and backend activation remain connected", async ({
       source_reference: "PAY-QA-" + Date.now(),
       image_base64: image,
       intake: {
-        name: "Alex Synthetic",
-        document_number: "SAMPLE-ID-9090",
+        ...identity,
         nationality: "Sample",
-        birth_date: "1990-01-01",
-        expiry_date: "2090-01-01",
-        document_image: image,
+        document_image: identityImage,
         sim_identifier: "QA-UNLISTED-SIM",
         plan_id: plans[0].id,
         msisdn: "SAMPLE-PHONE",
@@ -95,26 +105,40 @@ test("payment invoice and backend activation remain connected", async ({
   await expect(
     page.getByRole("img", { name: /Payment confirmation from/ }),
   ).toBeVisible();
-  await page.getByRole("button", {name: "Identity document", exact: true}).click();
-  await expect(page.getByRole("img", {name: "Identity document", exact: true})).toBeVisible();
+  await page
+    .getByRole("button", { name: "Identity document", exact: true })
+    .click();
+  await expect(
+    page.getByRole("img", { name: "Identity document", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("tabpanel")).toContainText("Alex Synthetic");
-  await page.getByRole("button", {name: "Signature", exact: true}).click();
-  await expect(page.getByRole("img", {name: "Captured customer signature", exact: true}).first()).toBeVisible();
-  await page.getByRole("button", {name: "Payment confirmation", exact: true}).click();
+  await page.getByRole("button", { name: "Signature", exact: true }).click();
+  await expect(
+    page
+      .getByRole("img", { name: "Captured customer signature", exact: true })
+      .first(),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Payment confirmation", exact: true })
+    .click();
   await page.getByText("Payment invoice", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Payment successful", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".invoice-sections")).toContainText("Not recorded");
-  await page.getByRole("button", {name: "Replay invoice printing", exact: true}).click();
+  await page
+    .getByRole("button", { name: "Replay invoice printing", exact: true })
+    .click();
   const paper = page.locator(".verified-receipt");
   await page.waitForTimeout(500);
-  const feeding = await paper.evaluate(el => getComputedStyle(el).transform);
+  const feeding = await paper.evaluate((el) => getComputedStyle(el).transform);
   expect(feeding).not.toBe("none");
   expect(feeding).not.toBe("matrix(1, 0, 0, 1, 0, 0)");
-  await page.screenshot({path:"../output/qa/invoice-39-web-printing.png"});
+  await page.screenshot({ path: "../output/qa/invoice-39-web-printing.png" });
   await page.waitForTimeout(2000);
-  expect(await paper.evaluate(el => getComputedStyle(el).transform)).toBe("matrix(1, 0, 0, 1, 0, 0)");
+  expect(await paper.evaluate((el) => getComputedStyle(el).transform)).toBe(
+    "matrix(1, 0, 0, 1, 0, 0)",
+  );
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     await page.waitForTimeout(850);
@@ -132,7 +156,9 @@ test("payment invoice and backend activation remain connected", async ({
     .getByLabel("Review note", { exact: true })
     .fill("Original payment and identity details match");
   await page
-    .getByLabel("I checked the image against the customer, SIM and captured details.")
+    .getByLabel(
+      "I checked the image against the customer, SIM and captured details.",
+    )
     .check();
   await page
     .getByRole("button", { name: "Verify submission", exact: true })

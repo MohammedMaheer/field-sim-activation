@@ -1692,3 +1692,22 @@ button:active:not(:disabled) {
 @media print { .receipt-paper-outlet { overflow: visible; } .capture-supporting { display: none; } }
 details:not([open]) .receipt-kiosk-assembly .verified-receipt { animation: none; }
 .review-evidence-switch { display:flex; gap:8px; flex-wrap:wrap; margin:16px 0 10px; } .review-evidence-switch button { min-height:42px; } .review-image-stage svg { width:100%; background:white; border-radius:12px; } .review-comparison { align-items:stretch; } .review-pane-heading { min-height:76px; }
+
+/* Keep evidence controls aligned with both comparison panes. */
+.review-evidence-switch {
+  margin: 0;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e7def2;
+  background: linear-gradient(110deg, #faf6ff, #f0faf7);
+}
+.review-evidence-switch button { border-radius: 11px; }
+.review-record-header { padding: 18px 20px; gap: 16px; }
+.review-record-header small { display: block; margin-top: 6px; }
+.review-pane-heading { flex-wrap: wrap; gap: 12px; }
+.review-pane-heading > div:first-child { flex: 1; min-width: 150px; }
+.review-image-stage img { display: block; }
+@media (max-width: 760px) {
+  .review-evidence-switch { padding: 12px; gap: 6px; }
+  .review-evidence-switch button { flex: 1 1 130px; }
+  .review-record-header { padding: 14px; }
+}

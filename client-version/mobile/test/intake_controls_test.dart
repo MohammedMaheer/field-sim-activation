@@ -105,7 +105,10 @@ void main() {
         overrides: [serviceProvider.overrideWith((ref) => service)],
         child: MaterialApp(
           home: CustomerIntakeScreen(
-            initial: const {'step': 1},
+            initial: const {
+              'step': 1,
+              'document_check': 'preview-only-document',
+            },
             onReady: (_) {},
             onHistory: () {},
           ),

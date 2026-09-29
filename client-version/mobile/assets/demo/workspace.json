@@ -2300,5 +2300,67 @@
         ]
       }
     }
+  ],
+  "/resources/plans": [
+    {
+      "product_id": "11c73c89-c670-42de-a5ac-441a2eef156f",
+      "name": "5G Unlimited Ultra",
+      "monthly_cost": 350.0,
+      "data_gb": 0,
+      "speed": "5G",
+      "roaming": "Included",
+      "contract": "As selected in Etisalat",
+      "promotion": "Unlimited 5G Data + 1500 Flexi Mins",
+      "advance": 0.0,
+      "vat": 5.0,
+      "active": true,
+      "id": "70000000-0000-4000-8000-000000000001",
+      "created_at": "2026-09-28T10:43:26.865361Z"
+    },
+    {
+      "product_id": "11c73c89-c670-42de-a5ac-441a2eef156f",
+      "name": "Flexi Postpaid",
+      "monthly_cost": 250.0,
+      "data_gb": 100,
+      "speed": "5G",
+      "roaming": "Included",
+      "contract": "As selected in Etisalat",
+      "promotion": "100GB 5G Data + 500 Local Mins",
+      "advance": 0.0,
+      "vat": 5.0,
+      "active": true,
+      "id": "70000000-0000-4000-8000-000000000002",
+      "created_at": "2026-09-28T10:43:26.865361Z"
+    },
+    {
+      "product_id": "11c73c89-c670-42de-a5ac-441a2eef156f",
+      "name": "Tourist Prepaid",
+      "monthly_cost": 199.0,
+      "data_gb": 50,
+      "speed": "5G",
+      "roaming": "Included",
+      "contract": "As selected in Etisalat",
+      "promotion": "50GB High Speed + Free Roaming",
+      "advance": 0.0,
+      "vat": 5.0,
+      "active": true,
+      "id": "70000000-0000-4000-8000-000000000003",
+      "created_at": "2026-09-28T10:43:26.865361Z"
+    },
+    {
+      "product_id": "11c73c89-c670-42de-a5ac-441a2eef156f",
+      "name": "Enterprise M2M",
+      "monthly_cost": 85.0,
+      "data_gb": 0,
+      "speed": "5G",
+      "roaming": "Included",
+      "contract": "As selected in Etisalat",
+      "promotion": "Telemetry VPN + Fixed IP",
+      "advance": 0.0,
+      "vat": 5.0,
+      "active": true,
+      "id": "70000000-0000-4000-8000-000000000004",
+      "created_at": "2026-09-28T10:43:26.865361Z"
+    }
   ]
 }

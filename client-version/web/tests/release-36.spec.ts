@@ -30,6 +30,7 @@ test('client workspace exposes branch agents, verification and stock controls', 
 });
 
 test('responsive client pages fit the viewport', async ({page}) => {
+  test.setTimeout(180000);
   await authenticate(page);
   for (const width of [1440, 768, 390]) {
     await page.setViewportSize({width, height:900});

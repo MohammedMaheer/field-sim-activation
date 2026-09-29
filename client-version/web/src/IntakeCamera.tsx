@@ -44,12 +44,13 @@ export default function IntakeCamera({
         }
         if (onDetect && !barcode && !selfie) {
           timer = window.setInterval(async () => {
-            if (closed || checkingRef.current || !video.current?.videoWidth) return;
+            if (closed || checkingRef.current || !video.current?.videoWidth)
+              return;
             checkingRef.current = true;
             setChecking(true);
             try {
               const file = await frameFile(true);
-              if (file && !closed && await onDetect(file)) {
+              if (file && !closed && (await onDetect(file))) {
                 closed = true;
                 onClose();
               }
@@ -105,15 +106,30 @@ export default function IntakeCamera({
       sample.height = 26;
       const context = sample.getContext("2d")!;
       context.drawImage(c, 0, 0, sample.width, sample.height);
-      const pixels = context.getImageData(0, 0, sample.width, sample.height).data;
+      const pixels = context.getImageData(
+        0,
+        0,
+        sample.width,
+        sample.height,
+      ).data;
       let bright = 0;
       for (let index = 0; index < pixels.length; index += 4) {
-        if (pixels[index] * .299 + pixels[index + 1] * .587 + pixels[index + 2] * .114 > 155) bright++;
+        if (
+          pixels[index] * 0.299 +
+            pixels[index + 1] * 0.587 +
+            pixels[index + 2] * 0.114 >
+          155
+        )
+          bright++;
       }
-      if (bright / (sample.width * sample.height) <= .16) return;
+      if (bright / (sample.width * sample.height) <= 0.16) return;
     }
-    const blob = await new Promise<Blob | null>((resolve) => c.toBlob(resolve, "image/jpeg", 0.78));
-    return blob ? new File([blob], "capture.jpg", {type: "image/jpeg"}) : undefined;
+    const blob = await new Promise<Blob | null>((resolve) =>
+      c.toBlob(resolve, "image/jpeg", 0.78),
+    );
+    return blob
+      ? new File([blob], "capture.jpg", { type: "image/jpeg" })
+      : undefined;
   }
   async function capture() {
     const file = await frameFile();
@@ -123,16 +139,38 @@ export default function IntakeCamera({
     }
   }
   return (
-    <section className={`intake-camera ${embedded ? "camera-embedded" : ""} ${expanded ? "camera-expanded" : ""}`} aria-label="Camera">
+    <section
+      className={`intake-camera ${embedded ? "camera-embedded" : ""} ${expanded ? "camera-expanded" : ""}`}
+      aria-label="Camera"
+    >
       <video ref={video} autoPlay playsInline muted />
-      {!selfie && <div className="camera-scan-frame"><div className="camera-scan-line" /></div>}
-      {onDetect && !selfie && <span className="camera-scan-status" role="status">{checking ? "Reading document…" : "Hold document inside frame"}</span>}
+      {ready && !error && !selfie && (
+        <div className="camera-scan-frame">
+          <div className="camera-scan-line" />
+        </div>
+      )}
+      {ready && !error && onDetect && !selfie && (
+        <span className="camera-scan-status" role="status">
+          {checking ? "Reading document…" : "Hold document inside frame"}
+        </span>
+      )}
       {error && <p role="alert">{error}</p>}
-      {embedded && <button className="camera-expand" type="button" aria-label={expanded ? "Minimize scanner" : "Expand scanner"} onClick={() => setExpanded(!expanded)}>{expanded ? "↙" : "⛶"}</button>}
+      {embedded && (
+        <button
+          className="camera-expand"
+          type="button"
+          aria-label={expanded ? "Minimize scanner" : "Expand scanner"}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "↙" : "⛶"}
+        </button>
+      )}
       <div>
-        {!embedded && <button type="button" onClick={onClose}>
-          Close camera
-        </button>}
+        {!embedded && (
+          <button type="button" onClick={onClose}>
+            Close camera
+          </button>
+        )}
         {!barcode && (!embedded || expanded || error) && (
           <button
             type="button"

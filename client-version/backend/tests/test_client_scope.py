@@ -41,6 +41,16 @@ def login(client, account="admin"):
     return r.json()
 
 
+def read_fixture_document(client, encoded, name="Sample Customer", number="SAMPLE-ONLY"):
+    from app import captures
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(captures.extractor, "extract", lambda _: {"lines": [
+            {"text": f"Full name: {name}"}, {"text": f"Document number: {number}"},
+            {"text": "Date of birth: 1990-01-01"}, {"text": "Expiry date: 2090-12-31"},
+        ]})
+        return client.post("/api/kyc-captures/read-document", json={"image_base64":encoded}).json()["document_check"]
+
+
 @pytest.mark.parametrize(
     "account,count",
     [
@@ -820,6 +830,7 @@ def test_failed_image_extraction_can_be_completed_manually(client):
         "intake": {"name": "Sample Customer", "document_number": "SAMPLE-ONLY",
                    "nationality": "Sample", "birth_date": "1990-01-01",
                    "expiry_date": "2090-12-31", "document_image": encoded,
+                   "document_check": read_fixture_document(client, encoded),
                    "sim_identifier": "SAMPLE-SIM", "plan_id": plan_id,
                    "msisdn": "SAMPLE-PHONE", "signature": [[[i / 10, 0.5] for i in range(8)]]},
     })
@@ -1098,6 +1109,7 @@ def test_intake_draft_and_independent_review_without_payment(client, monkeypatch
         "msisdn": "SAMPLE-PHONE",
         "signature": [[[i / 10, 0.5] for i in range(8)]],
     }
+    intake["document_check"] = read_fixture_document(client, encoded)
     intake["plan_id"] = client.get("/api/resources/plans").json()[0]["id"]
     draft = client.get("/api/kyc-captures/draft").json()
     saved = client.put(
@@ -1146,7 +1158,7 @@ def test_intake_draft_and_independent_review_without_payment(client, monkeypatch
             "/api/kyc-captures",
             json={**body, "intake": {**intake, "name": "Different customer"}},
         ).status_code
-        == 409
+        == 422
     )
     with DB() as db:
         stored = db.get(KycCapture, row["id"])
@@ -1199,7 +1211,9 @@ def test_identity_extraction_maps_printed_dates_without_verification_claim(clien
     monkeypatch.setattr(captures.extractor,"extract",lambda _: {"lines":[{"text":"Full legal name: Alex Sample"},{"text":"ID No: SAMPLE-001"},{"text":"Date of Birth: 14 NOV 1991"},{"text":"Date of expiry: 14/11/2030"}]})
     response=client.post("/api/kyc-captures/read-document",json={"image_base64":"eA=="})
     assert response.status_code==200
-    assert response.json()=={"name":"Alex Sample","document_number":"SAMPLE-001","birth_date":"1991-11-14","expiry_date":"2030-11-14"}
+    result = response.json()
+    assert result.pop("document_check", None)
+    assert result=={"name":"Alex Sample","document_number":"SAMPLE-001","birth_date":"1991-11-14","expiry_date":"2030-11-14"}
 
 
 def test_identity_extraction_reads_unseparated_document_labels(client, monkeypatch):
@@ -1214,7 +1228,9 @@ def test_identity_extraction_reads_unseparated_document_labels(client, monkeypat
     ]})
     response = client.post("/api/kyc-captures/read-document", json={"image_base64": "eA=="})
     assert response.status_code == 200
-    assert response.json() == {
+    result = response.json()
+    assert result.pop("document_check", None)
+    assert result == {
         "name": "ALEX SAMPLE", "document_number": "784-1991-1234567-1",
         "nationality": "UNITED ARAB EMIRATES", "birth_date": "1991-11-14",
         "expiry_date": "2030-11-14",
@@ -1230,7 +1246,9 @@ def test_passport_mrz_autofills_readable_identity_without_verification(client, m
     ]})
     response = client.post("/api/kyc-captures/read-document", json={"image_base64": "eA=="})
     assert response.status_code == 200
-    assert response.json() == {
+    result = response.json()
+    assert result.pop("document_check", None)
+    assert result == {
         "name": "ANNA MARIA ERIKSSON", "document_number": "L898902C3",
         "birth_date": "1974-08-12", "expiry_date": "2030-04-15",
     }
@@ -1310,6 +1328,15 @@ def test_payment_invoice_review_and_backend_activation(client, monkeypatch):
         db.commit()
         stock_id = item.id
     intake = {"name":"Synthetic Payment Customer", "document_number":"SAMPLE-ID-9090", "nationality":"Synthetic", "birth_date":"1990-01-01", "expiry_date":"2090-12-31", "document_image":encoded, "sim_identifier":stock_serial, "plan_id":plan["id"], "msisdn":"SAMPLE-PHONE", "signature":[[[i/10,0.5] for i in range(8)]]}
+    from app import captures
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(captures.extractor, "extract", lambda _: {"lines": [
+            {"text": f"{label}: {intake[key]}"} for label, key in [
+                ("Full name", "name"), ("Document number", "document_number"),
+                ("Date of birth", "birth_date"), ("Expiry date", "expiry_date")]
+        ]})
+        intake["document_check"] = client.post("/api/kyc-captures/read-document",
+            json={"image_base64": encoded}).json()["document_check"]
     body = {"document_kind":"PAYMENT_CONFIRMATION", "agent_id":agent["id"], "operation_id":str(uuid4()), "image_base64":encoded}
     assert client.post("/api/kyc-captures",json=body).status_code == 422
     body["intake"] = intake
@@ -1366,3 +1393,41 @@ def test_payment_invoice_review_and_backend_activation(client, monkeypatch):
     with DB() as db:
         assert db.get(Sim, stock_id).status == "ACTIVATED"
         assert db.scalar(select(Movement).where(Movement.sim_id == stock_id)).new_status == "ACTIVATED"
+
+
+def test_document_readability_proof_rejects_manual_fields_and_image_swaps(client, monkeypatch):
+    from app import captures
+    from PIL import Image
+    login(client, "agent1")
+    image = io.BytesIO()
+    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines": [{"text":"A random holiday photograph"}]})
+    unreadable = client.post("/api/kyc-captures/read-document", json={"image_base64":encoded})
+    assert "document_check" not in unreadable.json()
+    intake = {"step":1, "name":"Avery Stone", "document_number":"SAMPLE-ID-1001",
+        "birth_date":"1990-01-01", "expiry_date":"2030-12-31", "document_image":encoded}
+    version = client.get("/api/kyc-captures/draft").json()["version"]
+    def save(data):
+        return client.put("/api/kyc-captures/draft",json={"version":version,"data":data})
+    assert save(intake).status_code == 422
+    monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines":[
+        {"text": "Full name: Avery Stone"}, {"text":"Document number: SAMPLE-ID-1001"},
+        {"text":"Date of birth: 1990-01-01"}, {"text":"Expiry date: 2030-12-31"}]})
+    fields=client.post("/api/kyc-captures/read-document",json={"image_base64":encoded}).json()
+    intake.update(fields)
+    assert save({**intake,"document_number":"OTHER-ID"}).status_code == 422
+    other=io.BytesIO()
+    Image.new("RGB",(400,200),"red").save(other,format="PNG")
+    assert save({**intake,"document_image":base64.b64encode(other.getvalue()).decode()}).status_code == 422
+    assert save({**intake,"document_check":"preview-only-document"}).status_code == 422
+    import json
+    expired=json.loads(captures.cipher.decrypt(intake["document_check"].encode()))
+    expired["expires"]=0
+    expired_check=captures.cipher.encrypt(json.dumps(expired).encode()).decode()
+    assert save({**intake,"document_check":expired_check}).status_code == 422
+    login(client,"agent2")
+    other_version=client.get("/api/kyc-captures/draft").json()["version"]
+    assert client.put("/api/kyc-captures/draft",json={"version":other_version,"data":intake}).status_code == 422
+    login(client,"agent1")
+    assert save(intake).status_code == 200

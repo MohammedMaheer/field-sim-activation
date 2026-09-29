@@ -520,6 +520,12 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       version = cached?['version'] ?? 0;
       error = 'Saved details loaded. Check connection.';
     }
+    if ((data['document_check'] ?? '').toString().isEmpty) {
+      // Older saved photos must be read again before they count as a capture.
+      data.remove('document_image');
+      data['step'] = 0;
+      step = 0;
+    }
     if (mounted) {
       setState(() {
         busy = false;
@@ -597,13 +603,13 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             options: Options(receiveTimeout: const Duration(seconds: 7)),
           );
       final fields = Map<String, dynamic>.from(response.data);
-      return fields['name'] != null && fields['document_number'] != null
-          ? fields
-          : null;
+      return fields['document_check'] != null ? fields : null;
     } catch (_) {
       return null;
     }
   }
+
+  String captureActivity = 'Reading document…';
 
   Future<void> photo(
     String key,
@@ -622,8 +628,10 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       if (captured != null) {
         bytes = captured.image;
         scannedFields = captured.fields;
-      } else if (service.isPreview && gallery) {
-        bytes = await service.previewReceipt();
+      } else if (service.isPreview) {
+        bytes = key == 'document_image'
+            ? await service.previewIdentity()
+            : await service.previewReceipt();
       } else if (gallery) {
         final f = await ImagePicker().pickImage(
           source: ImageSource.gallery,
@@ -650,10 +658,15 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       setState(() {
         busy = true;
         reading = key == 'document_image';
+        captureActivity = gallery ? 'Uploading photo…' : 'Capturing document…';
       });
       if (key == 'document_image') {
-        await Future<void>.delayed(const Duration(milliseconds: 100));
+        await Future<void>.delayed(
+          Duration(milliseconds: service.isPreview ? 1200 : 100),
+        );
       }
+      error = null;
+      if (key == 'document_image') data.remove('document_check');
       data[key] = encodeDocument(bytes);
       if (mounted) setState(() {});
       if (key == 'document_image') {
@@ -667,9 +680,15 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             );
             data.addAll(Map<String, dynamic>.from(r.data));
           }
+          if ((data['document_check'] ?? '').toString().isEmpty) {
+            throw Exception('Document unreadable');
+          }
           revision++;
         } catch (e) {
-          error = 'Photo saved. Check the details.';
+          data.remove('document_image');
+          data.remove('document_check');
+          error =
+              "Document wasn't captured clearly. Try again with your ID or passport.";
         }
       }
       await cache();
@@ -729,6 +748,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           return;
         }
         if (step == 0) {
+          if ((data['document_check'] ?? '').toString().isEmpty) {
+            throw Exception(
+              "Document wasn't captured clearly. Scan or upload your ID or passport.",
+            );
+          }
           final birth = DateTime.tryParse(data['birth_date']),
               expiry = DateTime.tryParse(data['expiry_date']);
           if (birth == null ||
@@ -782,6 +806,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           );
     if (mounted && code != null) {
       revision++;
+      if (service.isPreview) data['msisdn'] = 'SAMPLE-PHONE-1001';
       set('sim_identifier', code);
     }
   }
@@ -800,10 +825,15 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       initialValue: data[key] ?? '',
       readOnly: date,
       keyboardType: keyboardType,
+      style: date ? const TextStyle(fontSize: 14) : null,
       decoration: InputDecoration(
         labelText: label,
         errorText: missing.contains(key) ? 'Required' : null,
-        suffixIcon: date ? const Icon(Icons.calendar_month) : null,
+        suffixIcon: date ? const Icon(Icons.calendar_month, size: 18) : null,
+        suffixIconConstraints: date
+            ? const BoxConstraints(minWidth: 32, minHeight: 40)
+            : null,
+        labelStyle: date ? const TextStyle(fontSize: 13) : null,
       ),
       onTap: !date
           ? null
@@ -1112,7 +1142,8 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               ScanSurface(
                 image: data['document_image'],
                 reading: reading,
-                illustration: ref.read(serviceProvider).isPreview,
+                readingLabel: captureActivity,
+                illustration: false,
                 document: data['document_type'] == 'Passport'
                     ? 'Passport'
                     : 'Emirates ID',
@@ -1124,7 +1155,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                     onPressed: busy
                         ? null
                         : () {
-                            if (scannerKey.currentState != null) {
+                            if (ref.read(serviceProvider).isPreview) {
+                              photo('document_image', false);
+                            } else if (scannerKey.currentState != null) {
                               scannerKey.currentState!.expand();
                             } else {
                               setState(() => data.remove('document_image'));

@@ -40,9 +40,14 @@ export default function CustomerIntake({
     api("/kyc-captures/draft")
       .then((r) => {
         if (live) {
-          onChange({ ...r.data, ...value });
+          const restored = { ...r.data, ...value };
+          if (!restored.document_check) {
+            restored.document_image = "";
+            restored.step = 0;
+          }
+          onChange(restored);
           setVersion(r.version);
-          setStep(Math.min(r.data.step || 0, 1));
+          setStep(Math.min(restored.step || 0, 1));
           setLoaded(true);
         }
       })
@@ -77,14 +82,19 @@ export default function CustomerIntake({
     );
   };
   async function preparedImage(file: File) {
-    if (!["image/png", "image/jpeg"].includes(file.type) || file.size > 10000000)
+    if (
+      !["image/png", "image/jpeg"].includes(file.type) ||
+      file.size > 10000000
+    )
       throw Error("Choose a PNG or JPEG photo under 10 MB.");
     const bitmap = await createImageBitmap(file);
     const canvas = document.createElement("canvas"),
       scale = Math.min(1, 1200 / Math.max(bitmap.width, bitmap.height));
     canvas.width = Math.round(bitmap.width * scale);
     canvas.height = Math.round(bitmap.height * scale);
-    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    canvas
+      .getContext("2d")!
+      .drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     bitmap.close();
     const image = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
     if (image.length > 1333336) throw Error("Choose a smaller photo.");
@@ -93,11 +103,13 @@ export default function CustomerIntake({
   async function detectDocument(file: File) {
     try {
       const image = await preparedImage(file);
-      const details = await post("/kyc-captures/read-document", {image_base64: image});
-      if (!details.name || !details.document_number) return false;
+      const details = await post("/kyc-captures/read-document", {
+        image_base64: image,
+      });
+      if (!details.document_check) return false;
       setScanImage(image);
       clearMissing(["document_image", ...Object.keys(details)]);
-      onChange({...value, ...details, document_image: image});
+      onChange({ ...value, ...details, document_image: image });
       return true;
     } catch {
       return false;
@@ -111,14 +123,19 @@ export default function CustomerIntake({
     try {
       const image = await preparedImage(file);
       if (key === "document_image") setScanImage(image);
-      let details = {};
+      let details: Row = {};
       if (key === "document_image") {
         try {
           details = await post("/kyc-captures/read-document", {
             image_base64: image,
           });
+          if (!details.document_check) throw Error("Document unreadable");
         } catch {
-          setError("Photo saved. Please enter or check the details below.");
+          setScanImage("");
+          onChange({ ...value, document_image: "", document_check: "" });
+          throw Error(
+            "Document wasn't captured clearly. Try again with your ID or passport.",
+          );
         }
       }
       onChange({ ...value, ...details, [key]: image });
@@ -134,6 +151,10 @@ export default function CustomerIntake({
     setError("");
     try {
       if (next) {
+        if (step === 0 && !value.document_check)
+          throw Error(
+            "Document wasn't captured clearly. Scan or upload your ID or passport.",
+          );
         const keys =
           step === 0
             ? [
@@ -244,7 +265,11 @@ export default function CustomerIntake({
         <>
           <h2>Customer identity</h2>
           <div className="identity-capture-actions">
-            <div className="intake-choice" role="group" aria-label="Document type">
+            <div
+              className="intake-choice"
+              role="group"
+              aria-label="Document type"
+            >
               <button
                 className={value.document_type !== "Passport" ? "primary" : ""}
                 onClick={() => set("document_type", "National ID")}
@@ -258,15 +283,23 @@ export default function CustomerIntake({
                 Passport
               </button>
             </div>
-            <div className="intake-choice" role="group" aria-label="Document capture">
-              <button onClick={() => {
-                if (value.document_image) {
-                  onChange({...value, document_image: undefined});
-                  setScanImage("");
-                } else {
-                  document.querySelector<HTMLButtonElement>(".camera-expand")?.click();
-                }
-              }}>
+            <div
+              className="intake-choice"
+              role="group"
+              aria-label="Document capture"
+            >
+              <button
+                onClick={() => {
+                  if (value.document_image) {
+                    onChange({ ...value, document_image: undefined });
+                    setScanImage("");
+                  } else {
+                    document
+                      .querySelector<HTMLButtonElement>(".camera-expand")
+                      ?.click();
+                  }
+                }}
+              >
                 <Camera size={18} />
                 Scan document
               </button>
@@ -283,48 +316,51 @@ export default function CustomerIntake({
               onClose={() => setCamera("")}
             />
           )}
-          {loaded && !value.document_image && !reading && camera !== "selfie_image" && (
-            <IntakeCamera
-              embedded
-              onPhoto={(file) => photo(file, "document_image")}
-              onDetect={detectDocument}
-              onCode={() => {}}
-              onClose={() => setCamera("")}
-            />
-          )}
-          {(value.document_image || reading) && (
-          <div
-            data-intake-field="document_image"
-            className={`document-scan ${reading ? "reading" : value.document_image ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
-            aria-live="polite"
-          >
-            {scanImage || value.document_image ? (
-              <img
-                src={
-                  "data:image/jpeg;base64," +
-                  (scanImage || value.document_image)
-                }
-                alt="Captured identity document"
+          {loaded &&
+            !value.document_image &&
+            !reading &&
+            camera !== "selfie_image" && (
+              <IntakeCamera
+                embedded
+                onPhoto={(file) => photo(file, "document_image")}
+                onDetect={detectDocument}
+                onCode={() => {}}
+                onClose={() => setCamera("")}
               />
-            ) : (
-              <div className="scan-document-placeholder">
-                <Camera size={42} />
-                <strong>
-                  {value.document_type === "Passport"
-                    ? "Passport"
-                    : "Emirates ID"}
-                </strong>
-              </div>
             )}
-            <div className="scan-beam" />
-            <span className="scan-status">
-              {reading
-                ? "Reading document…"
-                : value.document_image
-                  ? "Document captured"
-                  : "Position document"}
-            </span>
-          </div>
+          {(value.document_image || reading) && (
+            <div
+              data-intake-field="document_image"
+              className={`document-scan ${reading ? "reading" : value.document_image ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
+              aria-live="polite"
+            >
+              {scanImage || value.document_image ? (
+                <img
+                  src={
+                    "data:image/jpeg;base64," +
+                    (scanImage || value.document_image)
+                  }
+                  alt="Captured identity document"
+                />
+              ) : (
+                <div className="scan-document-placeholder">
+                  <Camera size={42} />
+                  <strong>
+                    {value.document_type === "Passport"
+                      ? "Passport"
+                      : "Emirates ID"}
+                  </strong>
+                </div>
+              )}
+              <div className="scan-beam" />
+              <span className="scan-status">
+                {reading
+                  ? "Reading document…"
+                  : value.document_image
+                    ? "Document captured"
+                    : "Position document"}
+              </span>
+            </div>
           )}
           <div className="intake-photos">
             {[
@@ -424,7 +460,10 @@ export default function CustomerIntake({
                   }}
                 >
                   <strong>{p.name}</strong>
-                  <span>AED {p.monthly_cost}{p.name === "Tourist Prepaid" ? "" : " / month"}</span>
+                  <span>
+                    AED {p.monthly_cost}
+                    {p.name === "Tourist Prepaid" ? "" : " / month"}
+                  </span>
                   {p.promotion && (
                     <small className="plan-details">{p.promotion}</small>
                   )}

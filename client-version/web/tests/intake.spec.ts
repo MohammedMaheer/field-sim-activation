@@ -11,10 +11,10 @@ test("identity and signature gate receipt submission", async ({ page }) => {
     page.getByRole("heading", { name: "Customer identity", exact: true }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Continue", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Required to continue");
+  await expect(page.getByRole("alert")).toContainText("Document wasn");
   await page
     .getByLabel("Identity document", { exact: true })
-    .setInputFiles(path.resolve("tests/fixtures/transaction-sample.png"));
+    .setInputFiles(path.resolve("../mobile/assets/demo/identity.png"));
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(120);
   await page.screenshot({
@@ -27,13 +27,7 @@ test("identity and signature gate receipt submission", async ({ page }) => {
   await page.locator(".identity-capture-actions").scrollIntoViewIfNeeded();
   await page.screenshot({ path: "../output/qa/web-intake-identity-controls-390.png" });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBeTruthy();
-  await page.getByLabel("Full name", { exact: true }).fill("Alex Sample");
-  await page
-    .getByLabel("Document number", { exact: true })
-    .fill("SAMPLE-ID-001");
-  await page.getByLabel("Nationality", { exact: true }).fill("Sample");
-  await page.getByLabel("Date of birth", { exact: true }).fill("1990-01-01");
-  await page.getByLabel("Expiry date", { exact: true }).fill("2030-01-01");
+  await expect(page.getByLabel("Full name", {exact:true})).toHaveValue("Avery Stone");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
     expect(

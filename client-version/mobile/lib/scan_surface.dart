@@ -5,13 +5,14 @@ import 'experience.dart';
 class ScanSurface extends StatefulWidget {
   final String? image;
   final bool reading, illustration;
-  final String document;
+  final String document, readingLabel;
   const ScanSurface({
     super.key,
     this.image,
     this.reading = false,
     this.illustration = false,
     this.document = 'Emirates ID',
+    this.readingLabel = 'Reading document…',
   });
   @override
   State<ScanSurface> createState() => _ScanSurfaceState();
@@ -273,7 +274,7 @@ class _ScanSurfaceState extends State<ScanSurface>
                       complete
                           ? 'Document captured'
                           : widget.reading
-                          ? 'Reading document…'
+                          ? widget.readingLabel
                           : 'Position document',
                       style: const TextStyle(
                         color: Colors.white,

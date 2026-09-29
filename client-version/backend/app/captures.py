@@ -119,6 +119,7 @@ class Intake(BaseModel):
     birth_date: str = Field(default="", max_length=10)
     expiry_date: str = Field(default="", max_length=10)
     document_image: str = Field(default="", max_length=1_333_336)
+    document_check: str = Field(default="", max_length=8192)
     selfie_image: str = Field(default="", max_length=1_333_336)
     sim_type: Literal["PHYSICAL", "ESIM"] = "PHYSICAL"
     sim_identifier: str = Field(default="", max_length=100)
@@ -175,6 +176,38 @@ class Intake(BaseModel):
             raise HTTPException(422, "Check the document expiry and date of birth")
 
 
+DOCUMENT_KEYS = ("name", "document_number", "birth_date", "expiry_date")
+
+
+def document_check(image, fields, user_id):
+    """Bind readable printed identity details to this exact image and account.
+
+    This checks readability and consistency, not document authenticity.
+    """
+    return cipher.encrypt(json.dumps({
+        "image": hashlib.sha256(base64.b64decode(image, validate=True)).hexdigest(),
+        "fields": {key: fields[key] for key in DOCUMENT_KEYS},
+        "user": user_id, "expires": now().timestamp() + 30 * 86400,
+    }).encode()).decode()
+
+
+def check_document_evidence(intake, user):
+    try:
+        proof = json.loads(cipher.decrypt(intake.document_check.encode()))
+        def normalize(value):
+            return re.sub(r"[^\w]", "", str(value)).casefold()
+        valid = (
+            proof["user"] == user.id and proof["expires"] >= now().timestamp()
+            and proof["image"] == hashlib.sha256(base64.b64decode(intake.document_image, validate=True)).hexdigest()
+            and all(normalize(proof["fields"][key]) == normalize(getattr(intake, key)) for key in DOCUMENT_KEYS)
+        )
+        if valid:
+            return
+    except Exception:
+        pass
+    raise HTTPException(422, "Document wasn't captured clearly. Scan or upload your ID or passport again.")
+
+
 class IntakeDraftBody(BaseModel):
     version: int = Field(ge=0)
     data: Intake
@@ -190,6 +223,8 @@ def read_draft(user=Depends(principal), db=Depends(get_db)):
 @router.put("/draft")
 def save_draft(body: IntakeDraftBody, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    if body.data.step > 0:
+        check_document_evidence(body.data, user)
     # Serialize first creation as well as updates for the same user.
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     row = db.scalar(
@@ -217,7 +252,7 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
         result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
     except Exception:
         raise HTTPException(
-            422, "Could not read this image. Enter the details or use a clearer photo."
+            422, "Document wasn't captured clearly. Use a clearer ID or passport photo."
         )
     aliases = {
         "full name": "name",
@@ -291,6 +326,8 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                 except ValueError:
                     pass
         break
+    if all(fields.get(key) for key in DOCUMENT_KEYS):
+        fields["document_check"] = document_check(body.image_base64, fields, user.id)
     return fields
 
 
@@ -316,6 +353,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         raise HTTPException(422, "Complete customer details before uploading payment confirmation")
     if body.intake:
         body.intake.complete()
+        check_document_evidence(body.intake, user)
         plan = db.get(Plan, body.intake.plan_id)
         if not plan or not plan.active:
             raise HTTPException(422, "Select an available plan")
