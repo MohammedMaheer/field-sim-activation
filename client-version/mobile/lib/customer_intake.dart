@@ -160,11 +160,21 @@ class _IntakeCameraState extends State<IntakeCamera>
         );
       }
     } catch (_) {
+      if (!mounted) return;
       scan.stop();
       error = 'Camera unavailable';
     } finally {
       starting = false;
       refresh();
+      // Permission dialogs can pause the app while initialization is running.
+      // Resume the interrupted attempt once the dialog has closed.
+      if (mounted &&
+          !finished &&
+          controller == null &&
+          error == null &&
+          WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+        unawaited(start());
+      }
     }
   }
 
