@@ -55,6 +55,12 @@ void main() {
       data: {'source_reference': 'DEMO-NEW'},
     )).data;
     final id = capture['id'];
+    final visible = (await s.dio.get('/kyc-captures')).data as List;
+    expect(visible.any((row) => row['id'] == id), true);
+    expect(
+      visible.every((row) => row['agent_id'] == s.user!['agent_id']),
+      true,
+    );
     await s.dio.patch(
       '/kyc-captures/$id/rows',
       data: {

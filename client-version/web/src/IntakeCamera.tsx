@@ -169,7 +169,7 @@ export default function IntakeCamera({
       )}
       {ready && !error && onDetect && !selfie && (
         <span className="camera-scan-status" role="status">
-          {checking ? "Reading document…" : "Hold document inside frame"}
+          {checking ? "Reading document…" : "Hold screen inside frame"}
         </span>
       )}
       {error && <p role="alert">{error}</p>}

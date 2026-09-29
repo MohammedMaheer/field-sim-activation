@@ -1713,3 +1713,22 @@ details:not([open]) .receipt-kiosk-assembly .verified-receipt { animation: none;
 }
 
 .sim-notification,.draft-card{display:flex;gap:12px;align-items:center;width:100%;padding:16px;margin-bottom:12px;border-radius:14px;background:#edf5ff;border:1px solid #d7dded;text-align:left}.sim-notification{flex-direction:column;align-items:flex-start}.draft-card button:first-child{display:flex;flex:1;flex-direction:column;gap:6px;align-items:flex-start}.sim-notification small,.draft-card small{color:#526079}
+
+/* Keep evidence comparison above the fold on desktop. */
+.review-page-header { padding:12px 18px; }
+.review-page-header .eyebrow { display:none; }
+.review-page-header h1 { margin:0; font-size:24px; }
+.review-page-header + .capture-workspace-nav { margin-bottom:12px; }
+.review-record-header { padding:12px 16px; gap:12px; }
+.review-record-header .review-kind { display:none; }
+.review-record-header h2 { margin:0 0 4px; font-size:18px; }
+.review-record-header p { margin:0; font-size:14px; }
+.review-record-header small { margin-top:4px; }
+.review-summary { grid-template-columns:repeat(6,minmax(0,1fr)); }
+.review-summary > div { padding:10px 12px; }
+.review-evidence-switch { margin:0; padding:10px 14px; }
+.review-evidence-switch button { min-height:38px; }
+.review-comparison { padding:14px; gap:14px; }
+.review-pane-heading { min-height:66px; padding:12px 14px; }
+@media(max-width:1150px){ .review-summary { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media(max-width:760px){ .review-summary { grid-template-columns:repeat(2,minmax(0,1fr)); } .review-page-header h1{font-size:21px} }

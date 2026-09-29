@@ -8,7 +8,6 @@ import 'package:image/image.dart' as imaging;
 import 'package:relay_agent/customer_intake.dart';
 import 'package:relay_agent/preview_main.dart';
 import 'package:relay_agent/services.dart';
-import 'package:relay_agent/transaction_journey.dart' show SignaturePad;
 
 void main() {
   testWidgets('camera recovery fits a narrow scanner and retries', (t) async {
@@ -82,56 +81,40 @@ void main() {
     expect(find.text('Capture photo'), findsNothing);
   });
 
-  testWidgets('signature sheet exposes reset and confirm actions', (t) async {
-    t.view.physicalSize = const Size(390, 844);
-    t.view.devicePixelRatio = 1;
-    addTearDown(t.view.resetPhysicalSize);
-    addTearDown(t.view.resetDevicePixelRatio);
-    final service = PreviewService(
-      jsonDecode(File('assets/demo/workspace.json').readAsStringSync()),
-    );
-    await t.pumpWidget(
-      ProviderScope(
-        overrides: [serviceProvider.overrideWith((ref) => service)],
-        child: MaterialApp(
-          home: CustomerIntakeScreen(
-            initial: const {
-              'step': 1,
-              'document_check': 'preview-only-document',
-            },
-            onReady: (_) {},
-            onHistory: () {},
+  testWidgets(
+    'order capture replaces barcode and signature in the second step',
+    (t) async {
+      t.view.physicalSize = const Size(320, 640);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.resetPhysicalSize);
+      addTearDown(t.view.resetDevicePixelRatio);
+      final service = PreviewService(
+        jsonDecode(File('assets/demo/workspace.json').readAsStringSync()),
+      );
+      await t.pumpWidget(
+        ProviderScope(
+          overrides: [serviceProvider.overrideWith((ref) => service)],
+          child: MaterialApp(
+            home: CustomerIntakeScreen(
+              initial: const {
+                'step': 1,
+                'document_check': 'preview-only-document',
+              },
+              onReady: (_) {},
+              onHistory: () {},
+            ),
           ),
         ),
-      ),
-    );
-    await t.pump(const Duration(seconds: 1));
-    await t.ensureVisible(find.text('Add customer signature'));
-    await t.tap(find.text('Add customer signature'));
-    await t.pumpAndSettle();
-    expect(find.text('Reset'), findsOneWidget);
-    expect(find.text('Confirm'), findsOneWidget);
-    expect(
-      t
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'))
-          .onPressed,
-      isNull,
-    );
-    await t.drag(find.byType(SignaturePad), const Offset(70, 30));
-    await t.pump();
-    await t.tap(find.text('Reset'));
-    await t.pump();
-    expect(
-      t
-          .widget<FilledButton>(find.widgetWithText(FilledButton, 'Confirm'))
-          .onPressed,
-      isNull,
-    );
-    await t.drag(find.byType(SignaturePad), const Offset(70, 30));
-    await t.pump();
-    await t.tap(find.text('Confirm'));
-    await t.pump();
-    expect(find.text('Signature saved · Edit'), findsOneWidget);
-    expect(t.takeException(), isNull);
-  });
+      );
+      await t.pump(const Duration(seconds: 1));
+      expect(find.text('Scan order'), findsOneWidget);
+      expect(find.text('Upload photo'), findsOneWidget);
+      expect(find.text('Add customer signature'), findsNothing);
+      expect(find.byTooltip('Scan SIM barcode'), findsNothing);
+      await t.tap(find.text('Continue'));
+      await t.pump(const Duration(milliseconds: 400));
+      expect(find.textContaining('order details screen'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    },
+  );
 }

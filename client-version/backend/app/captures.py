@@ -27,6 +27,9 @@ from .db import (
     Activation,
     OrderEvent,
     Sim,
+    Agent,
+    Role,
+    Notification,
     Movement,
     get_db,
     now,
@@ -37,7 +40,13 @@ from .invoices import invoice
 from .capture_ocr import extractor, inspect_image
 
 router = APIRouter(prefix="/api/kyc-captures", tags=["KYC transaction captures"])
-SAMPLE_REFERENCE_PREFIXES = ("DEMO-REVIEW-%", "DEMO-WEB-%", "PAY-REVIEW-%", "PAY-INVOICE-%", "PAY-QA-%")
+SAMPLE_REFERENCE_PREFIXES = (
+    "DEMO-REVIEW-%",
+    "DEMO-WEB-%",
+    "PAY-REVIEW-%",
+    "PAY-INVOICE-%",
+    "PAY-QA-%",
+)
 
 
 def access(db, user, write=False):
@@ -115,16 +124,28 @@ def record(db, row, user, action, request=None, data=None):
 
 
 class Intake(BaseModel):
+    capture_mode: Literal["LEGACY", "SCREENSHOT_ORDER"] = "LEGACY"
     transaction_id: str = Field(default="", max_length=80)
     saved_draft_id: str = Field(default="", max_length=36)
     document_type: Literal["National ID", "Passport"] = "National ID"
     name: str = Field(default="", max_length=120)
+    arabic_name: str = Field(default="", max_length=160)
+    gender: str = Field(default="", max_length=30)
+    issue_date: str = Field(default="", max_length=10)
     document_number: str = Field(default="", max_length=80)
     nationality: str = Field(default="", max_length=80)
     birth_date: str = Field(default="", max_length=10)
     expiry_date: str = Field(default="", max_length=10)
     document_image: str = Field(default="", max_length=1_333_336)
     document_check: str = Field(default="", max_length=8192)
+    order_image: str = Field(default="", max_length=1_333_336)
+    order_check: str = Field(default="", max_length=8192)
+    order_reference: str = Field(default="", max_length=120)
+    product_name: str = Field(default="", max_length=160)
+    package_name: str = Field(default="", max_length=160)
+    monthly_cost: str = Field(default="", max_length=80)
+    prepayment: str = Field(default="", max_length=80)
+    order_fields: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     selfie_image: str = Field(default="", max_length=1_333_336)
     sim_type: Literal["PHYSICAL", "ESIM"] = "PHYSICAL"
     sim_identifier: str = Field(default="", max_length=100)
@@ -141,6 +162,12 @@ class Intake(BaseModel):
     def safe_data(self):
         import math
 
+        if any(
+            set(item) != {"label", "value"} or len(item["label"]) > 120 or len(item["value"]) > 1000
+            for item in self.order_fields
+        ):
+            raise ValueError("Invalid order fields")
+
         if sum(len(stroke) for stroke in self.signature) > 3000 or any(
             not math.isfinite(n) or n < 0 or n > 1
             for stroke in self.signature
@@ -148,7 +175,7 @@ class Intake(BaseModel):
             for n in point
         ):
             raise ValueError("Invalid signature")
-        for image in [self.document_image, self.selfie_image, self.payment_image]:
+        for image in [self.document_image, self.order_image, self.selfie_image, self.payment_image]:
             if image:
                 inspect_image(base64.b64decode(image, validate=True))
         from datetime import date
@@ -168,12 +195,17 @@ class Intake(BaseModel):
             self.birth_date,
             self.expiry_date,
             self.document_image,
-            self.sim_identifier,
             self.plan_id,
             self.msisdn,
         ]
-        if not all(v.strip() for v in required) or sum(len(s) for s in self.signature) < 8:
-            raise HTTPException(422, "Complete customer details, SIM, plan and signature first")
+        if self.capture_mode == "SCREENSHOT_ORDER":
+            required.extend([self.order_image, self.order_reference])
+        else:
+            required.append(self.sim_identifier)
+        if not all(v.strip() for v in required) or (
+            self.capture_mode == "LEGACY" and sum(len(s) for s in self.signature) < 8
+        ):
+            raise HTTPException(422, "Complete customer details and order before payment")
         if (
             date.fromisoformat(self.expiry_date) < date.today()
             or date.fromisoformat(self.birth_date) >= date.today()
@@ -189,28 +221,71 @@ def document_check(image, fields, user_id):
 
     This checks readability and consistency, not document authenticity.
     """
-    return cipher.encrypt(json.dumps({
-        "image": hashlib.sha256(base64.b64decode(image, validate=True)).hexdigest(),
-        "fields": {key: fields[key] for key in DOCUMENT_KEYS},
-        "user": user_id, "expires": now().timestamp() + 30 * 86400,
-    }).encode()).decode()
+    return cipher.encrypt(
+        json.dumps(
+            {
+                "image": hashlib.sha256(base64.b64decode(image, validate=True)).hexdigest(),
+                "fields": {key: fields[key] for key in DOCUMENT_KEYS},
+                "user": user_id,
+                "expires": now().timestamp() + 30 * 86400,
+            }
+        ).encode()
+    ).decode()
 
 
 def check_document_evidence(intake, user):
     try:
         proof = json.loads(cipher.decrypt(intake.document_check.encode()))
+
         def normalize(value):
             return re.sub(r"[^\w]", "", str(value)).casefold()
+
         valid = (
-            proof["user"] == user.id and proof["expires"] >= now().timestamp()
-            and proof["image"] == hashlib.sha256(base64.b64decode(intake.document_image, validate=True)).hexdigest()
-            and all(normalize(proof["fields"][key]) == normalize(getattr(intake, key)) for key in DOCUMENT_KEYS)
+            proof["user"] == user.id
+            and proof["expires"] >= now().timestamp()
+            and proof["image"]
+            == hashlib.sha256(base64.b64decode(intake.document_image, validate=True)).hexdigest()
+            and all(
+                normalize(proof["fields"][key]) == normalize(getattr(intake, key))
+                for key in DOCUMENT_KEYS
+            )
         )
         if valid:
             return
     except Exception:
         pass
-    raise HTTPException(422, "Document wasn't captured clearly. Scan or upload your ID or passport again.")
+    raise HTTPException(
+        422, "Document wasn't captured clearly. Scan or upload your ID or passport again."
+    )
+
+
+ORDER_KEYS = ("order_reference", "msisdn")
+
+
+def check_order_evidence(intake, user):
+    if intake.capture_mode != "SCREENSHOT_ORDER":
+        return
+    try:
+        proof = json.loads(cipher.decrypt(intake.order_check.encode()))
+
+        def normalize(value):
+            return re.sub(r"[^\w]", "", str(value)).casefold()
+
+        valid = (
+            proof["user"] == user.id
+            and proof["expires"] >= now().timestamp()
+            and proof["image"]
+            == hashlib.sha256(base64.b64decode(intake.order_image, validate=True)).hexdigest()
+            and all(
+                normalize(proof["fields"][key]) == normalize(getattr(intake, key))
+                for key in ORDER_KEYS
+            )
+        )
+        if valid:
+            return
+    except Exception:
+        pass
+    raise HTTPException(422, "Order details weren't captured clearly. Scan the order screen again.")
 
 
 class IntakeDraftBody(BaseModel):
@@ -230,6 +305,8 @@ def save_draft(body: IntakeDraftBody, user=Depends(principal), db=Depends(get_db
     access(db, user, True)
     if body.data.step > 0:
         check_document_evidence(body.data, user)
+    if body.data.step > 1:
+        check_order_evidence(body.data, user)
     # Serialize first creation as well as updates for the same user.
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     row = db.scalar(
@@ -253,7 +330,14 @@ class SavedDraftBody(BaseModel):
 @router.get("/saved-drafts")
 def saved_drafts(user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
-    return [{"id": row.id, "created_at": row.created_at, "data": payload(row)} for row in db.scalars(select(SavedCaptureDraft).where(SavedCaptureDraft.creator_id == user.id).order_by(SavedCaptureDraft.created_at.desc()))]
+    return [
+        {"id": row.id, "created_at": row.created_at, "data": payload(row)}
+        for row in db.scalars(
+            select(SavedCaptureDraft)
+            .where(SavedCaptureDraft.creator_id == user.id)
+            .order_by(SavedCaptureDraft.created_at.desc())
+        )
+    ]
 
 
 @router.post("/saved-drafts", status_code=201)
@@ -262,13 +346,21 @@ def save_named_draft(body: SavedDraftBody, user=Depends(principal), db=Depends(g
     db.scalar(select(User).where(User.id == user.id).with_for_update())
     if body.data.step > 0:
         check_document_evidence(body.data, user)
+    if body.data.step > 1:
+        check_order_evidence(body.data, user)
     row = db.get(SavedCaptureDraft, body.data.saved_draft_id) if body.data.saved_draft_id else None
     if row and row.creator_id != user.id:
         raise HTTPException(404, "Draft not found")
     if row is None:
-        count = db.scalar(select(func.count()).select_from(SavedCaptureDraft).where(SavedCaptureDraft.creator_id == user.id))
+        count = db.scalar(
+            select(func.count())
+            .select_from(SavedCaptureDraft)
+            .where(SavedCaptureDraft.creator_id == user.id)
+        )
         if count >= 20:
-            raise HTTPException(409, "Keep up to 20 drafts. Complete or discard an existing draft first.")
+            raise HTTPException(
+                409, "Keep up to 20 drafts. Complete or discard an existing draft first."
+            )
         row = SavedCaptureDraft(id=str(uuid.uuid4()), creator_id=user.id)
         db.add(row)
     content = body.data.model_dump(mode="json")
@@ -285,9 +377,11 @@ def discard_named_draft(draft_id: str, user=Depends(principal), db=Depends(get_d
     if row is None or row.creator_id != user.id:
         raise HTTPException(404, "Draft not found")
     transaction_id = payload(row).get("transaction_id")
-    for progress in db.scalars(select(SimProgress).where(SimProgress.transaction_id == transaction_id).with_for_update()):
+    for progress in db.scalars(
+        select(SimProgress).where(SimProgress.transaction_id == transaction_id).with_for_update()
+    ):
         if not progress.capture_id:
-            assert_agent(db,user,progress.agent_id)
+            assert_agent(db, user, progress.agent_id)
             db.delete(progress)
     db.delete(row)
     db.commit()
@@ -322,6 +416,11 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
         "date of birth": "birth_date",
         "expiry date": "expiry_date",
         "date of expiry": "expiry_date",
+        "issue date": "issue_date",
+        "sex": "gender",
+        "gender": "gender",
+        "arabic name": "arabic_name",
+        "document expiry date": "expiry_date",
     }
     fields = {}
     lines = [str(line.get("text", "")).strip() for line in result.get("lines", [])]
@@ -341,7 +440,15 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
             value = value.strip()
             if key.endswith("date"):
                 parsed = None
-                for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d %B %Y"):
+                for fmt in (
+                    "%Y-%m-%d",
+                    "%d/%m/%Y",
+                    "%d-%m-%Y",
+                    "%d-%b-%Y",
+                    "%d-%B-%Y",
+                    "%d %b %Y",
+                    "%d %B %Y",
+                ):
                     try:
                         parsed = datetime.strptime(value, fmt).date().isoformat()
                         break
@@ -356,6 +463,19 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
             if emirates_id:
                 fields["document_number"] = emirates_id.group().replace(" ", "")
     # Passport machine-readable zones contain the printed name and number.
+    if "name" not in fields:
+        for index, text in enumerate(lines):
+            if not re.search(r"customer\s+details", text, re.I):
+                continue
+            candidates = []
+            for next_line in lines[index + 1 : index + 5]:
+                if re.search(r"document\s+type|document\s+number", next_line, re.I):
+                    break
+                if re.fullmatch(r"[A-Z][A-Z .'-]{3,}", next_line):
+                    candidates.append(next_line)
+            if candidates:
+                fields["name"] = " ".join(candidates)[:120]
+            break
     for index, text in enumerate(lines[:-1]):
         if not re.match(r"^P<[A-Z<]{3,}$", text):
             continue
@@ -373,17 +493,154 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                 if key in fields or not re.fullmatch(r"\d{6}", part):
                     continue
                 year = int(part[:2])
-                year += (1900 if key == "birth_date" and year > datetime.now().year % 100 else 2000)
+                year += 1900 if key == "birth_date" and year > datetime.now().year % 100 else 2000
                 try:
-                    fields[key] = datetime.strptime(f"{year}{part[2:]}", "%Y%m%d").date().isoformat()
+                    fields[key] = (
+                        datetime.strptime(f"{year}{part[2:]}", "%Y%m%d").date().isoformat()
+                    )
                 except ValueError:
                     pass
         break
     identity_text = " ".join(lines).lower()
-    identity_context = bool(re.search(r"identity\s+(?:document|card|number)|emirates\s+id|passport|resident\s+card|national\s+id|^p<", identity_text)) or any(re.search(r"\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b", line) for line in lines)
+    identity_context = bool(
+        re.search(
+            r"identity\s+(?:document|card|number)|emirates\s+id|passport|resident\s+card|national\s+id|document\s+(?:type|number)|customer\s+details|^p<",
+            identity_text,
+        )
+    ) or any(re.search(r"\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b", line) for line in lines)
+    if re.search(r"document\s+type\s*:\s*passport", identity_text):
+        fields["document_type"] = "Passport"
+    elif re.search(r"document\s+type\s*:\s*(?:uae\s+)?identity", identity_text):
+        fields["document_type"] = "National ID"
     if identity_context and all(fields.get(key) for key in DOCUMENT_KEYS):
         fields["document_check"] = document_check(body.image_base64, fields, user.id)
     return fields
+
+
+def order_fields(lines):
+    labels = {
+        "request id": "order_reference",
+        "request number": "order_reference",
+        "order id": "order_reference",
+        "msisdn": "msisdn",
+        "phone number": "msisdn",
+        "mobile number": "msisdn",
+        "product name": "product_name",
+        "package name": "package_name",
+    }
+    values = {}
+    texts = [str(line.get("text", "")).strip() for line in lines]
+    for index, text in enumerate(texts):
+        for label, key in labels.items():
+            match = re.match(rf"^{re.escape(label)}\s*[:：-]?\s*(.*)$", text, re.I)
+            if not match:
+                continue
+            value = match.group(1).strip()
+            if not value and index + 1 < len(texts):
+                value = texts[index + 1]
+            if value and value.casefold() not in labels:
+                values[key] = value[:160]
+            break
+        if re.search(r"(?:basic\s+plan|grand\s+total|monthly)", text, re.I):
+            cost = re.search(r"(?:AED\s*)?(\d+(?:\.\d{1,2})?)\s*(?:AED\s*)?monthly", text, re.I)
+            advance = re.search(
+                r"(?:AED\s*)?(\d+(?:\.\d{1,2})?)\s*(?:AED\s*)?prepayment", text, re.I
+            )
+            if cost:
+                values["monthly_cost"] = cost.group(1)
+            if advance:
+                values["prepayment"] = advance.group(1)
+    if not re.fullmatch(r"[+\d][\d\s-]{7,19}", values.get("msisdn", "")):
+        values.pop("msisdn", None)
+    if not re.fullmatch(r"[\w-]{5,80}", values.get("order_reference", "")):
+        values.pop("order_reference", None)
+    return values
+
+
+@router.post("/read-order")
+def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
+    try:
+        result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
+    except Exception:
+        raise HTTPException(422, "Order screen couldn't be read. Take a clearer photo.")
+    lines = result.get("lines", [])
+    fields = order_fields(lines)
+    text = " ".join(str(line.get("text", "")) for line in lines).lower()
+    if not re.search(r"order\s+details|package\s+name|request\s+id", text) or not all(
+        fields.get(key) for key in (*ORDER_KEYS, "package_name")
+    ):
+        return fields
+    available = db.scalars(select(Plan).where(Plan.active.is_(True))).all()
+    name = re.sub(r"[^\w]", "", fields["package_name"]).casefold()
+    matches = [plan for plan in available if re.sub(r"[^\w]", "", plan.name).casefold() == name]
+    if len(matches) == 1:
+        fields["plan_id"] = matches[0].id
+        fields["plan_name"] = matches[0].name
+    fields["order_check"] = cipher.encrypt(
+        json.dumps(
+            {
+                "image": hashlib.sha256(
+                    base64.b64decode(body.image_base64, validate=True)
+                ).hexdigest(),
+                "fields": {key: fields[key] for key in ORDER_KEYS},
+                "user": user.id,
+                "expires": now().timestamp() + 30 * 86400,
+            }
+        ).encode()
+    ).decode()
+    fields["order_fields"] = [
+        {"label": str(field.get("label", ""))[:120], "value": str(field.get("value", ""))[:1000]}
+        for row in result.get("rows", [])
+        for field in row.get("fields", [])
+    ][:100]
+    return fields
+
+
+@router.get("/leader-confirmations")
+def leader_confirmations(user=Depends(principal), db=Depends(get_db)):
+    if db.get(Role, user.role_id).name != "Team Leader":
+        raise HTTPException(403, "Team leader access required")
+    agents = visible_agents(db, user)
+    rows = db.scalars(
+        select(KycCapture)
+        .where(KycCapture.agent_id.in_(agents), KycCapture.status == "VERIFIED")
+        .order_by(KycCapture.updated_at.desc())
+    ).all()
+    return [view(row) for row in rows if not payload(row).get("leader_confirmation")]
+
+
+class LeaderConfirmation(BaseModel):
+    version: int
+    note: str = Field(min_length=3, max_length=300)
+
+
+@router.post("/{capture_id}/leader-confirm")
+def leader_confirm(
+    capture_id: str,
+    body: LeaderConfirmation,
+    request: Request,
+    user=Depends(principal),
+    db=Depends(get_db),
+):
+    if db.get(Role, user.role_id).name != "Team Leader":
+        raise HTTPException(403, "Team leader access required")
+    row = get_capture(db, user, capture_id, True)
+    version_check(row, body)
+    if row.status != "VERIFIED":
+        raise HTTPException(409, "Backend verification must be completed first")
+    data = payload(row)
+    if data.get("leader_confirmation"):
+        raise HTTPException(409, "Already confirmed")
+    data["leader_confirmation"] = {
+        "user_id": user.id,
+        "name": user.name,
+        "note": body.note.strip(),
+        "at": now().isoformat(),
+    }
+    record(db, row, user, "Branch leader confirmed", request, data)
+    db.commit()
+    return view(row)
 
 
 class CaptureBody(BaseModel):
@@ -409,6 +666,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     if body.intake:
         body.intake.complete()
         check_document_evidence(body.intake, user)
+        check_order_evidence(body.intake, user)
         plan = db.get(Plan, body.intake.plan_id)
         if not plan or not plan.active:
             raise HTTPException(422, "Select an available plan")
@@ -484,13 +742,29 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
             if all(draft_data.get(k) == content["intake"].get(k) for k in keys):
                 store(draft, {})
                 draft.version += 1
-        if body.intake and body.intake.transaction_id:
+        if body.intake and body.intake.transaction_id and body.intake.sim_identifier:
             from .sim_scanning import claim
-            _, progress = claim(db, user, body.intake.sim_identifier, body.intake.transaction_id, body.agent_id, request)
+
+            _, progress = claim(
+                db,
+                user,
+                body.intake.sim_identifier,
+                body.intake.transaction_id,
+                body.agent_id,
+                request,
+            )
             if progress.capture_id and progress.capture_id != row.id:
                 raise HTTPException(409, "This SIM transaction already has a payment submission")
-            progress.capture_id, progress.stage, progress.payment_status = row.id, "PENDING_VERIFICATION", "UPLOADED"
-            saved = db.get(SavedCaptureDraft, body.intake.saved_draft_id) if body.intake.saved_draft_id else None
+            progress.capture_id, progress.stage, progress.payment_status = (
+                row.id,
+                "PENDING_VERIFICATION",
+                "UPLOADED",
+            )
+            saved = (
+                db.get(SavedCaptureDraft, body.intake.saved_draft_id)
+                if body.intake.saved_draft_id
+                else None
+            )
             if saved and saved.creator_id == user.id:
                 db.delete(saved)
         record(db, row, user, "Receipt uploaded", request, content)
@@ -794,10 +1068,24 @@ def review(
         "reviewer": user.name,
         "at": now().isoformat(),
     }
-    progress = db.scalar(select(SimProgress).where(SimProgress.capture_id == row.id).with_for_update())
+    data.pop("leader_confirmation", None)
+    if body.outcome == "VERIFIED":
+        agent = db.get(Agent, row.agent_id)
+        if agent and agent.leader_id:
+            db.add(
+                Notification(
+                    user_id=agent.leader_id,
+                    message=f"Backend verification completed: {row.source_reference[:120]}. Please confirm.",
+                )
+            )
+    progress = db.scalar(
+        select(SimProgress).where(SimProgress.capture_id == row.id).with_for_update()
+    )
     if progress:
         progress.payment_status = "VERIFIED" if body.outcome == "VERIFIED" else "REJECTED"
-        progress.stage = "READY_FOR_ACTIVATION" if body.outcome == "VERIFIED" else "CORRECTION_REQUIRED"
+        progress.stage = (
+            "READY_FOR_ACTIVATION" if body.outcome == "VERIFIED" else "CORRECTION_REQUIRED"
+        )
     row.status, row.reviewer_id = body.outcome, user.id
     record(db, row, user, "KYC Backend " + body.outcome, request, data)
     db.commit()
@@ -987,16 +1275,21 @@ def complete_activation(
     if len(body.reference.strip()) < 3 or len(body.reason.strip()) < 5:
         raise HTTPException(422, "Enter the activation reference and completion note")
     intake = data.get("intake") or {}
-    sim = db.scalar(
-        select(Sim)
-        .where(
-            (Sim.iccid == intake.get("sim_identifier"))
-            | (Sim.serial == intake.get("sim_identifier"))
+    sim = None
+    if intake.get("sim_identifier"):
+        sim = db.scalar(
+            select(Sim)
+            .where(
+                (Sim.iccid == intake["sim_identifier"]) | (Sim.serial == intake["sim_identifier"])
+            )
+            .with_for_update()
         )
-        .with_for_update()
-    )
-    if sim is None:
-        raise HTTPException(409, "SIM not found in inventory. Resolve stock before recording activation.")
+    if sim is None and (
+        intake.get("sim_identifier") or intake.get("capture_mode") != "SCREENSHOT_ORDER"
+    ):
+        raise HTTPException(
+            409, "SIM not found in inventory. Resolve stock before recording activation."
+        )
     if sim and (
         sim.agent_id != row.agent_id
         or sim.status not in {"AVAILABLE", "ASSIGNED TO AGENT", "RESERVED"}
@@ -1065,7 +1358,9 @@ def complete_activation(
             new={"status": sim.status},
             request=request,
         )
-    progress = db.scalar(select(SimProgress).where(SimProgress.capture_id == row.id).with_for_update())
+    progress = db.scalar(
+        select(SimProgress).where(SimProgress.capture_id == row.id).with_for_update()
+    )
     if progress:
         progress.stage = body.outcome
     data["activation"] = {

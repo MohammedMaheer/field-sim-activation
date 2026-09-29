@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
   final intake = row['intake'] as Map? ?? {};
+  final orderMode = intake['capture_mode'] == 'SCREENSHOT_ORDER';
   final date = DateTime.tryParse(
     row['created_at']?.toString() ?? '',
   )?.toLocal();
@@ -46,10 +47,14 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
       ? 'Verified'
       : row['status'] == 'REJECTED'
       ? 'Correction required'
+      : orderMode
+      ? 'Pending backend confirmation'
       : 'Pending verification';
   return {
     'heading': row['status'] == 'REJECTED'
         ? 'Correction required'
+        : orderMode
+        ? 'Payment recorded'
         : 'Payment successful',
     'status': status,
     'sections': [
@@ -70,6 +75,9 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
         'fields': [
           for (final key in {
             'name': 'Customer name',
+            'arabic_name': 'Arabic name',
+            'issue_date': 'Issue date',
+            'gender': 'Gender',
             'document_type': 'Document type',
             'document_number': 'Document number',
             'nationality': 'Nationality',
@@ -85,10 +93,18 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
         'fields': [
           field(
             'SIM type',
-            intake['sim_type'] == 'ESIM' ? 'eSIM' : 'Physical SIM',
+            (intake['sim_identifier'] ?? '').toString().isEmpty
+                ? null
+                : intake['sim_type'] == 'ESIM'
+                ? 'eSIM'
+                : 'Physical SIM',
           ),
           field('SIM serial', intake['sim_identifier']),
           field('Plan', intake['plan_name']),
+          field('Package', intake['package_name']),
+          field('Request ID', intake['order_reference']),
+          field('Monthly charge', intake['monthly_cost']),
+          field('Prepayment on order', intake['prepayment']),
           field(
             'Plan price',
             plan['monthly_cost'] == null
@@ -101,30 +117,46 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
       {
         'title': 'Payment',
         'fields': [
-          field(
-            'Payment reference',
-            find(['payment reference', 'transaction reference', 'reference']) ??
-                row['payment_reference'],
-          ),
-          field(
-            'Total paid',
-            find([
-              'total paid',
-              'amount paid',
-              'total amount',
-              'transaction amount',
-            ]),
-          ),
-          field('Payment method', find(['payment method', 'method'])),
-          field('VAT', find(['vat', 'vat amount', 'tax'])),
+          if (orderMode) ...[
+            field('Request ID', intake['order_reference']),
+            field('Agent payment record', 'Uploaded'),
+            field('Backend confirmation', status),
+          ] else ...[
+            field(
+              'Payment reference',
+              find([
+                    'payment reference',
+                    'transaction reference',
+                    'reference',
+                  ]) ??
+                  row['payment_reference'],
+            ),
+            field(
+              'Total paid',
+              find([
+                'total paid',
+                'amount paid',
+                'total amount',
+                'transaction amount',
+              ]),
+            ),
+            field('Payment method', find(['payment method', 'method'])),
+            field('VAT', find(['vat', 'vat amount', 'tax'])),
+          ],
         ],
       },
       {
         'title': 'Records',
         'fields': [
           field(
-            'Identity document',
+            intake['capture_mode'] == 'SCREENSHOT_ORDER'
+                ? 'Customer details screen'
+                : 'Identity document',
             (intake['document_image'] ?? '').isNotEmpty ? 'Captured' : null,
+          ),
+          field(
+            'Order details screen',
+            (intake['order_image'] ?? '').isNotEmpty ? 'Captured' : null,
           ),
           field(
             'Selfie',
@@ -136,6 +168,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
           ),
           field('Payment confirmation', 'Uploaded'),
           field('Verified by', row['review']?['reviewer']),
+          field('Branch confirmed by', row['leader_confirmation']?['name']),
           field('Activation reference', row['activation']?['reference']),
         ],
       },
@@ -159,8 +192,14 @@ class PaymentInvoiceSections extends StatefulWidget {
 class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
   bool expanded = false;
 
-  Widget section(Map section) => Padding(
-    padding: const EdgeInsets.only(top: 6),
+  Widget section(Map section) => Container(
+    margin: const EdgeInsets.only(top: 7),
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    decoration: BoxDecoration(
+      color: const Color(0xfffafbfe),
+      border: Border.all(color: const Color(0xffdce2ed)),
+      borderRadius: BorderRadius.circular(9),
+    ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -174,8 +213,11 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
         ),
         const SizedBox(height: 3),
         for (final field in section['fields'])
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: const BoxDecoration(
+              border: Border(bottom: BorderSide(color: Color(0xffe7ebf2))),
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -207,7 +249,6 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
               ],
             ),
           ),
-        const Divider(height: 8),
       ],
     ),
   );
@@ -218,8 +259,18 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
     const primary = <String, List<String>>{
       'Invoice': ['Invoice number', 'Date'],
       'Customer': ['Customer name', 'Document number', 'Phone number'],
-      'SIM & plan': ['SIM type', 'SIM serial', 'Plan', 'Plan price'],
-      'Payment': ['Payment reference', 'Total paid'],
+      'SIM & plan': [
+        'Request ID',
+        'Plan',
+        'Monthly charge',
+        'Prepayment on order',
+      ],
+      'Payment': [
+        'Payment reference',
+        'Total paid',
+        'Agent payment record',
+        'Backend confirmation',
+      ],
     };
     final main = <Map>[];
     final otherFields = <dynamic>[];

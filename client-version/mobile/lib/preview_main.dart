@@ -9,19 +9,37 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'main.dart' as app;
 import 'services.dart';
 
-// Separate build entry point. Only the public plan catalog uses the hosted API.
+// Separate build entry point. All signed-in actions use the shared hosted API.
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SemanticsBinding.instance.ensureSemantics();
-  final data =
-      jsonDecode(await rootBundle.loadString('assets/demo/workspace.json'))
-          as Json;
   runApp(
     ProviderScope(
-      overrides: [serviceProvider.overrideWith((ref) => PreviewService(data))],
+      overrides: [
+        serviceProvider.overrideWith((ref) => SharedPreviewService()),
+      ],
       child: const app.RelayApp(),
     ),
   );
+}
+
+// The phone demo signs in normally and uses the same role-scoped backend.
+// Only its capture shortcuts use synthetic images; no credentials are embedded.
+class SharedPreviewService extends RelayService {
+  SharedPreviewService() {
+    dio.options.baseUrl = Uri.base.resolve('/api').toString();
+  }
+  @override
+  bool get isPreview => true;
+  @override
+  Future<Uint8List> previewIdentity() async =>
+      (await rootBundle.load('assets/demo/identity.png')).buffer.asUint8List();
+  @override
+  Future<Uint8List> previewOrder() async =>
+      (await rootBundle.load('assets/demo/order.png')).buffer.asUint8List();
+  @override
+  Future<Uint8List> previewReceipt() async =>
+      (await rootBundle.load('assets/demo/payment.png')).buffer.asUint8List();
 }
 
 Uint8List previewReceiptPdf(Json row) {
@@ -36,7 +54,7 @@ Uint8List previewReceiptPdf(Json row) {
         ? 'RELAY | PAYMENT INVOICE'
         : 'RELAY | ACTIVATION RECEIPT',
     row['document_kind'] == 'PAYMENT_CONFIRMATION'
-        ? 'PAYMENT SUCCESSFUL - ${paymentInvoice(row)['status']}'
+        ? "${paymentInvoice(row)['heading'].toString().toUpperCase()} - ${paymentInvoice(row)['status']}"
         : status,
     'Reference: ${row['source_reference']}',
     'Customer: ${intake['name'] ?? ''}',
@@ -199,6 +217,9 @@ class PreviewService extends RelayService {
   @override
   Future<Uint8List> previewIdentity() async =>
       (await rootBundle.load('assets/demo/identity.png')).buffer.asUint8List();
+  @override
+  Future<Uint8List> previewOrder() async =>
+      (await rootBundle.load('assets/demo/order.png')).buffer.asUint8List();
   Future<dynamic> dispatch(RequestOptions o) async {
     await Future<void>.delayed(const Duration(milliseconds: 180));
     final path = o.path;
@@ -281,6 +302,23 @@ class PreviewService extends RelayService {
         'expiry_date': '2030-12-31',
       };
     }
+    if (path == '/kyc-captures/read-order') {
+      final catalog = data['/resources/plans'] as List? ?? [];
+      final plan = catalog.isNotEmpty
+          ? catalog.first as Map
+          : <String, dynamic>{};
+      return {
+        'order_reference': 'SAMPLE-REQ-1001',
+        'msisdn': '0500000000',
+        'product_name': 'Subscriber plan',
+        'package_name': plan['name'] ?? 'Connect Plus',
+        'monthly_cost': '${plan['monthly_cost'] ?? 150}',
+        'prepayment': '0',
+        'plan_id': plan['id'] ?? 'sample-plan',
+        'plan_name': plan['name'] ?? 'Connect Plus',
+        'order_check': 'preview-only-order',
+      };
+    }
     if (path == '/resources/plans') {
       try {
         final url = Uri.base.resolve('/api/public/plans').toString();
@@ -303,6 +341,7 @@ class PreviewService extends RelayService {
           final template = jsonDecode(jsonEncode(captures.last)) as Json;
           template.addAll({
             'id': 'capture-${DateTime.now().microsecondsSinceEpoch}',
+            'agent_id': user?['agent_id'],
             'source_reference': body['source_reference'],
             'status': 'SUBMITTED',
             'version': 1,
@@ -342,10 +381,15 @@ class PreviewService extends RelayService {
           }
           return template;
         }
-        return captures;
+        return captures
+            .where((row) => row['agent_id'] == user?['agent_id'])
+            .toList();
       }
       final parts = path.split('/');
       final row = captures.firstWhere((r) => r['id'] == parts[2]);
+      if (row['agent_id'] != user?['agent_id']) {
+        throw StateError('Transaction unavailable');
+      }
       if (parts.length > 3) {
         final action = parts[3];
         if (action == 'original') return await previewReceipt();

@@ -1,4 +1,4 @@
-"""Build the isolated, credential-free Flutter browser demo."""
+"""Build the shared-backend, signed-in Flutter browser demo."""
 from pathlib import Path
 import os, shutil, subprocess
 root = Path(__file__).resolve().parents[1]

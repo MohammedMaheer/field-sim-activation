@@ -1,4 +1,5 @@
 import 'saved_drafts.dart';
+import 'dart:async';
 import 'kyc_capture.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,6 +23,25 @@ final router = GoRouter(
     GoRoute(path: '/', builder: (c, s) => const Gate()),
     GoRoute(path: '/drafts', builder: (c, s) => const SavedDraftsScreen()),
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
+    GoRoute(
+      path: '/transactions',
+      builder: (c, s) =>
+          TransactionsScreen(view: s.uri.queryParameters['view'] ?? 'all'),
+    ),
+    GoRoute(
+      path: '/transaction/:id',
+      builder: (c, s) => KycCaptureScreen(captureId: s.pathParameters['id']),
+    ),
+    GoRoute(
+      path: '/stock',
+      builder: (c, s) => Scaffold(
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('Inventory'),
+        ),
+        body: const StockScreen(),
+      ),
+    ),
     GoRoute(
       path: '/screenshot-capture',
       builder: (c, s) => KycCaptureScreen(
@@ -266,25 +286,21 @@ class _LoginState extends ConsumerState<LoginScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  ref.read(serviceProvider).isPreview
-                      ? 'Open your workspace to continue.'
-                      : 'Sign in to your field workspace.',
+                  'Sign in to your field workspace.',
                   style: TextStyle(color: muted),
                 ),
                 const SizedBox(height: 32),
-                if (!ref.read(serviceProvider).isPreview)
-                  TextField(
-                    controller: email,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(labelText: 'Work email'),
-                  ),
+                TextField(
+                  controller: email,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: const InputDecoration(labelText: 'Work email'),
+                ),
                 const SizedBox(height: 18),
-                if (!ref.read(serviceProvider).isPreview)
-                  TextField(
-                    controller: password,
-                    obscureText: true,
-                    decoration: const InputDecoration(labelText: 'Password'),
-                  ),
+                TextField(
+                  controller: password,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Password'),
+                ),
                 const SizedBox(height: 22),
                 if (error != null)
                   Padding(
@@ -311,13 +327,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                             if (mounted) setState(() => busy = false);
                           }
                         },
-                  child: Text(
-                    busy
-                        ? 'Signing in…'
-                        : ref.read(serviceProvider).isPreview
-                        ? 'Open workspace'
-                        : 'Sign in to Relay',
-                  ),
+                  child: Text(busy ? 'Signing in…' : 'Sign in to Relay'),
                 ),
                 const SizedBox(height: 28),
                 const InfoCard(
@@ -410,7 +420,9 @@ class _FieldShellState extends ConsumerState<FieldShell>
                         opacity: tab == i ? 1 : 0,
                         duration: motionDuration(context),
                         child: [
-                          const HomeScreen(),
+                          s.user?['role'] == 'Team Leader'
+                              ? const LeaderConfirmationsScreen()
+                              : const HomeScreen(),
                           const SizedBox.shrink(),
                           const OrdersScreen(),
                           const StockScreen(),
@@ -432,7 +444,9 @@ class _FieldShellState extends ConsumerState<FieldShell>
           onDestinationSelected: (i) {
             if (i == 1) {
               ScaffoldMessenger.of(context).removeCurrentSnackBar();
-              context.push('/ekyc');
+              context.push(
+                s.user?['role'] == 'Team Leader' ? '/transactions' : '/ekyc',
+              );
             } else {
               setState(() {
                 tab = i;
@@ -440,7 +454,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
               });
             }
           },
-          destinations: const [
+          destinations: [
             NavigationDestination(
               icon: Icon(Icons.grid_view_outlined, color: RelayPalette.plum),
               selectedIcon: Icon(
@@ -451,7 +465,9 @@ class _FieldShellState extends ConsumerState<FieldShell>
             ),
             NavigationDestination(
               icon: Icon(Icons.add_circle_outline, color: RelayPalette.brand),
-              label: 'Capture',
+              label: s.user?['role'] == 'Team Leader'
+                  ? 'History'
+                  : 'Capture',
             ),
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF98610F)),
@@ -473,6 +489,153 @@ class _FieldShellState extends ConsumerState<FieldShell>
       ),
     );
   }
+}
+
+class LeaderConfirmationsScreen extends ConsumerStatefulWidget {
+  const LeaderConfirmationsScreen({super.key});
+  @override
+  ConsumerState<LeaderConfirmationsScreen> createState() =>
+      _LeaderConfirmationsState();
+}
+
+class _LeaderConfirmationsState
+    extends ConsumerState<LeaderConfirmationsScreen> {
+  List<Json> rows = [];
+  bool busy = true;
+  String? error;
+  Timer? refreshTimer;
+  @override
+  void initState() {
+    super.initState();
+    load();
+    refreshTimer = Timer.periodic(const Duration(seconds: 10), (_) => load());
+  }
+
+  Future<void> load() async {
+    try {
+      final r = await ref
+          .read(serviceProvider)
+          .dio
+          .get('/kyc-captures/leader-confirmations');
+      if (mounted) {
+        setState(() {
+          rows = (r.data as List)
+              .map((r) => Map<String, dynamic>.from(r))
+              .toList();
+          busy = false;
+          error = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          error = friendlyError(e);
+          busy = false;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: load,
+    child: ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        const Text(
+          'Branch confirmations',
+          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 12),
+        if (busy) const LinearProgressIndicator(),
+        if (error != null)
+          Text(error!, style: const TextStyle(color: Colors.red)),
+        if (!busy && rows.isEmpty)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(18),
+              child: Text('No confirmations awaiting review'),
+            ),
+          ),
+        for (final row in rows)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Backend verified · Please confirm',
+                      style: TextStyle(
+                        color: green,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      '${row['intake']?['name'] ?? 'Customer'}',
+                      style: const TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${row['source_reference']} · ${row['intake']?['plan_name'] ?? 'Not recorded'}',
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () =>
+                                context.push('/transaction/${row['id']}'),
+                            child: const Text('View details'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () async {
+                              try {
+                                await ref
+                                    .read(serviceProvider)
+                                    .dio
+                                    .post(
+                                      '/kyc-captures/${row['id']}/leader-confirm',
+                                      data: {
+                                        'version': row['version'],
+                                        'note':
+                                            'Branch team leader reviewed and confirmed',
+                                      },
+                                    );
+                                await load();
+                              } catch (e) {
+                                if (mounted) {
+                                  setState(() => error = friendlyError(e));
+                                }
+                              }
+                            },
+                            child: const Text('Confirm'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    ),
+  );
 }
 
 class HomeScreen extends ConsumerWidget {
@@ -596,39 +759,50 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEBF1FE),
+              Material(
+                color: const Color(0xFFEBF1FE),
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  onTap: () => context.push('/stock'),
                   borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.account_tree_outlined,
-                      size: 20,
-                      color: Color(0xFF4783CA),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${a['branch'] ?? 'Assigned branch'}',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                            ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.account_tree_outlined,
+                          size: 20,
+                          color: Color(0xFF4783CA),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${a['branch'] ?? 'Assigned branch'}',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                '${a['stock'] ?? 0} SIMs available',
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  color: muted,
+                                ),
+                              ),
+                            ],
                           ),
-                          Text(
-                            '${a['stock'] ?? 0} SIMs available',
-                            style: const TextStyle(fontSize: 14, color: muted),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right,
+                          color: Color(0xFF4783CA),
+                        ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
               const SizedBox(height: 20),
@@ -658,21 +832,35 @@ class HomeScreen extends ConsumerWidget {
               ),
               if ((d['kyc_pending_review'] as num) > 0) ...[
                 const SizedBox(height: 10),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 13,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF3DF),
+                Material(
+                  color: const Color(0xFFFFF3DF),
+                  borderRadius: BorderRadius.circular(10),
+                  child: InkWell(
+                    onTap: () => context.push('/transactions?view=awaiting'),
                     borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    '${d['kyc_pending_review']} transactions awaiting review',
-                    style: const TextStyle(
-                      color: Color(0xFF855416),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 13,
+                        vertical: 10,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${d['kyc_pending_review']} ${d['kyc_pending_review'] == 1 ? 'transaction' : 'transactions'} awaiting review',
+                              style: const TextStyle(
+                                color: Color(0xFF855416),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const Icon(
+                            Icons.chevron_right,
+                            color: Color(0xFF855416),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -685,7 +873,7 @@ class HomeScreen extends ConsumerWidget {
                       'Transactions today',
                       '${d['kyc_today']}',
                       Icons.document_scanner_outlined,
-                      onTap: () => context.push('/ekyc'),
+                      onTap: () => context.push('/transactions?view=today'),
                       accent: green,
                     ),
                   ),
@@ -695,7 +883,7 @@ class HomeScreen extends ConsumerWidget {
                       'Awaiting verification',
                       '${d['kyc_pending_review']}',
                       Icons.fact_check_outlined,
-                      onTap: () => context.push('/ekyc'),
+                      onTap: () => context.push('/transactions?view=awaiting'),
                       accent: const Color(0xFF35699C),
                     ),
                   ),
@@ -703,59 +891,73 @@ class HomeScreen extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
               Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(18),
-                  child: Column(
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Target achievement',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: muted,
-                              fontWeight: FontWeight.w600,
+                child: InkWell(
+                  onTap: () => context.push('/reports'),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Padding(
+                    padding: const EdgeInsets.all(18),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Target achievement',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  color: muted,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ),
-                          ),
-                          Text(
-                            '${d['achievement']}%',
-                            style: const TextStyle(
-                              color: burgundy,
-                              fontWeight: FontWeight.bold,
+                            Text(
+                              '${d['achievement']}%',
+                              style: const TextStyle(
+                                color: burgundy,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 13),
-                      LinearProgressIndicator(
-                        value: ((d['achievement'] as num) / 100).clamp(
-                          0.0,
-                          1.0,
+                            IconButton(
+                              tooltip: 'View daily report',
+                              onPressed: () => context.push('/reports'),
+                              icon: const Icon(Icons.chevron_right),
+                            ),
+                          ],
                         ),
-                        minHeight: 8,
-                        borderRadius: BorderRadius.circular(4),
-                        backgroundColor: const Color(0xFFF2E8EE),
-                      ),
-                      const SizedBox(height: 17),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            '${d['aht']} min handling',
-                            style: const TextStyle(fontSize: 13, color: muted),
+                        const SizedBox(height: 13),
+                        LinearProgressIndicator(
+                          value: ((d['achievement'] as num) / 100).clamp(
+                            0.0,
+                            1.0,
                           ),
-                          Text(
-                            '${d['ekyc']}% eKYC pass',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              color: green,
-                              fontWeight: FontWeight.w600,
+                          minHeight: 8,
+                          borderRadius: BorderRadius.circular(4),
+                          backgroundColor: const Color(0xFFF2E8EE),
+                        ),
+                        const SizedBox(height: 17),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              '${d['aht']} min handling',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: muted,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                            Text(
+                              '${d['ekyc']}% eKYC pass',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: green,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -824,6 +1026,201 @@ class HomeScreen extends ConsumerWidget {
       },
     );
   }
+}
+
+class TransactionsScreen extends ConsumerStatefulWidget {
+  final String view;
+  const TransactionsScreen({super.key, this.view = 'all'});
+
+  @override
+  ConsumerState<TransactionsScreen> createState() => _TransactionsScreenState();
+}
+
+class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
+  late String view;
+  late Future<List<Json>> history;
+
+  @override
+  void initState() {
+    super.initState();
+    view = {'all', 'today', 'awaiting'}.contains(widget.view)
+        ? widget.view
+        : 'all';
+    history = load();
+  }
+
+  Future<List<Json>> load() async {
+    final result = await ref.read(serviceProvider).dio.get('/kyc-captures');
+    return (result.data as List)
+        .map((row) => Map<String, dynamic>.from(row))
+        .toList();
+  }
+
+  Future<void> refresh() async {
+    final next = load();
+    setState(() => history = next);
+    await next;
+  }
+
+  bool createdToday(Json row) {
+    final raw = row['created_at']?.toString() ?? '';
+    final dated = DateTime.tryParse(
+      raw.endsWith('Z') || RegExp(r'[+-]\d\d:\d\d$').hasMatch(raw)
+          ? raw
+          : '${raw}Z',
+    );
+    if (dated == null) return false;
+    final day = dated.toUtc().add(const Duration(hours: 4));
+    final today = DateTime.now().toUtc().add(const Duration(hours: 4));
+    return day.year == today.year &&
+        day.month == today.month &&
+        day.day == today.day;
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      leading: const WorkspaceBackButton(),
+      title: const Text('Transactions'),
+    ),
+    body: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final option in const [
+                  ('all', 'All'),
+                  ('today', 'Today'),
+                  ('awaiting', 'Awaiting review'),
+                ])
+                  ChoiceChip(
+                    label: Text(option.$2),
+                    selected: view == option.$1,
+                    onSelected: (_) => setState(() => view = option.$1),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: FutureBuilder<List<Json>>(
+            future: history,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState != ConnectionState.done) {
+                return const LoadingCards();
+              }
+              if (snapshot.hasError) {
+                return RetryView(error: snapshot.error!, onRetry: refresh);
+              }
+              final rows = (snapshot.data ?? [])
+                  .where(
+                    (row) =>
+                        view == 'all' ||
+                        (view == 'today' && createdToday(row)) ||
+                        (view == 'awaiting' && row['status'] == 'SUBMITTED'),
+                  )
+                  .toList();
+              return RefreshIndicator(
+                onRefresh: refresh,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                  children: rows.isEmpty
+                      ? [
+                          const SizedBox(height: 120),
+                          EmptyView(
+                            view == 'awaiting'
+                                ? 'No transactions awaiting review'
+                                : view == 'today'
+                                ? 'No transactions today'
+                                : 'No transactions yet',
+                          ),
+                        ]
+                      : rows.map((row) {
+                          final status = row['status']?.toString() ?? 'PENDING';
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: Card(
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(16),
+                                onTap: () => context.push(
+                                  '/transaction/${Uri.encodeComponent(row['id'].toString())}',
+                                ),
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.receipt_long_outlined,
+                                        color: burgundy,
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              row['source_reference']
+                                                      ?.toString() ??
+                                                  'Transaction',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 3),
+                                            Text(
+                                              row['document_kind'] ==
+                                                      'PAYMENT_CONFIRMATION'
+                                                  ? 'Payment confirmation'
+                                                  : 'Captured transaction',
+                                              style: const TextStyle(
+                                                color: muted,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 4),
+                                            Text(
+                                              status == 'SUBMITTED'
+                                                  ? 'Awaiting review'
+                                                  : status == 'VERIFIED'
+                                                  ? 'Verified'
+                                                  : status == 'REJECTED'
+                                                  ? 'Needs correction'
+                                                  : status.replaceAll('_', ' '),
+                                              style: const TextStyle(
+                                                color: burgundy,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const Icon(
+                                        Icons.chevron_right,
+                                        color: muted,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class IncentivesScreen extends ConsumerWidget {

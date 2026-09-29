@@ -2,8 +2,7 @@ import IntakeCamera from "./IntakeCamera";
 import { useEffect, useState } from "react";
 import { api, post, Row } from "./api";
 import { useResource } from "./App";
-import { Signature } from "./TransactionJourney";
-import { Camera, ArrowLeft, ArrowRight, Check, ScanLine } from "lucide-react";
+import { Camera, ArrowLeft, ArrowRight } from "lucide-react";
 export default function CustomerIntake({
   value,
   onChange,
@@ -26,7 +25,9 @@ export default function CustomerIntake({
     nationality: "nationality",
     birth_date: "date of birth",
     expiry_date: "document expiry date",
-    document_image: "ID or passport photo",
+    document_image: "customer details screen",
+    order_image: "order details screen",
+    order_reference: "request ID",
     sim_identifier: "SIM barcode",
     plan_id: "subscriber plan",
     msisdn: "phone number",
@@ -42,7 +43,7 @@ export default function CustomerIntake({
     api("/kyc-captures/draft")
       .then((r) => {
         if (live) {
-          const restored: Row = { ...value, transaction_id: value.transaction_id || crypto.randomUUID() };
+          const restored: Row = { ...value, capture_mode: value.capture_mode || "SCREENSHOT_ORDER", transaction_id: value.transaction_id || crypto.randomUUID() };
           if (!restored.document_check) {
             restored.document_image = "";
             restored.step = 0;
@@ -117,26 +118,37 @@ export default function CustomerIntake({
       return false;
     }
   }
+  async function detectOrder(file: File) {
+    try {
+      const image = await preparedImage(file);
+      const details = await post("/kyc-captures/read-order", { image_base64: image });
+      if (!details.order_check) return false;
+      setScanImage(image);
+      clearMissing(["order_image", ...Object.keys(details)]);
+      onChange({ ...value, ...details, order_image: image, capture_mode: "SCREENSHOT_ORDER" });
+      return true;
+    } catch { return false; }
+  }
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
     setBusy(true);
-    setReading(key === "document_image");
+    setReading(key === "document_image" || key === "order_image");
     setError("");
     try {
       const image = await preparedImage(file);
-      if (key === "document_image") setScanImage(image);
+      if (key === "document_image" || key === "order_image") setScanImage(image);
       let details: Row = {};
-      if (key === "document_image") {
+      if (key === "document_image" || key === "order_image") {
         try {
-          details = await post("/kyc-captures/read-document", {
+          details = await post(key === "order_image" ? "/kyc-captures/read-order" : "/kyc-captures/read-document", {
             image_base64: image,
           });
-          if (!details.document_check) throw Error("Document unreadable");
+          if (!details[key === "order_image" ? "order_check" : "document_check"]) throw Error("Screen unreadable");
         } catch {
           setScanImage("");
-          onChange({ ...value, document_image: "", document_check: "" });
+          onChange({ ...value, [key]: "", [key === "order_image" ? "order_check" : "document_check"]: "" });
           throw Error(
-            "Document wasn't captured clearly. Try again with your ID or passport.",
+            key === "order_image" ? "Order details weren't captured clearly. Try again." : "Customer details weren't captured clearly. Try again.",
           );
         }
       }
@@ -155,8 +167,10 @@ export default function CustomerIntake({
       if (next) {
         if (step === 0 && !value.document_check)
           throw Error(
-            "Document wasn't captured clearly. Scan or upload your ID or passport.",
+            "Customer details weren't captured clearly. Scan or upload the checkout screen.",
           );
+        if (step === 1 && !value.order_check)
+          throw Error("Order details weren't captured clearly. Scan or upload the order screen.");
         const keys =
           step === 0
             ? [
@@ -167,10 +181,8 @@ export default function CustomerIntake({
                 "expiry_date",
                 "document_image",
               ]
-            : ["sim_identifier", "plan_id", "msisdn"];
+            : ["order_image", "order_reference", "plan_id", "msisdn"];
         const absent = keys.filter((k) => !String(value[k] || "").trim());
-        if (step === 1 && (value.signature || []).flat().length < 8)
-          absent.push("signature");
         if (absent.length) {
           setMissing(absent);
           const labels: Record<string, string> = {
@@ -179,11 +191,11 @@ export default function CustomerIntake({
             nationality: "nationality",
             birth_date: "date of birth",
             expiry_date: "document expiry date",
-            document_image: "ID or passport photo",
-            sim_identifier: "SIM barcode",
+            document_image: "customer details screen",
+            order_image: "order details screen",
+            order_reference: "request ID",
             plan_id: "subscriber plan",
             msisdn: "phone number",
-            signature: "customer signature",
           };
           setError(
             `Required to continue: ${absent.map((key) => labels[key] || key).join(", ")}.`,
@@ -206,11 +218,9 @@ export default function CustomerIntake({
             value.birth_date >= new Date().toISOString().slice(0, 10))
         )
           throw Error("Check date of birth and document expiry.");
-        if (step === 1 && (value.signature || []).flat().length < 8)
-          throw Error("Please add the customer signature.");
       }
-      const scan = next && step === 1 ? await post('/inventory/scan',{code:value.sim_identifier,transaction_id:value.transaction_id,agent_id:value.agent_id}) : {};
-      const data = { ...value, ...scan, step: next ? step + 1 : step };
+      const scan = next && step === 1 && value.sim_identifier ? await post('/inventory/scan',{code:value.sim_identifier,transaction_id:value.transaction_id,agent_id:value.agent_id}) : {};
+      const data = { ...value, capture_mode: "SCREENSHOT_ORDER", ...scan, step: next ? step + 1 : step };
       const r = await api("/kyc-captures/draft", {
         method: "PUT",
         body: JSON.stringify({ version, data }),
@@ -253,7 +263,7 @@ export default function CustomerIntake({
   return (
     <section className="customer-intake">
       <ol className="transaction-stages">
-        {["Identity", "SIM & plan", "Payment"].map((s, i) => (
+        {["Customer", "Order & plan", "Payment"].map((s, i) => (
           <li
             key={s}
             className={i === step ? "active" : i < step ? "complete" : ""}
@@ -270,26 +280,8 @@ export default function CustomerIntake({
       )}
       {step === 0 ? (
         <>
-          <h2>Customer identity</h2>
+          <h2>Customer details</h2>
           <div className="identity-capture-actions">
-            <div
-              className="intake-choice"
-              role="group"
-              aria-label="Document type"
-            >
-              <button
-                className={value.document_type !== "Passport" ? "primary" : ""}
-                onClick={() => set("document_type", "National ID")}
-              >
-                Emirates ID
-              </button>
-              <button
-                className={value.document_type === "Passport" ? "primary" : ""}
-                onClick={() => set("document_type", "Passport")}
-              >
-                Passport
-              </button>
-            </div>
             <div
               className="intake-choice"
               role="group"
@@ -308,7 +300,7 @@ export default function CustomerIntake({
                 }}
               >
                 <Camera size={18} />
-                Scan document
+                Scan details
               </button>
               <button onClick={() => setCamera("selfie_image")}>
                 Selfie · optional
@@ -347,31 +339,27 @@ export default function CustomerIntake({
                     "data:image/jpeg;base64," +
                     (scanImage || value.document_image)
                   }
-                  alt="Captured identity document"
+                  alt="Captured customer details"
                 />
               ) : (
                 <div className="scan-document-placeholder">
                   <Camera size={42} />
-                  <strong>
-                    {value.document_type === "Passport"
-                      ? "Passport"
-                      : "Emirates ID"}
-                  </strong>
+                  <strong>Customer details</strong>
                 </div>
               )}
               <div className="scan-beam" />
               <span className="scan-status">
                 {reading
-                  ? "Reading document…"
+                  ? "Reading details…"
                   : value.document_image
-                    ? "Document captured"
-                    : "Position document"}
+                    ? "Details captured"
+                    : "Position customer screen"}
               </span>
             </div>
           )}
           <div className="intake-photos">
             {[
-              ["document_image", "Identity document"],
+              ["document_image", "Customer details screen"],
               ["selfie_image", "Selfie · optional"],
             ].map(([key, label]) => (
               <label key={key} className="intake-photo">
@@ -395,108 +383,37 @@ export default function CustomerIntake({
               </label>
             ))}
           </div>
-          <div className="intake-grid">
+          {<div className="intake-grid">
             {input("name", "Full name")}
             {input("document_number", "Document number", "text", 80)}
             {input("nationality", "Nationality", "text", 80)}
             {input("birth_date", "Date of birth", "date")}
             {input("expiry_date", "Expiry date", "date")}
-          </div>
+          </div>}
         </>
       ) : (
         <>
-          <h2>SIM & plan</h2>
-          {camera === "barcode" && (
-            <IntakeCamera
-              barcode
-              onPhoto={() => {}}
-              onCode={async code => {
-                try { const agent = value.agent_id || (await api('/auth/me')).agent_id;
-                  const result=await post('/inventory/scan',{code, transaction_id:value.transaction_id,agent_id:agent});
-                  onChange({...value,...result});setError('');
-                } catch(e:any) {setError(e.message);}
-              }}
-              onClose={() => setCamera("")}
-            />
-          )}
-          <div className="intake-choice">
-            <button
-              className={value.sim_type !== "ESIM" ? "primary" : ""}
-              onClick={() => set("sim_type", "PHYSICAL")}
-            >
-              Physical SIM
-            </button>
-            <button
-              className={value.sim_type === "ESIM" ? "primary" : ""}
-              onClick={() => set("sim_type", "ESIM")}
-            >
-              eSIM
-            </button>
-          </div>
-          <div className="intake-grid">
-            <div className="intake-serial-control">
-              {input(
-                "sim_identifier",
-                value.sim_type === "ESIM"
-                  ? "eSIM identifier"
-                  : "SIM serial / ICCID",
-                "text",
-                100,
-              )}
-              <button
-                type="button"
-                className="intake-barcode-scan"
-                aria-label="Scan SIM barcode"
-                onClick={() => setCamera("barcode")}
-              >
-                <ScanLine size={18} />
-                <span>Scan barcode</span>
-              </button>
+          <h2>Order & plan</h2>
+          {loaded && !value.order_image && !reading && <IntakeCamera embedded onPhoto={(file) => photo(file, "order_image")} onDetect={detectOrder} onCode={() => {}} onClose={() => setCamera("")} />}
+          {(value.order_image || reading) && <div data-intake-field="order_image" className={`document-scan ${reading ? "reading" : "complete"}`} aria-live="polite">
+            {value.order_image && <img src={"data:image/jpeg;base64," + value.order_image} alt="Captured order details" />}
+            <div className="scan-beam" /><span className="scan-status">{reading ? "Reading order…" : "Order captured"}</span>
+          </div>}
+          <div className="intake-photos"><label className="intake-photo">
+            <Camera size={28} /><strong>Capture order details</strong>
+            <input type="file" aria-label="Order details screen" accept="image/png,image/jpeg" capture="environment" disabled={busy} onChange={(e) => photo(e.target.files?.[0], "order_image")} />
+          </label></div>
+          {<>
+            <div className="intake-grid order-fields">
+              {[["package_name","Package name"],["order_reference","Request ID"],["msisdn","Phone number"],["monthly_cost","Monthly charge"],["prepayment","Order prepayment"]].map(([key,label]) => <label key={key}>{label}<input value={value[key] || ""} readOnly /></label>)}
             </div>
-            {input("msisdn", "Phone number", "tel", 40)}
-          </div>
-          <h3>Select plan</h3>
-          {plans.isPending ? (
-            <p>Loading plans…</p>
-          ) : plans.error ? (
-            <button onClick={() => plans.refetch()}>Reload plans</button>
-          ) : (
-            <div className="intake-plans" data-intake-field="plan_id">
-              {plans.data?.map((p: Row) => (
-                <button
-                  key={p.id}
-                  className={value.plan_id === p.id ? "selected" : ""}
-                  onClick={() => {
-                    clearMissing(["plan_id"]);
-                    onChange({ ...value, plan_id: p.id, plan_name: p.name });
-                  }}
-                >
-                  <strong>{p.name}</strong>
-                  <span>
-                    AED {p.monthly_cost}
-                    {p.name === "Tourist Prepaid" ? "" : " / month"}
-                  </span>
-                  {p.promotion && (
-                    <small className="plan-details">{p.promotion}</small>
-                  )}
-                  {value.plan_id === p.id && <Check size={18} />}
-                </button>
-              ))}
-            </div>
-          )}
-          <div
-            data-intake-field="signature"
-            className={missing.includes("signature") ? "field-missing" : ""}
-          >
-            <h3>Customer signature</h3>
-            {missing.includes("signature") && (
-              <span className="field-required">Required</span>
-            )}
-            <Signature
-              value={value.signature || []}
-              onChange={(v) => set("signature", v)}
-            />
-          </div>
+            <label data-intake-field="plan_id">Subscriber plan
+              <select value={value.plan_id || ""} onChange={(e) => { const plan = (plans.data || []).find((p:Row) => p.id === e.target.value); onChange({...value,plan_id:e.target.value,plan_name:plan?.name || ""}); clearMissing(["plan_id"]); }}>
+                <option value="">Choose plan</option>
+                {(plans.data || []).map((p:Row) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+          </>}
         </>
       )}
       <footer className="intake-actions">

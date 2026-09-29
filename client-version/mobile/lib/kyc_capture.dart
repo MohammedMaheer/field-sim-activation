@@ -17,7 +17,8 @@ import 'experience.dart';
 
 class KycCaptureScreen extends ConsumerStatefulWidget {
   final Json initial;
-  const KycCaptureScreen({super.key, this.initial = const {}});
+  final String? captureId;
+  const KycCaptureScreen({super.key, this.initial = const {}, this.captureId});
   @override
   ConsumerState<KycCaptureScreen> createState() => _KycCaptureState();
 }
@@ -76,6 +77,21 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
 
   Future<void> initialize() async {
     try {
+      if (widget.captureId != null) {
+        final result = await ref
+            .read(serviceProvider)
+            .dio
+            .get('/kyc-captures/${widget.captureId}');
+        if (!mounted) return;
+        setState(() {
+          capture = Map<String, dynamic>.from(result.data);
+          rows = (capture!['rows'] as List? ?? [])
+              .map((row) => Map<String, dynamic>.from(row))
+              .toList();
+        });
+        await refresh();
+        return;
+      }
       final saved = await ref.read(serviceProvider).store.get(key);
       if (saved != null && saved['pending'] == true && mounted) {
         source.text = saved['reference'] ?? '';
@@ -88,7 +104,12 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       if (!pending) intake = Map<String, dynamic>.from(widget.initial);
       await refresh();
     } catch (e) {
-      if (mounted) setState(() => error = friendlyError(e));
+      if (mounted) {
+        setState(() {
+          error = friendlyError(e);
+          loading = false;
+        });
+      }
     }
   }
 
@@ -164,7 +185,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         if (!mounted) return;
         setState(() {
           bytes = sample;
-          source.text = "RCP-NEW";
+          source.text = intake['order_reference']?.toString() ?? "";
           pending = false;
         });
         await saveDraft();
@@ -434,6 +455,35 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Widget gap() => const SizedBox(height: 16);
   @override
   Widget build(BuildContext context) {
+    if (widget.captureId != null && capture == null) {
+      return Scaffold(
+        appBar: AppBar(
+          leading: const WorkspaceBackButton(),
+          title: const Text('Transaction'),
+        ),
+        body: Center(
+          child: loading
+              ? const Text('Opening transaction…')
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(error ?? 'Transaction unavailable'),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () {
+                        setState(() {
+                          loading = true;
+                          error = null;
+                        });
+                        initialize();
+                      },
+                      child: const Text('Try again'),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
     final editable =
         capture != null &&
         ['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(capture!['status']);
@@ -800,7 +850,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       maxLength: 120,
                       enabled: !busy && !pending,
                       decoration: const InputDecoration(
-                        labelText: 'Payment reference (optional)',
+                        labelText: 'Request ID (optional)',
                       ),
                       onChanged: (_) {
                         saveDraft();

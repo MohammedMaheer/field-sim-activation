@@ -1,0 +1,20 @@
+import {expect,test} from '@playwright/test';
+import {mobileSignIn} from './mobile-session';
+test('dashboard shortcuts open their matching destinations', async ({page}) => {
+ await mobileSignIn(page);
+ await expect(page.getByText('Your day, at a glance',{exact:true})).toBeVisible();
+ await page.getByRole('button',{name:/Activations/}).first().click();
+ await expect(page.getByText('Sales records',{exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Back',exact:true}).click();
+ await page.getByRole('button',{name:/SIMs available/}).click();
+ await expect(page.getByText('Inventory',{exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Back',exact:true}).click();
+ await page.getByRole('button',{name:/Daily target/}).click();
+ await expect(page.getByText('Daily report',{exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Back',exact:true}).click();
+ await page.getByRole('button',{name:/Awaiting verification/}).click();
+ await expect(page.getByText('Transactions',{exact:true}).first()).toBeVisible();
+ await page.getByRole('button',{name:'Back',exact:true}).click();
+ await page.getByRole('button',{name:/Transactions today/}).click();
+ await expect(page.getByText('Transactions',{exact:true}).first()).toBeVisible();
+});

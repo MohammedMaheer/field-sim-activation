@@ -67,6 +67,7 @@ export default function ReceiptReview({
   const own = capture.creator_id === user.id;
   const eligible = capture.status === "SUBMITTED" && !own && user.permissions?.includes("compliance.write");
   const payment = capture.document_kind === "PAYMENT_CONFIRMATION";
+  const orderMode = capture.intake?.capture_mode === "SCREENSHOT_ORDER";
   const evidenceLabel = payment ? "Payment confirmation" : "Historical activation receipt";
   const customerId = String(capture.intake?.document_number || "");
   const paidAmount = (capture.rows || [])
@@ -77,8 +78,8 @@ export default function ReceiptReview({
     ["Document", customerId ? `•••• ${customerId.slice(-4)}` : ""],
     ["Phone", capture.intake?.msisdn],
     ["Plan", capture.intake?.plan_name],
-    ["SIM", capture.intake?.sim_identifier],
-    [payment ? "Paid amount" : "Record type", payment ? paidAmount : "Earlier receipt"],
+    [orderMode ? "Request ID" : "SIM", orderMode ? capture.intake?.order_reference : capture.intake?.sim_identifier],
+    [orderMode ? "Payment record" : payment ? "Paid amount" : "Record type", orderMode ? capture.invoice?.status || "Pending backend confirmation" : payment ? paidAmount : "Earlier receipt"],
   ];
   async function perform(action: () => Promise<unknown>) {
     setBusy(true);
@@ -144,7 +145,7 @@ export default function ReceiptReview({
         </div>
       )}
       {payment && <div className="review-evidence-switch" role="group" aria-label="Evidence to compare">
-        {[["payment", "Payment confirmation"], ["identity", "Identity document"], ["signature", "Signature"]].map(([key,label]) => <button key={key} className={evidence === key ? "primary" : ""} aria-pressed={evidence === key} onClick={() => {setEvidence(key); setZoom(100); setTab(key === "payment" ? "fields" : "customer");}}>{label}</button>)}
+        {[["payment", "Payment confirmation"], ["identity", capture.intake?.capture_mode === "SCREENSHOT_ORDER" ? "Customer details" : "Identity document"], ...(capture.intake?.order_image ? [["order", "Order details"]] : []), ...(!orderMode ? [["signature", "Signature"]] : [])].map(([key,label]) => <button key={key} className={evidence === key ? "primary" : ""} aria-pressed={evidence === key} onClick={() => {setEvidence(key); setZoom(100); setTab(key === "payment" ? "fields" : "customer");}}>{label}</button>)}
       </div>}
       <div className="review-comparison">
         <section
@@ -154,7 +155,7 @@ export default function ReceiptReview({
           <div className="review-pane-heading">
             <div>
               <h3>
-                {evidence === "identity" ? "Identity document" : evidence === "signature" ? "Customer signature" : evidenceLabel}
+                {evidence === "order" ? "Order details" : evidence === "identity" ? "Customer details" : evidence === "signature" ? "Customer signature" : evidenceLabel}
               </h3>
               <small>Original image uploaded by the agent</small>
             </div>
@@ -183,7 +184,7 @@ export default function ReceiptReview({
             tabIndex={0}
             aria-label="Scrollable original image"
           >
-            {evidence === "identity" ? (capture.intake?.document_image ? <img alt="Identity document" src={`data:image/${String(capture.intake.document_image).startsWith("iVBOR") ? "png" : "jpeg"};base64,${capture.intake.document_image}`} style={{width:`${zoom}%`}} /> : <p>Not recorded</p>) : evidence === "signature" ? (capture.intake?.signature?.length ? <svg viewBox="0 0 400 180" role="img" aria-label="Captured customer signature">{capture.intake.signature.map((stroke:number[][],i:number)=><polyline key={i} points={stroke.map(p=>`${p[0]*400},${p[1]*180}`).join(" ")} fill="none" stroke="#762765" strokeWidth="3" />)}</svg> : <p>Not recorded</p>) : imageError ? (
+            {evidence === "order" ? (capture.intake?.order_image ? <img alt="Order details" src={`data:image/jpeg;base64,${capture.intake.order_image}`} style={{width:`${zoom}%`}} /> : <p>Not recorded</p>) : evidence === "identity" ? (capture.intake?.document_image ? <img alt="Identity document" src={`data:image/${String(capture.intake.document_image).startsWith("iVBOR") ? "png" : "jpeg"};base64,${capture.intake.document_image}`} style={{width:`${zoom}%`}} /> : <p>Not recorded</p>) : evidence === "signature" ? (capture.intake?.signature?.length ? <svg viewBox="0 0 400 180" role="img" aria-label="Captured customer signature">{capture.intake.signature.map((stroke:number[][],i:number)=><polyline key={i} points={stroke.map(p=>`${p[0]*400},${p[1]*180}`).join(" ")} fill="none" stroke="#762765" strokeWidth="3" />)}</svg> : <p>Not recorded</p>) : imageError ? (
               <div role="alert">
                 <p>{imageError}</p>
                 <button onClick={() => setRetry((v) => v + 1)}>
@@ -228,10 +229,10 @@ export default function ReceiptReview({
           <div className="review-pane-heading">
             <div>
               <h3>
-                {tab === "customer" ? "Customer & SIM details" : tab === "ocr" ? "Text from image" : payment ? "Payment details" : "Historical receipt details"}
+                {tab === "customer" ? (orderMode ? "Customer & order details" : "Customer & SIM details") : tab === "ocr" ? "Text from image" : payment ? "Payment details" : "Historical receipt details"}
               </h3>
               <small>
-                {tab === "customer" ? "Customer, document and SIM" : tab === "ocr" ? "Extracted from the uploaded image" : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
+                {tab === "customer" ? (orderMode ? "Customer and captured order" : "Customer, document and SIM") : tab === "ocr" ? "Extracted from the uploaded image" : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
               </small>
             </div>
             <button
@@ -254,7 +255,7 @@ export default function ReceiptReview({
             role="tablist"
             aria-label="Captured data"
           >
-            {payment && <button role="tab" id="review-customer-tab" aria-controls="review-customer-panel" aria-selected={tab === "customer"} onClick={() => setTab("customer")}>Customer & SIM</button>}
+            {payment && <button role="tab" id="review-customer-tab" aria-controls="review-customer-panel" aria-selected={tab === "customer"} onClick={() => setTab("customer")}>{orderMode ? "Customer & order" : "Customer & SIM"}</button>}
             <button
               role="tab"
               id="review-fields-tab"
@@ -281,7 +282,7 @@ export default function ReceiptReview({
             aria-labelledby={`review-${tab}-tab`}
             tabIndex={0}
           >
-            {tab === "customer" ? <div className="review-transaction">{(capture.invoice?.sections || []).filter((s:Row) => ["Customer", "SIM & plan", "Records"].includes(s.title)).map((section:Row) => <section key={section.title}><h4>{section.title}</h4><dl>{section.fields.map((field:Row,i:number) => <div key={i}><dt>{field.label}</dt><dd dir="auto">{field.value || "Not recorded"}</dd></div>)}</dl></section>)}</div> : tab === "fields" ? (
+            {tab === "customer" ? <div className="review-transaction">{(capture.invoice?.sections || []).filter((s:Row) => (evidence === "identity" ? ["Customer"] : evidence === "order" ? ["SIM & plan", "Order details"] : ["Customer", "SIM & plan", "Records"]).includes(s.title)).map((section:Row) => <section key={section.title}><h4>{section.title}</h4><dl>{section.fields.map((field:Row,i:number) => <div key={i}><dt>{field.label}</dt><dd dir="auto">{field.value || "Not recorded"}</dd></div>)}</dl></section>)}</div> : tab === "fields" ? (
               capture.rows?.length ? (
                 capture.rows.map((row: Row, i: number) => (
                   <section className="review-transaction" key={i}>
@@ -390,6 +391,7 @@ export default function ReceiptReview({
           </div>
         )}
       </section>
+      {capture.status === "VERIFIED" && <div className="setup-summary" role="status">{capture.leader_confirmation ? `Branch confirmed by ${capture.leader_confirmation.name}` : "Awaiting branch team leader confirmation"}</div>}
       {capture.document_kind === "PAYMENT_CONFIRMATION" &&
         capture.status === "VERIFIED" && (
           <section className="panel activation-completion">

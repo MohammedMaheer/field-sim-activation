@@ -14,7 +14,6 @@ import 'package:dio/dio.dart';
 import 'package:image/image.dart' as imaging;
 import 'package:image_picker/image_picker.dart';
 import 'services.dart';
-import 'transaction_journey.dart' show SignaturePad, SimBarcodeScreen;
 
 class DocumentScanResult {
   final Uint8List image;
@@ -359,7 +358,12 @@ class _IntakeCameraState extends State<IntakeCamera>
             IgnorePointer(
               child: Center(
                 child: AspectRatio(
-                  aspectRatio: widget.document == 'Passport' ? 1.4 : 1.58,
+                  aspectRatio: widget.document == 'Passport'
+                      ? 1.4
+                      : widget.document == 'Customer details' ||
+                            widget.document == 'Order details'
+                      ? .85
+                      : 1.58,
                   child: Container(
                     margin: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -421,7 +425,7 @@ class _IntakeCameraState extends State<IntakeCamera>
                   ),
                   child: Text(
                     checking
-                        ? 'Reading document…'
+                        ? 'Reading details…'
                         : scanGuidance ??
                               'Position ${widget.document.toLowerCase()}',
                     style: const TextStyle(
@@ -537,6 +541,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     try {
       final result = await service.dio.get('/kyc-captures/draft');
       data = {...widget.initial};
+      data['capture_mode'] = 'SCREENSHOT_ORDER';
       data.putIfAbsent('transaction_id', () => const Uuid().v4());
       version = result.data['version'];
       step = (data['step'] as int? ?? 0).clamp(0, 1);
@@ -544,6 +549,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     } catch (e) {
       final cached = await service.store.get(cacheKey);
       data = {...widget.initial};
+      data['capture_mode'] = 'SCREENSHOT_ORDER';
       data.putIfAbsent('transaction_id', () => const Uuid().v4());
       version = cached?['version'] ?? 0;
       error = 'Saved details loaded. Check connection.';
@@ -602,7 +608,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     'nationality' => 'nationality',
     'birth_date' => 'date of birth',
     'expiry_date' => 'document expiry date',
-    'document_image' => 'ID or passport photo',
+    'document_image' => 'customer details screen',
+    'order_image' => 'order details screen',
+    'order_reference' => 'request ID',
     'sim_identifier' => 'SIM barcode',
     'msisdn' => 'phone number',
     'plan_id' => 'subscriber plan',
@@ -650,6 +658,26 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     }
   }
 
+  Future<Json?> autoReadOrder(Uint8List frame) async {
+    if (ref.read(serviceProvider).isPreview || !looksLikeDocument(frame)) {
+      return null;
+    }
+    try {
+      final response = await ref
+          .read(serviceProvider)
+          .dio
+          .post(
+            '/kyc-captures/read-order',
+            data: {'image_base64': encodeDocument(frame)},
+            options: Options(receiveTimeout: const Duration(seconds: 7)),
+          );
+      final fields = Map<String, dynamic>.from(response.data);
+      return fields['order_check'] != null ? fields : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   String captureActivity = 'Reading document…';
 
   Future<void> photo(
@@ -672,6 +700,8 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       } else if (service.isPreview) {
         bytes = key == 'document_image'
             ? await service.previewIdentity()
+            : key == 'order_image'
+            ? await service.previewOrder()
             : await service.previewReceipt();
       } else if (gallery) {
         final f = await ImagePicker().pickImage(
@@ -687,7 +717,14 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           MaterialPageRoute(
             builder: (_) => IntakeCamera(
               selfie: key == 'selfie_image',
-              onAutoDetect: key == 'document_image' ? autoRead : null,
+              document: key == 'order_image'
+                  ? 'Order details'
+                  : 'Customer details',
+              onAutoDetect: key == 'document_image'
+                  ? autoRead
+                  : key == 'order_image'
+                  ? autoReadOrder
+                  : null,
             ),
           ),
         );
@@ -698,38 +735,45 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       if (!mounted) return;
       setState(() {
         busy = true;
-        reading = key == 'document_image';
+        reading = key == 'document_image' || key == 'order_image';
         captureActivity = gallery ? 'Uploading photo…' : 'Capturing document…';
       });
-      if (key == 'document_image') {
+      if (key == 'document_image' || key == 'order_image') {
         await Future<void>.delayed(
           Duration(milliseconds: service.isPreview ? 1200 : 100),
         );
       }
       error = null;
       if (key == 'document_image') data.remove('document_check');
+      if (key == 'order_image') data.remove('order_check');
       data[key] = encodeDocument(bytes);
       if (mounted) setState(() {});
-      if (key == 'document_image') {
+      if (key == 'document_image' || key == 'order_image') {
         try {
           if (scannedFields != null) {
             data.addAll(scannedFields);
           } else {
             final r = await service.dio.post(
-              '/kyc-captures/read-document',
+              key == 'order_image'
+                  ? '/kyc-captures/read-order'
+                  : '/kyc-captures/read-document',
               data: {'image_base64': data[key]},
             );
             data.addAll(Map<String, dynamic>.from(r.data));
           }
-          if ((data['document_check'] ?? '').toString().isEmpty) {
-            throw Exception('Document unreadable');
+          if ((data[key == 'order_image' ? 'order_check' : 'document_check'] ??
+                  '')
+              .toString()
+              .isEmpty) {
+            throw Exception('Screen unreadable');
           }
           revision++;
         } catch (e) {
-          data.remove('document_image');
-          data.remove('document_check');
-          error =
-              "Document wasn't captured clearly. Try again with your ID or passport.";
+          data.remove(key);
+          data.remove(key == 'order_image' ? 'order_check' : 'document_check');
+          error = key == 'order_image'
+              ? "Order details weren't captured clearly. Try again."
+              : "Customer details weren't captured clearly. Try again.";
         }
       }
       await cache();
@@ -775,15 +819,10 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 'expiry_date',
                 'document_image',
               ]
-            : ['sim_identifier', 'plan_id', 'msisdn'];
+            : ['order_image', 'order_reference', 'plan_id', 'msisdn'];
         final missingFields = required
             .where((k) => (data[k] ?? '').toString().trim().isEmpty)
             .toSet();
-        if (step == 1 &&
-            (data['signature'] as List? ?? []).expand((s) => s as List).length <
-                8) {
-          missingFields.add('signature');
-        }
         if (missingFields.isNotEmpty) {
           await showMissing(missingFields);
           return;
@@ -791,7 +830,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         if (step == 0) {
           if ((data['document_check'] ?? '').toString().isEmpty) {
             throw Exception(
-              "Document wasn't captured clearly. Scan or upload your ID or passport.",
+              "Customer details weren't captured clearly. Scan or upload the checkout screen.",
             );
           }
           final birth = DateTime.tryParse(data['birth_date']),
@@ -806,7 +845,14 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           }
         }
       }
-      if (next && step == 1) {
+      if (next && step == 1 && (data['order_check'] ?? '').toString().isEmpty) {
+        throw Exception(
+          "Order details weren't captured clearly. Scan or upload the order screen.",
+        );
+      }
+      if (next &&
+          step == 1 &&
+          (data['sim_identifier'] ?? '').toString().isNotEmpty) {
         final result = await ref
             .read(serviceProvider)
             .dio
@@ -864,54 +910,29 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     }
   }
 
-  Future<void> scanSim() async {
-    final service = ref.read(serviceProvider);
-    final code = service.isPreview
-        ? 'SIM-SAMPLE-1001'
-        : await Navigator.push<String>(
-            context,
-            MaterialPageRoute(builder: (_) => const SimBarcodeScreen()),
-          );
-    if (mounted && code != null) {
-      try {
-        final result = await service.dio.post(
-          '/inventory/scan',
-          data: {
-            'code': code,
-            'transaction_id': data['transaction_id'],
-            'agent_id': service.user?['agent_id'],
-          },
-        );
-        if (!mounted) return;
-        revision++;
-        if (service.isPreview) data['msisdn'] = 'SAMPLE-PHONE-1001';
-        setState(() {
-          data.addAll(Map<String, dynamic>.from(result.data));
-          error = null;
-        });
-      } catch (e) {
-        if (mounted) setState(() => error = friendlyError(e));
-      }
-    }
-  }
-
   Widget field(
     String key,
     String label, {
     bool date = false,
+    bool locked = false,
     TextInputType? keyboardType,
   }) => Padding(
     key: fieldAnchors.putIfAbsent(key, GlobalKey.new),
-    padding: const EdgeInsets.only(bottom: 10),
+    padding: const EdgeInsets.only(bottom: 7),
     child: TextFormField(
       key: ValueKey('$key-$revision-${date ? data[key] : ''}'),
       focusNode: fieldFocus.putIfAbsent(key, FocusNode.new),
       initialValue: data[key] ?? '',
-      readOnly: date,
+      readOnly: date || locked,
       keyboardType: keyboardType,
       style: date ? const TextStyle(fontSize: 14) : null,
       decoration: InputDecoration(
         labelText: label,
+        isDense: true,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 13,
+          vertical: 13,
+        ),
         errorText: missing.contains(key) ? 'Required' : null,
         suffixIcon: date ? const Icon(Icons.calendar_month, size: 18) : null,
         suffixIconConstraints: date
@@ -934,171 +955,6 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       onChanged: (v) => set(key, v),
     ),
   );
-
-  Widget _planCard(Json plan) {
-    final selected = data['plan_id'] == plan['id'];
-    final promotion = (plan['promotion'] ?? '').toString();
-    return Material(
-      color: selected ? const Color(0xffe9dcff) : const Color(0xffedf5ff),
-      borderRadius: BorderRadius.circular(14),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(14),
-        onTap: () => setState(() {
-          data['plan_id'] = plan['id'];
-          data['plan_name'] = plan['name'];
-          missing.remove('plan_id');
-          error = null;
-        }),
-        child: AnimatedContainer(
-          duration: motionDuration(context),
-          constraints: const BoxConstraints(minHeight: 112),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? RelayPalette.plum : const Color(0xffc9dff9),
-              width: selected ? 2 : 1,
-            ),
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      '${plan['name']}',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Icon(
-                    selected ? Icons.check_circle : Icons.circle_outlined,
-                    size: 20,
-                    color: RelayPalette.plum,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'AED ${plan['monthly_cost']}${plan['name'] == 'Tourist Prepaid' ? '' : ' / month'}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  color: Color(0xff6940a3),
-                ),
-              ),
-              if (promotion.isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  promotion,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: Color(0xff526277),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  List<List<Offset>> get signatureStrokes => (data['signature'] as List? ?? [])
-      .map(
-        (s) => (s as List)
-            .map(
-              (p) => Offset((p[0] as num).toDouble(), (p[1] as num).toDouble()),
-            )
-            .toList(),
-      )
-      .toList();
-
-  Future<void> captureSignature() async {
-    var strokes = signatureStrokes;
-    final result = await showModalBottomSheet<List<List<Offset>>>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, update) => SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  children: [
-                    const Expanded(
-                      child: Text(
-                        'Customer signature',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Close signature',
-                      onPressed: () => Navigator.pop(sheetContext),
-                      icon: const Icon(Icons.close),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                SignaturePad(
-                  height: 220,
-                  value: strokes,
-                  onChanged: (value) => update(() => strokes = value),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: strokes.isEmpty
-                            ? null
-                            : () => update(() => strokes = []),
-                        icon: const Icon(Icons.refresh, size: 18),
-                        label: const Text('Reset'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: strokes.expand((s) => s).length < 2
-                            ? null
-                            : () => Navigator.pop(sheetContext, strokes),
-                        icon: const Icon(Icons.check, size: 18),
-                        label: const Text('Confirm'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (mounted && result != null) {
-      set(
-        'signature',
-        result.map((s) => s.map((p) => [p.dx, p.dy]).toList()).toList(),
-      );
-    }
-  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -1140,6 +996,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             Expanded(
               child: FilledButton.icon(
                 onPressed: busy ? null : () => save(true),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                ),
                 icon: busy
                     ? const SizedBox(
                         width: 16,
@@ -1149,7 +1008,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                           color: Colors.white,
                         ),
                       )
-                    : const Icon(Icons.arrow_forward_rounded),
+                    : const Icon(Icons.arrow_forward_rounded, size: 18),
                 label: Text(busy ? 'Saving…' : 'Continue'),
               ),
             ),
@@ -1182,7 +1041,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      '${i + 1}. ${['Identity', 'SIM & plan', 'Payment'][i]}',
+                      '${i + 1}. ${['Customer', 'Order & plan', 'Payment'][i]}',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: i == step
@@ -1199,15 +1058,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           if (error != null)
             Text(error!, style: const TextStyle(color: Colors.red)),
           if (step == 0) ...[
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'National ID', label: Text('Emirates ID')),
-                ButtonSegment(value: 'Passport', label: Text('Passport')),
-              ],
-              selected: {data['document_type'] ?? 'National ID'},
-              onSelectionChanged: (v) => set('document_type', v.first),
+            const Text(
+              'Customer details',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             if (!ref.read(serviceProvider).isPreview &&
                 data['document_image'] == null &&
                 !reading &&
@@ -1217,9 +1072,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 child: IntakeCamera(
                   key: scannerKey,
                   embedded: true,
-                  document: data['document_type'] == 'Passport'
-                      ? 'Passport'
-                      : 'Emirates ID',
+                  document: 'Customer details',
                   onAutoDetect: autoRead,
                   onResult: (result) =>
                       photo('document_image', false, captured: result),
@@ -1231,9 +1084,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 reading: reading,
                 readingLabel: captureActivity,
                 illustration: false,
-                document: data['document_type'] == 'Passport'
-                    ? 'Passport'
-                    : 'Emirates ID',
+                document: 'Customer details',
               ),
             Row(
               children: [
@@ -1251,7 +1102,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                             }
                           },
                     icon: const Icon(Icons.document_scanner),
-                    label: const Text('Scan document', maxLines: 1),
+                    label: const Text('Scan details', maxLines: 1),
                     style: FilledButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 10),
                       minimumSize: const Size.fromHeight(48),
@@ -1283,128 +1134,191 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
-            field('name', 'Full name'),
-            field('document_number', 'Document number'),
-            field('nationality', 'Nationality'),
-            LayoutBuilder(
-              builder: (context, constraints) => constraints.maxWidth < 320
-                  ? Column(
-                      children: [
-                        field('birth_date', 'Date of birth', date: true),
-                        field('expiry_date', 'Expiry date', date: true),
-                      ],
-                    )
-                  : Row(
-                      children: [
-                        Expanded(
-                          child: field(
-                            'birth_date',
-                            'Date of birth',
-                            date: true,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: field(
-                            'expiry_date',
-                            'Expiry date',
-                            date: true,
-                          ),
-                        ),
-                      ],
-                    ),
-            ),
-            OutlinedButton.icon(
-              onPressed: busy ? null : () => photo('selfie_image', false),
-              icon: const Icon(Icons.face),
-              label: Text(
-                data['selfie_image'] == null
-                    ? 'Selfie · optional'
-                    : 'Selfie saved',
+            const SizedBox(height: 8),
+            ...[
+              Text(
+                'Document · ${data['document_type'] == 'Passport' ? 'Passport' : 'Emirates ID'}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: RelayPalette.plum,
+                ),
               ),
-            ),
+              const SizedBox(height: 6),
+              field('name', 'Full name'),
+              field('document_number', 'Document number'),
+              field('nationality', 'Nationality'),
+              LayoutBuilder(
+                builder: (context, constraints) => constraints.maxWidth < 320
+                    ? Column(
+                        children: [
+                          field('birth_date', 'Date of birth', date: true),
+                          field('expiry_date', 'Expiry date', date: true),
+                        ],
+                      )
+                    : Row(
+                        children: [
+                          Expanded(
+                            child: field(
+                              'birth_date',
+                              'Date of birth',
+                              date: true,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: field(
+                              'expiry_date',
+                              'Expiry date',
+                              date: true,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              OutlinedButton.icon(
+                onPressed: busy ? null : () => photo('selfie_image', false),
+                icon: const Icon(Icons.face),
+                label: Text(
+                  data['selfie_image'] == null
+                      ? 'Selfie · optional'
+                      : 'Selfie saved',
+                ),
+              ),
+            ],
           ] else ...[
-            SegmentedButton<String>(
-              segments: const [
-                ButtonSegment(value: 'PHYSICAL', label: Text('Physical SIM')),
-                ButtonSegment(value: 'ESIM', label: Text('eSIM')),
-              ],
-              selected: {data['sim_type'] ?? 'PHYSICAL'},
-              onSelectionChanged: (v) => set('sim_type', v.first),
+            const Text(
+              'Order & plan',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
+            if (!ref.read(serviceProvider).isPreview &&
+                data['order_image'] == null &&
+                !reading &&
+                !scannerPaused)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: IntakeCamera(
+                  key: scannerKey,
+                  embedded: true,
+                  document: 'Order details',
+                  onAutoDetect: autoReadOrder,
+                  onResult: (result) =>
+                      photo('order_image', false, captured: result),
+                ),
+              )
+            else
+              ScanSurface(
+                image: data['order_image'],
+                reading: reading,
+                readingLabel: captureActivity,
+                illustration: false,
+                document: 'Order details',
+              ),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: field(
-                    'sim_identifier',
-                    data['sim_type'] == 'ESIM'
-                        ? 'eSIM identifier'
-                        : 'SIM serial / ICCID',
+                  child: FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () {
+                            if (ref.read(serviceProvider).isPreview) {
+                              photo('order_image', false);
+                            } else if (scannerKey.currentState != null) {
+                              scannerKey.currentState!.expand();
+                            } else {
+                              setState(() => data.remove('order_image'));
+                            }
+                          },
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                    icon: const Icon(Icons.document_scanner, size: 18),
+                    label: const Text('Scan order', maxLines: 1),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 16, left: 8),
-                  child: SizedBox(
-                    width: 52,
-                    height: 56,
-                    child: IconButton.filledTonal(
-                      tooltip: 'Scan SIM barcode',
-                      onPressed: busy ? null : scanSim,
-                      icon: const Icon(Icons.qr_code_scanner),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: busy ? null : () => photo('order_image', true),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size.fromHeight(48),
                     ),
+                    icon: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      size: 18,
+                    ),
+                    label: const Text('Upload photo', maxLines: 1),
                   ),
                 ),
               ],
             ),
-            field('msisdn', 'Phone number', keyboardType: TextInputType.phone),
-            const Text(
-              'Subscriber plan',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final columns = constraints.maxWidth < 320 ? 1 : 2;
-                final width =
-                    (constraints.maxWidth - (columns - 1) * 8) / columns;
-                return Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final p in plans)
-                      SizedBox(width: width, child: _planCard(p)),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Customer signature',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            if (missing.contains('signature'))
-              const Padding(
-                padding: EdgeInsets.only(top: 6),
-                child: Text(
-                  'Required',
-                  style: TextStyle(color: Colors.red, fontSize: 12),
+            ...[
+              const SizedBox(height: 8),
+              field('package_name', 'Package name', locked: true),
+              Row(
+                children: [
+                  Expanded(
+                    child: field('order_reference', 'Request ID', locked: true),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: field('msisdn', 'Phone number', locked: true),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(
+                    child: field(
+                      'monthly_cost',
+                      'Monthly charge',
+                      locked: true,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: field(
+                      'prepayment',
+                      'Order prepayment',
+                      locked: true,
+                    ),
+                  ),
+                ],
+              ),
+              DropdownButtonFormField<String>(
+                key: ValueKey('plan-${data['plan_id'] ?? ''}'),
+                initialValue: plans.any((p) => p['id'] == data['plan_id'])
+                    ? data['plan_id']
+                    : null,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Subscriber plan',
+                  isDense: true,
                 ),
+                items: [
+                  for (final p in plans)
+                    DropdownMenuItem<String>(
+                      value: p['id'],
+                      child: Text(
+                        '${p['name']}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                ],
+                onChanged: (id) {
+                  if (id == null) return;
+                  final plan = plans.firstWhere((p) => p['id'] == id);
+                  setState(() {
+                    data['plan_id'] = id;
+                    data['plan_name'] = plan['name'];
+                    missing.remove('plan_id');
+                  });
+                },
               ),
-            OutlinedButton.icon(
-              onPressed: captureSignature,
-              icon: Icon(
-                signatureStrokes.expand((s) => s).length >= 2
-                    ? Icons.check_circle
-                    : Icons.draw_outlined,
-              ),
-              label: Text(
-                signatureStrokes.expand((s) => s).length >= 2
-                    ? 'Signature saved · Edit'
-                    : 'Add customer signature',
-              ),
-            ),
+            ],
           ],
           const SizedBox(height: 12),
         ],

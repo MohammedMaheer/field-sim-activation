@@ -1023,3 +1023,16 @@ tbody tr:nth-child(even) { background:#f7f8fc; }
  .transaction-stages li {flex-direction:column;align-items:flex-start;gap:7px;padding:10px;font-size:13px;line-height:1.4}
  .journey-heading {flex-direction:row;align-items:center}
 }
+
+/* Compact capture and invoice rhythm. */
+.customer-intake { max-width: 960px; margin-inline: auto; }
+.customer-intake h2 { margin: 12px 0 10px; font-size: 21px; }
+.customer-intake .intake-grid { gap: 10px 14px; }
+.customer-intake input,.customer-intake select { min-height: 42px; padding: 9px 12px; }
+.customer-intake .intake-photos { margin: 10px 0; }
+.order-capture-summary { display: grid; gap: 7px; padding: 14px; margin: 12px 0; border: 1px solid #b9ded5; border-radius: 12px; background: #edf9f5; }
+.order-capture-summary span { font-size: 14px; }
+
+.branch-leader-list { display:grid; gap:10px; margin:12px 0 18px; }
+.branch-leader-list label { display:grid; gap:6px; padding:12px; border:1px solid #dfd8ef; border-radius:10px; background:linear-gradient(115deg,#f1eaff,#e8f8f5); font-size:14px; font-weight:600; }
+.branch-leader-list select { min-height:42px; width:100%; }

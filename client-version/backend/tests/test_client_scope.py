@@ -1480,3 +1480,191 @@ def test_sim_pack_parsing_and_claims_are_scoped(client):
         assert client.delete('/api/inventory/scan/'+tx).status_code==404
     login(client,'admin')
     assert client.delete('/api/inventory/scan/'+tx).status_code==200
+
+
+def test_customer_order_screen_capture_requires_evidence_and_preserves_amounts(client, monkeypatch):
+    from app import captures
+    from PIL import Image
+
+    login(client, "agent1")
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 300), "white").save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode()
+    monkeypatch.setattr(
+        captures.extractor,
+        "extract",
+        lambda _: {
+            "lines": [
+                {"text": t}
+                for t in [
+                    "Customer Details",
+                    "AVERY STONE",
+                    "Document Type: UAE Identity card",
+                    "Document Number: SAMPLE-ID-1001",
+                    "Nationality: United Arab Emirates",
+                    "Date of Birth: 01-Jan-1990",
+                    "Expiry Date: 31-Dec-2030",
+                ]
+            ]
+        },
+    )
+    identity = client.post("/api/kyc-captures/read-document", json={"image_base64": encoded}).json()
+    assert identity["name"] == "AVERY STONE"
+    assert identity["birth_date"] == "1990-01-01"
+    assert identity.get("document_check")
+    monkeypatch.setattr(
+        captures.extractor,
+        "extract",
+        lambda _: {
+            "lines": [
+                {"text": t}
+                for t in [
+                    "Order Details",
+                    "Product Name",
+                    "5G Unlimited Ultra",
+                    "Package Name",
+                    "5G Unlimited Ultra",
+                    "MSISDN",
+                    "0500000000",
+                    "Request Id",
+                    "SAMPLE-REQ-1001",
+                    "AED 350 Monthly - AED 0 Prepayment",
+                ]
+            ]
+        },
+    )
+    order = client.post("/api/kyc-captures/read-order", json={"image_base64": encoded}).json()
+    assert order["order_reference"] == "SAMPLE-REQ-1001"
+    assert order["monthly_cost"] == "350" and order["prepayment"] == "0"
+    assert order.get("order_check") and order.get("plan_id")
+    intake = {
+        **identity,
+        **order,
+        "capture_mode": "SCREENSHOT_ORDER",
+        "document_image": encoded,
+        "order_image": encoded,
+        "step": 2,
+    }
+    version = client.get("/api/kyc-captures/draft").json()["version"]
+    assert (
+        client.put(
+            "/api/kyc-captures/draft",
+            json={"version": version, "data": {**intake, "order_reference": "OTHER"}},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.put("/api/kyc-captures/draft", json={"version": version, "data": intake}).status_code
+        == 200
+    )
+    captures.Intake.model_validate(intake).complete()
+    monkeypatch.setattr(
+        captures.extractor, "extract", lambda _: {"lines": [{"text": "Random landscape"}]}
+    )
+    assert (
+        not client.post("/api/kyc-captures/read-order", json={"image_base64": encoded})
+        .json()
+        .get("order_check")
+    )
+
+
+def test_branch_leader_confirmation_is_scoped_and_versioned(client):
+    from app import captures
+    from app.db import KycCapture, Notification, User
+    from uuid import uuid4
+
+    login(client, "admin")
+    directory = client.get("/api/organization").json()
+    leader = next(r for r in directory["leaders"] if r["branch_id"])
+    assigned = client.put(
+        f"/api/organization/branches/{leader['branch_id']}/leader", json={"leader_id": leader["id"]}
+    )
+    assert assigned.status_code == 200
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.leader_id == leader["id"]))
+        record = KycCapture(
+            id=str(uuid4()),
+            agent_id=agent.id,
+            creator_id=agent.user_id,
+            operation_id=str(uuid4()),
+            source_reference="SAMPLE-LEADER-HANDOFF",
+            image_hash="test",
+            image_type="image/png",
+            image_encrypted=captures.cipher.encrypt(b"test").decode(),
+            status="SUBMITTED",
+            version=1,
+        )
+        captures.store(record, {"rows": [], "history": []})
+        db.add(record)
+        db.commit()
+        identifier = record.id
+        email = db.get(User, leader["id"]).email
+    r = client.post(
+        f"/api/kyc-captures/{identifier}/review",
+        json={"version": 1, "outcome": "VERIFIED", "reason": "Evidence reviewed"},
+    )
+    assert r.status_code == 200, r.text
+    with DB() as db:
+        assert db.scalar(
+            select(Notification).where(
+                Notification.user_id == leader["id"],
+                Notification.message.like("%SAMPLE-LEADER-HANDOFF%"),
+            )
+        )
+    login(client, "agent1")
+    assert client.get("/api/kyc-captures/leader-confirmations").status_code == 403
+    other = next((r for r in directory["leaders"] if r["id"] != leader["id"]), None)
+    if other:
+        with DB() as db:
+            other_email = db.get(User, other["id"]).email
+        login(client, other_email.split("@")[0])
+        assert client.get(f"/api/kyc-captures/{identifier}").status_code == 404
+        assert client.post(f"/api/kyc-captures/{identifier}/leader-confirm", json={"version": r.json()["version"], "note": "Other branch"}).status_code == 404
+    login(client, email.split("@")[0])
+    rows = client.get("/api/kyc-captures/leader-confirmations").json()
+    row = next(r for r in rows if r["id"] == identifier)
+    assert (
+        client.post(
+            f"/api/kyc-captures/{identifier}/leader-confirm",
+            json={"version": 0, "note": "Reviewed"},
+        ).status_code
+        == 409
+    )
+    r = client.post(
+        f"/api/kyc-captures/{identifier}/leader-confirm",
+        json={"version": row["version"], "note": "Branch review complete"},
+    )
+    assert r.status_code == 200 and r.json()["leader_confirmation"]["name"] == leader["name"]
+    assert all(
+        r["id"] != identifier for r in client.get("/api/kyc-captures/leader-confirmations").json()
+    )
+    with DB() as db:
+        db.delete(db.get(KycCapture, identifier))
+        db.commit()
+
+
+def test_order_payment_record_has_no_inferred_payment_values():
+    from types import SimpleNamespace
+    from datetime import datetime, timezone
+    from app.invoices import invoice
+
+    row = SimpleNamespace(
+        id="order-record", status="SUBMITTED", created_at=datetime.now(timezone.utc)
+    )
+    data = {
+        "intake": {"capture_mode": "SCREENSHOT_ORDER", "order_reference": "SAMPLE-REQ-1001"},
+        "rows": [],
+    }
+    result = invoice(row, data)
+    assert result["heading"] == "Payment recorded"
+    assert result["status"] == "Pending backend confirmation"
+    payment = next(section for section in result["sections"] if section["title"] == "Payment")
+    assert {field["label"] for field in payment["fields"]} == {
+        "Request ID",
+        "Agent payment record",
+        "Backend confirmation",
+    }
+    row.status = "VERIFIED"
+    assert invoice(row, data)["status"] == "Verified"
+    legacy = invoice(row, {"intake": {}, "rows": []})
+    assert legacy["heading"] == "Payment successful"

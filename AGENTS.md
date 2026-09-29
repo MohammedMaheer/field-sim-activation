@@ -1,3 +1,11 @@
+# Payment-record clarification - 29 September 2026
+
+For new screenshot-order submissions, the uploaded order-created confirmation and request ID are the agent payment record. Show `Payment recorded` with `Pending backend confirmation` until independent backend review. Omit payment-value, VAT and payment-method fields from this flow; a request ID does not establish a payment method or gateway settlement. Keep explicitly captured order charges in order details. Preserve historical receipts.
+
+# Latest owner workflow - 29 September 2026
+
+New transactions capture the external checkout customer-details screen, then the order-details screen (product, package, MSISDN, request ID and explicitly shown charges). Barcode and signature are not part of this new capture flow. Preserve historical records. Step 3 uploads confirmation evidence; an order-created success message alone does not establish payment settlement. Unknown values remain Not recorded. Backend independently verifies evidence and the branch team leader then confirms in their signed-in app. Each branch has one designated team leader. The phone-framed web demo now signs in and uses the same backend, with synthetic capture shortcuts and no embedded credentials. Scope all data by account and branch.
+
 # Latest owner workflow - 28 September 2026
 
 This clarification supersedes earlier payment exclusions and Etisalat receipt-upload steps. Relay collects identity/document capture (selfie optional), SIM barcode, subscriber plan, phone and signature, then uploads payment confirmation. No Etisalat activation receipt upload is required for new submissions. The animated payment invoice appears only after an uploaded payment image has been stored, with Pending verification status. Payment successful is the owner-requested acknowledgement heading for uploaded payment confirmation, not gateway authorization. Paid amount and tax are never inferred from plan price. Missing values are Not recorded. Independent authorized staff verify evidence; backend staff record external activation completion with a reference and note. No simulated carrier or biometric approval. Historical activation-receipt records remain unchanged.

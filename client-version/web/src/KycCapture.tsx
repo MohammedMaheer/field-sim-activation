@@ -340,10 +340,10 @@ export default function KycCapture() {
                       </select>
                     </label>
                     <label>
-                      Payment reference (optional)
+                      Request ID (optional)
                       <input
                         maxLength={120}
-                        placeholder="Payment confirmation reference"
+                        placeholder="Order request ID"
                         value={source}
                         onChange={(e) => {
                           setSource(e.target.value);

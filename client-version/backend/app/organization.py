@@ -36,6 +36,10 @@ def directory(db=Depends(get_db), user=Depends(principal)):
             {"id": leader.id, "name": leader.name + "’s team", "branch_id": leader.branch_id}
             for leader in leaders
         ],
+        "leaders": [
+            {"id": leader.id, "name": leader.name, "branch_id": leader.branch_id}
+            for leader in leaders
+        ],
     }
 
 
@@ -84,6 +88,14 @@ def create(
             raise HTTPException(409, "This outlet already exists in the branch")
         entity = Outlet(**values, area=body.area, lat=0, lng=0)
     else:
+        if kind == "teams":
+            db.scalar(select(Branch).where(Branch.id == body.branch_id).with_for_update())
+            if db.scalar(
+                select(User.id)
+                .join(Role)
+                .where(Role.name == "Team Leader", User.branch_id == body.branch_id)
+            ):
+                raise HTTPException(409, "This branch already has a team leader")
         email = body.email.lower()
         if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
             raise HTTPException(422, "Enter a valid email address")
@@ -94,13 +106,30 @@ def create(
         if db.scalar(select(User.id).where(func.lower(User.email) == email)):
             raise HTTPException(409, "An account with this email already exists")
         if kind == "agents":
-            outlet = db.get(Outlet, body.outlet_id) if body.outlet_id else db.scalar(
-                select(Outlet).where(Outlet.branch_id == body.branch_id).order_by(Outlet.created_at)
+            outlet = (
+                db.get(Outlet, body.outlet_id)
+                if body.outlet_id
+                else db.scalar(
+                    select(Outlet)
+                    .where(Outlet.branch_id == body.branch_id)
+                    .order_by(Outlet.created_at)
+                )
             )
             if not outlet or outlet.branch_id != body.branch_id:
                 raise HTTPException(422, "This branch has no valid assignment")
-            leader = db.get(User, body.leader_id) if body.leader_id else None
-            if leader and (db.get(Role, leader.role_id).name != "Team Leader" or leader.branch_id != body.branch_id):
+            leader = (
+                db.get(User, body.leader_id)
+                if body.leader_id
+                else db.scalar(
+                    select(User)
+                    .join(Role)
+                    .where(Role.name == "Team Leader", User.branch_id == body.branch_id)
+                )
+            )
+            if leader and (
+                db.get(Role, leader.role_id).name != "Team Leader"
+                or leader.branch_id != body.branch_id
+            ):
                 raise HTTPException(422, "Invalid historical team assignment")
             if not re.fullmatch(r"[A-Za-z0-9_-]{2,40}", body.employee_id):
                 raise HTTPException(
@@ -118,6 +147,11 @@ def create(
         )
         db.add(account)
         db.flush()
+        if kind == "teams":
+            for agent in db.scalars(
+                select(Agent).join(Outlet).where(Outlet.branch_id == body.branch_id)
+            ):
+                agent.leader_id = account.id
         entity = (
             account
             if kind == "teams"
@@ -148,3 +182,39 @@ def create(
         db.rollback()
         raise HTTPException(409, "This record already exists. Refresh and try again.")
     return {"id": entity.id, **values}
+
+
+class LeaderAssignment(BaseModel):
+    leader_id: str
+
+
+@router.put("/branches/{branch_id}/leader")
+def assign_leader(
+    branch_id: str,
+    body: LeaderAssignment,
+    request: Request,
+    db=Depends(get_db),
+    user=Depends(principal),
+):
+    administrator(db, user)
+    branch = db.get(Branch, branch_id)
+    leader = db.scalar(select(User).where(User.id == body.leader_id).with_for_update())
+    if not branch or not leader or db.get(Role, leader.role_id).name != "Team Leader":
+        raise HTTPException(422, "Choose a branch and team leader")
+    if leader.branch_id and leader.branch_id != branch_id:
+        raise HTTPException(409, "Team leader is assigned to another branch")
+    db.scalar(select(Branch).where(Branch.id == branch_id).with_for_update())
+    for other in db.scalars(
+        select(User)
+        .join(Role)
+        .where(Role.name == "Team Leader", User.branch_id == branch_id, User.id != leader.id)
+    ):
+        other.branch_id = None
+    leader.branch_id = branch_id
+    for agent in db.scalars(select(Agent).join(Outlet).where(Outlet.branch_id == branch_id)):
+        agent.leader_id = leader.id
+    audit(
+        db, user, "Branch leader assigned", branch_id, new={"leader_id": leader.id}, request=request
+    )
+    db.commit()
+    return {"branch_id": branch_id, "leader_id": leader.id}

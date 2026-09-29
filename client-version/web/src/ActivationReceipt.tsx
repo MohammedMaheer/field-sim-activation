@@ -24,9 +24,10 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
   }
   if (!capture.intake || capture.status === "DRAFT") return null;
   const payment = capture.document_kind === "PAYMENT_CONFIRMATION";
+  const orderMode = capture.intake?.capture_mode === "SCREENSHOT_ORDER";
   const success = capture.status === "VERIFIED";
   const title = payment
-    ? capture.invoice?.heading || "Payment successful"
+    ? capture.invoice?.heading || (orderMode ? "Payment recorded" : "Payment successful")
     : success
       ? "Success · Receipt verified"
       : capture.status === "REJECTED"
@@ -46,8 +47,8 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
   const primaryLabels: Record<string, string[]> = {
     Invoice: ["Invoice number", "Date"],
     Customer: ["Customer name", "Document number", "Phone number"],
-    "SIM & plan": ["SIM type", "SIM serial", "Plan", "Plan price"],
-    Payment: ["Payment reference", "Total paid"],
+    "SIM & plan": orderMode ? ["Request ID", "Plan", "Monthly charge", "Prepayment on order"] : ["SIM type", "SIM serial", "Plan", "Plan price"],
+    Payment: orderMode ? ["Agent payment record", "Backend confirmation"] : ["Payment reference", "Total paid"],
   };
   const primarySections = sections
     .filter((section) => primaryLabels[section.title])

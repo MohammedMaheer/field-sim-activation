@@ -5,6 +5,28 @@ import 'package:relay_agent/preview_main.dart';
 
 void main() {
   test(
+    'order confirmation is a pending agent payment record without amounts',
+    () {
+      final invoice = paymentInvoice({
+        'id': 'order-123',
+        'status': 'SUBMITTED',
+        'intake': {
+          'capture_mode': 'SCREENSHOT_ORDER',
+          'order_reference': 'SAMPLE-REQ-1001',
+        },
+      });
+      expect(invoice['heading'], 'Payment recorded');
+      expect(invoice['status'], 'Pending backend confirmation');
+      final payment = (invoice['sections'] as List).firstWhere(
+        (s) => s['title'] == 'Payment',
+      );
+      expect(
+        [for (final f in payment['fields']) f['label']],
+        ['Request ID', 'Agent payment record', 'Backend confirmation'],
+      );
+    },
+  );
+  test(
     'payment invoice uses evidence and does not infer paid amount from price',
     () {
       final row = <String, dynamic>{

@@ -7,6 +7,7 @@ MISSING = "Not recorded"
 
 def invoice(row, data):
     intake = data.get("intake") or {}
+    order_mode = intake.get("capture_mode") == "SCREENSHOT_ORDER"
     plan = data.get("plan_snapshot") or {}
     uploaded = [f for item in data.get("rows", []) for f in (item.get("fields") or [])]
 
@@ -37,6 +38,8 @@ def invoice(row, data):
         if row.status == "VERIFIED"
         else "Correction required"
         if row.status == "REJECTED"
+        else "Pending backend confirmation"
+        if order_mode
         else "Pending verification"
     )
     sections = [
@@ -55,6 +58,9 @@ def invoice(row, data):
                 field(label, intake.get(key))
                 for key, label in [
                     ("name", "Customer name"),
+                    ("arabic_name", "Arabic name"),
+                    ("gender", "Gender"),
+                    ("issue_date", "Issue date"),
                     ("document_type", "Document type"),
                     ("document_number", "Document number"),
                     ("nationality", "Nationality"),
@@ -69,10 +75,16 @@ def invoice(row, data):
             "fields": [
                 field(
                     "SIM type",
-                    {"PHYSICAL": "Physical SIM", "ESIM": "eSIM"}.get(intake.get("sim_type")),
+                    {"PHYSICAL": "Physical SIM", "ESIM": "eSIM"}.get(intake.get("sim_type"))
+                    if intake.get("sim_identifier")
+                    else None,
                 ),
                 field("SIM serial", intake.get("sim_identifier")),
                 field("Plan", intake.get("plan_name")),
+                field("Package", intake.get("package_name")),
+                field("Request ID", intake.get("order_reference")),
+                field("Monthly charge", intake.get("monthly_cost")),
+                field("Prepayment on order", intake.get("prepayment")),
                 field(
                     "Plan price",
                     f"AED {plan['monthly_cost']:.2f}" if "monthly_cost" in plan else None,
@@ -83,6 +95,12 @@ def invoice(row, data):
         {
             "title": "Payment",
             "fields": [
+                field("Request ID", intake.get("order_reference")),
+                field("Agent payment record", "Uploaded"),
+                field("Backend confirmation", review),
+            ]
+            if order_mode
+            else [
                 field(
                     "Payment reference",
                     find({"payment reference", "transaction reference", "reference"})
@@ -99,15 +117,32 @@ def invoice(row, data):
         {
             "title": "Records",
             "fields": [
-                field("Identity document", "Captured" if intake.get("document_image") else None),
+                field(
+                    "Customer details screen"
+                    if intake.get("capture_mode") == "SCREENSHOT_ORDER"
+                    else "Identity document",
+                    "Captured" if intake.get("document_image") else None,
+                ),
+                field("Order details screen", "Captured" if intake.get("order_image") else None),
                 field("Selfie", "Captured" if intake.get("selfie_image") else None),
                 field("Customer signature", "Captured" if intake.get("signature") else None),
                 field("Payment confirmation", "Uploaded"),
                 field("Verified by", (data.get("review") or {}).get("reviewer")),
+                field("Branch confirmed by", (data.get("leader_confirmation") or {}).get("name")),
                 field("Activation reference", activation.get("reference")),
             ],
         },
     ]
+    if intake.get("order_fields"):
+        sections.append(
+            {
+                "title": "Order details",
+                "fields": [
+                    field(item.get("label", "Order detail"), item.get("value"))
+                    for item in intake["order_fields"]
+                ],
+            }
+        )
     if uploaded:
         sections.append(
             {
@@ -116,7 +151,11 @@ def invoice(row, data):
             }
         )
     return {
-        "heading": "Correction required" if row.status == "REJECTED" else "Payment successful",
+        "heading": "Correction required"
+        if row.status == "REJECTED"
+        else "Payment recorded"
+        if order_mode
+        else "Payment successful",
         "status": review,
         "sections": sections,
     }
