@@ -7,6 +7,7 @@ import { api, Row } from "./api";
 import { Context } from "./App";
 import { DataTable, Drawer, ErrorState, Loading } from "./components";
 import OrganizationSetup from "./OrganizationSetup";
+import RecordOverview from "./RecordOverview";
 
 const sections: Record<string, string> = {
   branches: "Branches",
@@ -158,6 +159,7 @@ export default function Administration() {
           Subscriber plans →
         </Link>
       </div>
+      {!q.isPending && !q.error && <RecordOverview rows={(q.data || []).map((row:Row) => kind === "branches" ? {...row,agents:(agents.data || []).filter(agent => agent.branch_id === row.id).length} : kind === "incentives" ? {...row,name:(agents.data || []).find(agent => agent.id === row.agent_id)?.name || "Not recorded"} : row)} field={kind === "branches" ? "agents" : kind === "agents" ? "target" : kind === "customers" ? "nationality" : kind === "incentives" ? "amount" : "status"} numeric={["branches","agents","incentives"].includes(kind)} title={kind === "branches" ? "Agents by branch" : kind === "agents" ? "Daily targets" : kind === "incentives" ? "Recorded incentives (AED)" : "Record breakdown"} />}
       <section className="panel">
         <div className="admin-toolbar">
           <h2>{sections[kind]}</h2>

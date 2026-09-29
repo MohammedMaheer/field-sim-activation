@@ -1568,7 +1568,7 @@ def test_customer_order_screen_capture_requires_evidence_and_preserves_amounts(c
     )
 
 
-def test_branch_leader_confirmation_is_scoped_and_versioned(client):
+def test_backend_confirmation_notifies_scoped_read_only_leader(client):
     from app import captures
     from app.db import KycCapture, Notification, User
     from uuid import uuid4
@@ -1623,21 +1623,15 @@ def test_branch_leader_confirmation_is_scoped_and_versioned(client):
     login(client, email.split("@")[0])
     rows = client.get("/api/kyc-captures/leader-confirmations").json()
     row = next(r for r in rows if r["id"] == identifier)
-    assert (
-        client.post(
-            f"/api/kyc-captures/{identifier}/leader-confirm",
-            json={"version": 0, "note": "Reviewed"},
-        ).status_code
-        == 409
-    )
-    r = client.post(
+    assert row["status"] == "VERIFIED"
+    assert client.post(
         f"/api/kyc-captures/{identifier}/leader-confirm",
-        json={"version": row["version"], "note": "Branch review complete"},
-    )
-    assert r.status_code == 200 and r.json()["leader_confirmation"]["name"] == leader["name"]
-    assert all(
-        r["id"] != identifier for r in client.get("/api/kyc-captures/leader-confirmations").json()
-    )
+        json={"version": row["version"], "note": "Attempted branch confirmation"},
+    ).status_code == 403
+    assert client.post(
+        f"/api/kyc-captures/{identifier}/review",
+        json={"version": row["version"], "outcome": "VERIFIED", "reason": "Leader cannot verify"},
+    ).status_code == 403
     with DB() as db:
         db.delete(db.get(KycCapture, identifier))
         db.commit()

@@ -168,7 +168,6 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
           ),
           field('Payment confirmation', 'Uploaded'),
           field('Verified by', row['review']?['reviewer']),
-          field('Branch confirmed by', row['leader_confirmation']?['name']),
           field('Activation reference', row['activation']?['reference']),
         ],
       },

@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {mobileSignIn} from './mobile-session';
 import {writeFile} from 'node:fs/promises';
 
-test('shared phone capture reaches backend review and branch leader confirmation',async({page,browser,request})=>{
+test('shared phone capture reaches backend review and read-only branch leader update',async({page,browser,request})=>{
  test.setTimeout(240000);
  let created:any;
  page.on('response',async r=>{if(r.request().method()==='POST' && new URL(r.url()).pathname==='/api/kyc-captures' && r.ok()) created=await r.json();});
@@ -42,12 +42,11 @@ test('shared phone capture reaches backend review and branch leader confirmation
  await admin.getByRole('button',{name:'Payment confirmation',exact:true}).first().click();
  await admin.getByRole('checkbox',{name:/I checked/}).check();await admin.getByRole('textbox',{name:'Review note'}).fill('Customer, order and agent payment record compared with uploaded screens.');
  await admin.getByRole('button',{name:'Verify submission',exact:true}).click();
- await expect(admin.getByText(/Awaiting branch team leader confirmation/)).toBeVisible();
+ await expect(admin.getByText(/Transaction confirmed by backend/)).toBeVisible();
  const leaderContext=await browser.newContext();const leader=await leaderContext.newPage();await mobileSignIn(leader,'leader2@relay.demo');
- await expect(leader.getByRole('group',{name:/Backend verified.*SAMPLE-REQ-1001/}).first()).toBeVisible({timeout:30000});
+ await expect(leader.getByRole('group',{name:/Transaction confirmed by backend.*SAMPLE-REQ-1001/}).first()).toBeVisible({timeout:30000});
  await leader.screenshot({path:'../output/qa/shared-leader-confirmation.png'});
- await leader.getByRole('button',{name:'Confirm',exact:true}).first().click();
- await expect.poll(async()=>{const r=await request.get(url,{headers});return(await r.json()).leader_confirmation?.name;},{timeout:20000}).toBeTruthy();
+ await expect(leader.getByRole('button',{name:'Confirm',exact:true})).toHaveCount(0);
  await admin.waitForTimeout(6000);await admin.screenshot({path:'../output/qa/shared-backend-confirmed.png'});
  await leaderContext.close();await adminContext.close();
 });

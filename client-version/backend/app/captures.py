@@ -607,7 +607,7 @@ def leader_confirmations(user=Depends(principal), db=Depends(get_db)):
         .where(KycCapture.agent_id.in_(agents), KycCapture.status == "VERIFIED")
         .order_by(KycCapture.updated_at.desc())
     ).all()
-    return [view(row) for row in rows if not payload(row).get("leader_confirmation")]
+    return [view(row) for row in rows]
 
 
 class LeaderConfirmation(BaseModel):
@@ -625,22 +625,8 @@ def leader_confirm(
 ):
     if db.get(Role, user.role_id).name != "Team Leader":
         raise HTTPException(403, "Team leader access required")
-    row = get_capture(db, user, capture_id, True)
-    version_check(row, body)
-    if row.status != "VERIFIED":
-        raise HTTPException(409, "Backend verification must be completed first")
-    data = payload(row)
-    if data.get("leader_confirmation"):
-        raise HTTPException(409, "Already confirmed")
-    data["leader_confirmation"] = {
-        "user_id": user.id,
-        "name": user.name,
-        "note": body.note.strip(),
-        "at": now().isoformat(),
-    }
-    record(db, row, user, "Branch leader confirmed", request, data)
-    db.commit()
-    return view(row)
+    get_capture(db, user, capture_id, True)
+    raise HTTPException(403, "Transactions are confirmed by backend staff; team leaders have read-only access")
 
 
 class CaptureBody(BaseModel):
@@ -1075,7 +1061,7 @@ def review(
             db.add(
                 Notification(
                     user_id=agent.leader_id,
-                    message=f"Backend verification completed: {row.source_reference[:120]}. Please confirm.",
+                    message=f"Transaction confirmed by backend: {row.source_reference[:120]}.",
                 )
             )
     progress = db.scalar(

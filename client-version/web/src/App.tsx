@@ -1,4 +1,6 @@
 import OrganizationSetup from "./OrganizationSetup";
+import TeamLeaders from "./TeamLeaders";
+import RecordOverview from "./RecordOverview";
 import AgentManagement from "./AgentManagement";
 import Administration from "./Administration";
 import PlanManagement from "./PlanManagement";
@@ -129,6 +131,7 @@ const navigation = [
     items: [
       ["agents", "Agents", Users],
       ["branches", "Branches", UserRoundCheck],
+      ["team-leaders", "Team leaders", Users],
       ["customers", "Customers", ContactRound],
     ],
   },
@@ -161,6 +164,7 @@ export function canVisitPage(path: string, user: Row) {
   path = path.replace(/^\//, "");
   if (path === "screenshot-capture") path = "kyc-capture";
   const permissions = user.permissions || [];
+  if (path === "team-leaders") return ["Administrator", "Team Leader"].includes(user.role);
   if (["plans", "administration"].includes(path)) return permissions.includes("settings.write");
   if (path === "audit") return permissions.includes("audit.read");
   if (path === "reports") return permissions.includes("report.read");
@@ -555,7 +559,7 @@ export default function App() {
                 className="icon-btn notification-btn"
                 title={user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
                 aria-label={user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
-                onClick={() => user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate("/kyc-capture")}
+                onClick={() => user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate(user.role === "Team Leader" ? "/team-leaders" : "/kyc-capture")}
               >
                 <Bell size={18} />
                 <i />
@@ -583,6 +587,7 @@ export default function App() {
                 <Route path="/live" element={<LiveOperations />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/plans" element={<PlanManagement />} />
+                <Route path="/team-leaders" element={<TeamLeaders />} />
                 <Route path="/administration" element={<Administration />} />
                 {[
                   "agents",
@@ -1164,19 +1169,7 @@ function ResourcePage({ resource }: { resource: string }) {
           </button>
         )}
       </PageHeader>
-      {resource === "inventory" && (
-        <div className="metrics-grid">
-          {["AVAILABLE", "RESERVED", "ACTIVATED", "DAMAGED"].map((s) => (
-            <Metric
-              key={s}
-              label={s.charAt(0) + s.slice(1).toLowerCase()}
-              value={data.filter((r) => r.status === s).length}
-              sub="Tracked inventory"
-              icon={<Layers3 size={17} />}
-            />
-          ))}
-        </div>
-      )}
+      <RecordOverview rows={data} categories={resource === "inventory" ? ["AVAILABLE","RESERVED","ACTIVATED","DAMAGED"] : []} field={resource === "branches" ? "agents" : resource === "customers" ? "nationality" : resource === "audit" ? "action" : "status"} numeric={resource === "branches"} title={resource === "branches" ? "Agents by branch" : resource === "customers" ? "Customer nationalities" : resource === "audit" ? "Activity breakdown" : "Status breakdown"} />
       <Panel
         title="Records"
         subtitle={`${data.length} records in your authorized scope`}

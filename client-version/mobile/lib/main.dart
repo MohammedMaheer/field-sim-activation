@@ -549,7 +549,7 @@ class _LeaderConfirmationsState
       padding: const EdgeInsets.all(16),
       children: [
         const Text(
-          'Branch confirmations',
+          'Branch updates',
           style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800),
         ),
         const SizedBox(height: 12),
@@ -560,7 +560,7 @@ class _LeaderConfirmationsState
           const Card(
             child: Padding(
               padding: EdgeInsets.all(18),
-              child: Text('No confirmations awaiting review'),
+              child: Text('No backend confirmations yet'),
             ),
           ),
         for (final row in rows)
@@ -573,7 +573,7 @@ class _LeaderConfirmationsState
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     const Text(
-                      'Backend verified · Please confirm',
+                      'Transaction confirmed by backend',
                       style: TextStyle(
                         color: green,
                         fontWeight: FontWeight.w700,
@@ -591,42 +591,9 @@ class _LeaderConfirmationsState
                       '${row['source_reference']} · ${row['intake']?['plan_name'] ?? 'Not recorded'}',
                     ),
                     const SizedBox(height: 10),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: () =>
-                                context.push('/transaction/${row['id']}'),
-                            child: const Text('View details'),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: FilledButton(
-                            onPressed: () async {
-                              try {
-                                await ref
-                                    .read(serviceProvider)
-                                    .dio
-                                    .post(
-                                      '/kyc-captures/${row['id']}/leader-confirm',
-                                      data: {
-                                        'version': row['version'],
-                                        'note':
-                                            'Branch team leader reviewed and confirmed',
-                                      },
-                                    );
-                                await load();
-                              } catch (e) {
-                                if (mounted) {
-                                  setState(() => error = friendlyError(e));
-                                }
-                              }
-                            },
-                            child: const Text('Confirm'),
-                          ),
-                        ),
-                      ],
+                    OutlinedButton(
+                      onPressed: () => context.push('/transaction/${row['id']}'),
+                      child: const Text('View details'),
                     ),
                   ],
                 ),

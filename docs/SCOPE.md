@@ -1,3 +1,7 @@
+# Branch leader clarification - 29 September 2026
+
+Backend staff independently verify transactions. Branch team leaders receive read-only notifications and transaction updates after backend confirmation; they do not verify, approve or confirm transactions. This supersedes the earlier leader-confirmation handoff.
+
 # Payment-record clarification - 29 September 2026
 
 For new screenshot-order submissions, the uploaded order-created confirmation and request ID are the agent payment record. Show `Payment recorded` with `Pending backend confirmation` until independent backend review. Omit payment-value, VAT and payment-method fields from this flow; a request ID does not establish a payment method or gateway settlement. Keep explicitly captured order charges in order details. Preserve historical receipts.

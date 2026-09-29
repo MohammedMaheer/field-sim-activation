@@ -391,7 +391,7 @@ export default function ReceiptReview({
           </div>
         )}
       </section>
-      {capture.status === "VERIFIED" && <div className="setup-summary" role="status">{capture.leader_confirmation ? `Branch confirmed by ${capture.leader_confirmation.name}` : "Awaiting branch team leader confirmation"}</div>}
+      {capture.status === "VERIFIED" && <div className="setup-summary" role="status">Transaction confirmed by backend</div>}
       {capture.document_kind === "PAYMENT_CONFIRMATION" &&
         capture.status === "VERIFIED" && (
           <section className="panel activation-completion">

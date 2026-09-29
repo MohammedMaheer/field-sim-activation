@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { api, post, patch, download, Row } from "./api";
+import RecordOverview from "./RecordOverview";
 import {
   Badge,
   DataTable,
@@ -407,6 +408,7 @@ export function Incentives({ user, notify }: Props) {
           <span>Agents</span>
         </div>
       </div>
+      <RecordOverview rows={data.map((row:Row) => ({...row,name:row.agent || agents.find(agent => agent.id === row.agent_id)?.name || "Not recorded"}))} field="amount" numeric title="Incentives by agent (AED)" />
       {message && (
         <p role="alert" className="ekyc-feedback">
           {message}
@@ -523,7 +525,7 @@ export function Incentives({ user, notify }: Props) {
             { key: "agent", label: "Agent" },
             { key: "period", label: "Period" },
             { key: "amount", label: "Amount (AED)" },
-            { key: "source", label: "Source" },
+            { key: "source", label: "Source", render: (row) => row.source === "DEMO" ? "Recorded" : row.source },
             { key: "note", label: "Note" },
           ]}
         />
@@ -585,6 +587,7 @@ export function Support({ user, notify }: Props) {
           <p>Review requests sent by field agents and respond to them.</p>
         </div>
       </div>
+      <RecordOverview rows={data} title="Support status" />
       {errorText && (
         <p role="alert" className="ekyc-feedback">
           {errorText}

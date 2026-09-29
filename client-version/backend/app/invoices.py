@@ -128,7 +128,6 @@ def invoice(row, data):
                 field("Customer signature", "Captured" if intake.get("signature") else None),
                 field("Payment confirmation", "Uploaded"),
                 field("Verified by", (data.get("review") or {}).get("reviewer")),
-                field("Branch confirmed by", (data.get("leader_confirmation") or {}).get("name")),
                 field("Activation reference", activation.get("reference")),
             ],
         },

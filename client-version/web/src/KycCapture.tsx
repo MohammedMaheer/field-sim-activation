@@ -2,6 +2,7 @@ import ActivationReceipt from "./ActivationReceipt";
 import CustomerIntake from "./CustomerIntake";
 import ReceiptReview from "./ReceiptReview";
 import KycJourney from "./KycJourney";
+import RecordOverview from "./RecordOverview";
 import { useContext, useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,6 +26,7 @@ export default function KycCapture() {
     ["activation.write", "ekyc.write"].includes(p),
   );
   const canReview = user.permissions.includes("compliance.write");
+  const activity = useQuery<Row[]>({queryKey:["kyc-captures","overview"],queryFn:() => api("/kyc-captures?limit=100"),enabled:canReview,refetchInterval:8000});
   const [intake, setIntake] = useState<Row>({});
   const [intakeReady, setIntakeReady] = useState(false);
   const [draftsOpen,setDraftsOpen] = useState(false);
@@ -197,6 +199,9 @@ export default function KycCapture() {
       {draftsOpen && <Drawer title="Drafts" onClose={() => setDraftsOpen(false)}>
         {drafts.isLoading ? <p>Loading drafts…</p> : drafts.isError ? <p role="alert">Could not load drafts</p> : (drafts.data || []).length === 0 ? <p>No saved drafts</p> : (drafts.data || []).map((d:Row) => <div key={d.id} className="draft-card"><button onClick={() => {setIntake(d.data);setIntakeReady(false);setSelected('');setShowUpload(true);setDraftsOpen(false);}}><b>{d.data.name || 'New customer'}</b><small>Step {(d.data.step || 0)+1} of 3</small></button><button onClick={async () => {if(!window.confirm('Discard this draft?'))return;try{await api(`/kyc-captures/saved-drafts/${d.id}`,{method:'DELETE'});drafts.refetch();}catch(e:any){setError(e.message);}}}>Discard</button></div>)}
       </Drawer>}
+      {canReview && !selected && !showUpload && activity.data && (
+        <RecordOverview rows={activity.data || []} title="Latest verification records" />
+      )}
       {canReview && !selected && !showUpload && (
         <section className="review-inbox">
           <div className="review-inbox-header">

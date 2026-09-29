@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, Check, CircleDollarSign, Layers3, Plus, RotateCcw, Tag, Trash2, X } from "lucide-react";
+import { Archive, Check, CircleDollarSign, Plus, RotateCcw, Tag, Trash2, X } from "lucide-react";
 import { api, patch, post, Row } from "./api";
 import { Badge, Drawer, ErrorState, Loading } from "./components";
 import { useContext } from "react";
 import { Context } from "./App";
+import RecordOverview from "./RecordOverview";
 
 const blank = {
   name: "",
@@ -120,10 +121,7 @@ export default function PlanManagement() {
       </div>
       {plans.isPending ? <Loading /> : plans.error ? <ErrorState error={plans.error} retry={plans.refetch} /> : (
         <>
-          <div className="plan-summary-row">
-            <span><Layers3 size={18} /> {plans.data.filter((p: Row) => p.active).length} available</span>
-            <span><Archive size={18} /> {plans.data.filter((p: Row) => !p.active).length} removed</span>
-          </div>
+          <RecordOverview rows={plans.data.map((plan:Row) => ({...plan,availability:plan.active ? "Available" : "Removed"}))} field="availability" title="Plan availability" />
           <section className="plan-management-grid" aria-label="Subscriber plans">
             {plans.data.map((plan: Row) => (
               <article className={`panel managed-plan ${plan.active ? "" : "inactive"}`} key={plan.id}>
