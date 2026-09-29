@@ -1425,14 +1425,24 @@ class _SupportState extends ConsumerState<SupportScreen> {
           onPressed: busy || s.user?['agent_id'] == null
               ? null
               : () async {
+                  final title = subject.text.trim();
+                  final details = description.text.trim();
+                  if (title.length < 3) {
+                    message(context, 'Enter a subject of at least 3 characters');
+                    return;
+                  }
+                  if (details.length < 10) {
+                    message(context, 'Describe the issue in at least 10 characters');
+                    return;
+                  }
                   setState(() => busy = true);
                   try {
                     await s.dio.post(
                       '/support-tickets',
                       data: {
                         'agent_id': s.user!['agent_id'],
-                        'subject': subject.text,
-                        'message': description.text,
+                        'subject': title,
+                        'message': details,
                       },
                     );
                     subject.clear();
