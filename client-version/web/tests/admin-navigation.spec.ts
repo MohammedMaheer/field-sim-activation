@@ -10,22 +10,18 @@ test("administrator can navigate network, stock, work and plans without overflow
   await expect(
     page.getByRole("heading", { name: "Agents", exact: true }),
   ).toBeVisible();
+  await page.getByRole("link", { name: "Manage agents", exact: true }).click();
+  await expect(page).toHaveURL(/agents$/);
   await page.getByRole("button", { name: "Add agent", exact: true }).click();
-  await expect(page.getByText("Set up your field network")).toBeVisible();
+  await expect(page.getByText("Manage branches and agents")).toBeVisible();
   await page.keyboard.press("Escape");
+  await page.goto("/administration?section=inventory");
   await page
     .getByRole("group", { name: "Customer & stock" })
     .getByRole("button", { name: "SIM stock" })
     .click();
   await expect(
     page.getByRole("heading", { name: "SIM stock", exact: true }),
-  ).toBeVisible();
-  await page
-    .getByRole("group", { name: "Daily work" })
-    .getByRole("button", { name: "Tasks" })
-    .click();
-  await expect(
-    page.getByRole("heading", { name: "Tasks", exact: true }),
   ).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(900);

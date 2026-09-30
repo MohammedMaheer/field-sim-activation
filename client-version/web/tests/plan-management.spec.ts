@@ -48,6 +48,11 @@ test("administrator manages plans and field selections stay in sync", async ({ p
   page.once("dialog", (dialog) => dialog.accept());
   await created.getByRole("button", { name: "Remove" }).click();
   await expect(created.getByText("removed", { exact: true })).toBeVisible();
+  await created.getByRole('button',{name:`Permanently delete ${temporaryName}`,exact:true}).click();
+  const deletion=page.getByRole('dialog',{name:'Delete subscriber plan',exact:true});
+  await deletion.getByLabel('Reason for deletion').fill('Unused isolated audit plan');
+  await deletion.getByRole('button',{name:'Delete plan',exact:true}).click();
+  await expect(created).toHaveCount(0);
 
   await page.goto("/agents");
   await page.getByRole("button", { name: "Add agent" }).click();

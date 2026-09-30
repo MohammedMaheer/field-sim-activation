@@ -991,7 +991,7 @@ tbody tr:nth-child(even) { background:#f7f8fc; }
 .pulse-banner {padding:22px 26px;min-height:0}
 .pulse-banner h2 {font-size:25px;margin:8px 0}
 .pulse-banner p {margin:6px 0 14px}
-.dashboard-bottom-grid {display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:20px;align-items:start}
+.dashboard-bottom-grid {display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
 .dashboard-bottom-grid .branch-team-grid {grid-template-columns:1fr;gap:10px}
 .dashboard-bottom-grid .branch-team-card {padding:16px}
 .dashboard-bottom-grid .record-plan {display:none}
@@ -1036,3 +1036,13 @@ tbody tr:nth-child(even) { background:#f7f8fc; }
 .branch-leader-list { display:grid; gap:10px; margin:12px 0 18px; }
 .branch-leader-list label { display:grid; gap:6px; padding:12px; border:1px solid #dfd8ef; border-radius:10px; background:linear-gradient(115deg,#f1eaff,#e8f8f5); font-size:14px; font-weight:600; }
 .branch-leader-list select { min-height:42px; width:100%; }
+.dashboard-work-strip {display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:0 0 20px}
+.dashboard-work-strip button {display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #dcd3ef;border-radius:15px;background:linear-gradient(115deg,#f2e8ff,#f9f6ff);text-align:left;color:#623294}
+.dashboard-work-strip .tone-blue {background:linear-gradient(115deg,#e1efff,#f3f7ff);color:#285c9b;border-color:#cddff4}
+.dashboard-work-strip .tone-teal {background:linear-gradient(115deg,#d8f6ed,#f0fcf7);color:#146c59;border-color:#bfe5d8}
+.dashboard-work-strip .tone-amber {background:linear-gradient(115deg,#fff0d4,#fff9ef);color:#905a10;border-color:#f0dcb4}
+.dashboard-work-strip button>span {flex:1;display:grid;gap:3px}
+.dashboard-work-strip b {font-size:23px;line-height:1.1;font-variant-numeric:tabular-nums}
+.dashboard-work-strip small {font-size:13px;line-height:1.4;font-weight:600}
+.premium-dashboard button:disabled {cursor:default;opacity:1}
+@media(max-width:620px){.dashboard-work-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.dashboard-work-strip button{padding:12px;gap:8px}.dashboard-work-strip button>svg:last-child{display:none}.dashboard-work-strip small{font-size:12px}}

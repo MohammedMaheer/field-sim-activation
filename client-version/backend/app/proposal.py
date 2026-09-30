@@ -12,7 +12,8 @@ from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import Field
+from .validation import BusinessInput
 from sqlalchemy import case, select, text
 from openpyxl import load_workbook
 from .db import Agent, FieldTask, Incentive, SupportTicket, User, get_db, now
@@ -72,7 +73,7 @@ def tickets(user=Depends(principal), db=Depends(get_db)):
     return [ticket_view(db, row) for row in rows]
 
 
-class TicketCreate(BaseModel):
+class TicketCreate(BusinessInput):
     agent_id: str
     subject: str = Field(min_length=3, max_length=160)
     message: str = Field(min_length=10, max_length=1000)
@@ -92,7 +93,7 @@ def create_ticket(body: TicketCreate, request: Request, user=Depends(principal),
     return ticket_view(db, row)
 
 
-class TicketReview(BaseModel):
+class TicketReview(BusinessInput):
     status: Literal["IN_PROGRESS", "RESOLVED"]
     response: str = Field(min_length=5, max_length=1000)
 
@@ -114,7 +115,7 @@ def review_ticket(ticket_id: str, body: TicketReview, request: Request, user=Dep
     return ticket_view(db, row)
 
 
-class TaskCreate(BaseModel):
+class TaskCreate(BusinessInput):
     agent_id: str
     title: str = Field(min_length=3, max_length=160)
     note: str = Field(default="", max_length=500)
@@ -137,7 +138,7 @@ def create_task(body: TaskCreate, request: Request, user=Depends(principal), db=
     return task_view(db, row)
 
 
-class TaskUpdate(BaseModel):
+class TaskUpdate(BusinessInput):
     status: Literal["OPEN", "IN_PROGRESS", "DONE"]
 
 
@@ -170,7 +171,7 @@ def incentives(user=Depends(principal), db=Depends(get_db), period: str | None =
     return [incentive_view(db, row) for row in rows]
 
 
-class IncentiveCreate(BaseModel):
+class IncentiveCreate(BusinessInput):
     agent_id: str
     period: str
     amount: str
@@ -189,7 +190,7 @@ def create_incentive(body: IncentiveCreate, request: Request, user=Depends(princ
     return incentive_view(db, row)
 
 
-class IncentiveUpload(BaseModel):
+class IncentiveUpload(BusinessInput):
     filename: str = Field(max_length=120)
     content_base64: str = Field(max_length=2_800_000)
 

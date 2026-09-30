@@ -8,7 +8,7 @@ test('backlinks, mobile navigation dismissal and reduced motion', async ({ page 
   await page.getByRole('button', { name: 'Back to previous page' }).click();
   await expect(page.getByRole('heading', { name: 'Operations overview' })).toBeVisible();
   await page.goto('/screenshot-capture');
-  await expect(page.locator('[aria-current="page"]').last()).toHaveText('Screenshot review');
+  await expect(page.locator('[aria-current="page"]').last()).toHaveText('Backend verification');
   await page.getByRole('link', { name: 'Workspace overview', exact: true }).click();
   await expect(page).toHaveURL(/\/$/);
   await page.setViewportSize({ width: 390, height: 844 });

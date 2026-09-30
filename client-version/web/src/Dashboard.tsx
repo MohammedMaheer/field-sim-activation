@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import {
@@ -24,15 +24,17 @@ import {
   Coins,
   ArrowRight,
   Sparkles,
+  Phone,
+  LifeBuoy,
+  ShoppingBag,
 } from "lucide-react";
+import { Context, canVisitPage } from "./App";
 import { api, Row } from "./api";
 import {
   Badge,
   Panel,
   Loading,
   ErrorState,
-  Avatar,
-  Progress,
   Empty,
 } from "./components";
 
@@ -165,6 +167,7 @@ function Donut({
 }
 
 export default function Dashboard() {
+  const { user } = useContext(Context);
   const [branch, setBranch] = useState("");
   const navigate = useNavigate();
   const {
@@ -179,9 +182,12 @@ export default function Dashboard() {
   });
   if (isPending) return <Loading />;
   if (error || !d) return <ErrorState error={error} retry={refetch} />;
+  const sales = d.sales_summary || {achievement:0,closed_today:0,target:0,week:0};
+  const trend = d.sales_trend || [];
+  const branchSales = [...d.branches].map((b:Row) => ({...b,activations:b.closed_sales || 0})).sort((a:Row,b:Row) => b.activations-a.activations).slice(0,5);
   const metrics = [
     {
-      label: "KYC captured today",
+      label: "Transactions captured today",
       value: d.kyc_today,
       sub: `${d.kyc_verified} verified records`,
       icon: ScanLine,
@@ -213,6 +219,12 @@ export default function Dashboard() {
       path: "inventory",
     },
   ];
+  const work = [
+    { label: "Sales in progress", value: d.work_summary?.open_sales ?? 0, path: "sales", icon: ShoppingBag, tone: "violet" },
+    { label: "Calls ready", value: d.work_summary?.ready_calls ?? 0, path: "call-work", icon: Phone, tone: "blue" },
+    { label: "Stock requests", value: d.work_summary?.stock_requests ?? 0, path: "equipment", icon: Package, tone: "teal" },
+    { label: "Open support", value: d.work_summary?.open_support ?? 0, path: "support", icon: LifeBuoy, tone: "amber" },
+  ].filter(item => canVisitPage(item.path, user));
   return (
     <div className="premium-dashboard">
       <div className="page-header">
@@ -221,7 +233,7 @@ export default function Dashboard() {
           <h1>
             Operations overview<span className="heading-dot">.</span>
           </h1>
-          <p>A clear view of your people, progress and next priorities.</p>
+          <p>Transactions, branch performance and work awaiting action.</p>
         </div>
         <BranchFilter value={branch} onChange={setBranch} />
       </div>
@@ -236,7 +248,7 @@ export default function Dashboard() {
             {d.agents.length} agents · {d.branches.length} branches · one
             connected workflow.
           </p>
-          <button className="primary" onClick={() => navigate("/kyc-capture")}>
+          <button className="primary" disabled={!canVisitPage("kyc-capture", user)} onClick={() => navigate("/kyc-capture")}>
             <ScanLine size={17} />
             Capture transaction
             <ArrowUpRight size={16} />
@@ -247,18 +259,18 @@ export default function Dashboard() {
             className="progress-ring"
             style={
               {
-                "--progress": `${Math.min(d.achievement, 100)}%`,
+                "--progress": `${Math.min(sales.achievement, 100)}%`,
               } as React.CSSProperties
             }
           >
-            <b>{d.achievement}%</b>
+            <b>{sales.achievement}%</b>
             <span>of daily target</span>
           </div>
           <div>
             <b>
-              {d.today} / {d.target}
+              {sales.closed_today} / {sales.target}
             </b>
-            <span>sales recorded today</span>
+            <span>closed sales today</span>
             <small>
               Updated{" "}
               {new Date(d.last_sync).toLocaleTimeString([], {
@@ -274,6 +286,7 @@ export default function Dashboard() {
           <button
             key={m.label}
             className={`premium-kpi tone-${m.tone}`}
+            disabled={!canVisitPage(m.path, user)}
             onClick={() => navigate("/" + m.path)}
             aria-label={"View " + m.label.toLowerCase()}
           >
@@ -289,6 +302,11 @@ export default function Dashboard() {
           </button>
         ))}
       </div>
+      <div className="dashboard-work-strip" aria-label="Work awaiting action">
+        {work.map(item => <button key={item.path} className={`tone-${item.tone}`} onClick={() => navigate("/" + item.path + (item.path === "equipment" ? "?tab=requests" : ""))}>
+          <item.icon size={20} /><span><b>{item.value}</b><small>{item.label}</small></span><ArrowUpRight size={16} />
+        </button>)}
+      </div>
       <div className="analytics-main">
         <Panel
           title="Capture & sales activity"
@@ -298,21 +316,21 @@ export default function Dashboard() {
           <div className="inline-legend">
             <span>
               <i style={{ background: palette[0] }} />
-              KYC captures
+              Transaction captures
             </span>
             <span>
               <i style={{ background: palette[1] }} />
               Completed sales
             </span>
-            <b>{d.week} sales this week</b>
+            <b>{sales.week} sales this week</b>
           </div>
           <div
             role="img"
-            aria-label={`Seven-day activity: ${d.trend.map((r: Row) => `${r.date}: ${r.captures} captures, ${r.activations} sales`).join("; ")}`}
+            aria-label={`Seven-day activity: ${trend.map((r: Row) => `${r.date}: ${r.captures} captures, ${r.activations} sales`).join("; ")}`}
           >
             <ResponsiveContainer width="100%" height={275}>
               <AreaChart
-                data={d.trend}
+                data={trend}
                 margin={{ top: 15, right: 20, left: -18, bottom: 0 }}
               >
                 <defs>
@@ -350,7 +368,7 @@ export default function Dashboard() {
                 <Area
                   isAnimationActive={false}
                   type="monotone"
-                  name="KYC captures"
+                  name="Transaction captures"
                   dataKey="captures"
                   stroke={palette[0]}
                   strokeWidth={3}
@@ -389,15 +407,13 @@ export default function Dashboard() {
         >
           <div
             role="img"
-            aria-label={d.branches
+            aria-label={branchSales
               .map((b: Row) => `${b.name}: ${b.activations} sales`)
               .join("; ")}
           >
             <ResponsiveContainer width="100%" height={240}>
               <BarChart
-                data={[...d.branches]
-                  .sort((a: Row, b: Row) => b.activations - a.activations)
-                  .slice(0, 5)}
+                data={branchSales}
                 layout="vertical"
                 margin={{ top: 12, right: 20, bottom: 12, left: 5 }}
               >
@@ -428,7 +444,7 @@ export default function Dashboard() {
                   radius={[0, 7, 7, 0]}
                   maxBarSize={52}
                 >
-                  {d.branches.map((b: Row, i: number) => (
+                  {branchSales.map((b: Row, i: number) => (
                     <Cell key={b.id} fill={palette[i % palette.length]} />
                   ))}
                 </Bar>
@@ -437,6 +453,7 @@ export default function Dashboard() {
           </div>
           <button
             className="chart-link"
+            disabled={!canVisitPage("branches", user)}
             onClick={() => navigate("/branches")}
           >
             Explore branches
@@ -448,7 +465,7 @@ export default function Dashboard() {
           subtitle="Completed sales · all recorded history"
           className="chart-panel"
         >
-          <Donut rows={d.plan_mix} caption="sales" />
+          <Donut rows={d.sales_plan_mix || []} caption="sales" />
         </Panel>
         <Panel
           title="Today's priorities"
@@ -458,6 +475,7 @@ export default function Dashboard() {
           <button
             onClick={() => navigate("/kyc-capture")}
             aria-label="Open backend verification"
+            disabled={!canVisitPage("kyc-capture", user)}
           >
             <span className="priority-icon blue">
               <ClipboardCheck />
@@ -471,6 +489,7 @@ export default function Dashboard() {
           <button
             onClick={() => navigate("/incentives")}
             aria-label="View recorded incentives"
+            disabled={!canVisitPage("incentives", user)}
           >
             <span className="priority-icon violet">
               <Coins />
@@ -486,7 +505,7 @@ export default function Dashboard() {
             </span>
             <ArrowUpRight size={17} />
           </button>
-          <button onClick={() => navigate("/activations")}>
+          <button disabled={!canVisitPage("activations", user)} onClick={() => navigate("/activations")}>
             <span className="priority-icon amber">
               <Sparkles />
             </span>
@@ -507,6 +526,7 @@ export default function Dashboard() {
             </span>
             <button
               aria-label="Open inventory"
+              disabled={!canVisitPage("inventory", user)}
               onClick={() => navigate("/inventory")}
             >
               <ArrowRight size={18} />
@@ -516,68 +536,13 @@ export default function Dashboard() {
       </div>
       <div className="dashboard-bottom-grid">
         <Panel
-          title="Branch snapshot"
-          subtitle="Sales and targets by branch"
-          action={
-            <button
-              className="text-button"
-              onClick={() => navigate("/branches")}
-            >
-              View all branches
-              <ArrowUpRight size={16} />
-            </button>
-          }
-        >
-          <div className="branch-team-grid">
-            {[...d.branches]
-              .sort((a: Row, b: Row) => b.today - a.today)
-              .slice(0, 2)
-              .map((t: Row, i: number) => (
-                <button
-                  className="branch-team-card"
-                  key={t.id}
-                  onClick={() =>
-                    navigate(
-                      "/branches?selected=" + encodeURIComponent(t.id),
-                    )
-                  }
-                >
-                  <span
-                    className="branch-label"
-                    style={{ color: palette[i % palette.length] }}
-                  >
-                    {t.name}
-                  </span>
-                  <div>
-                    <Avatar name={t.name} />
-                    <span>
-                      <b>{t.name}</b>
-                      <small>
-                        {t.agents} agents
-                      </small>
-                    </span>
-                    <ArrowUpRight size={17} />
-                  </div>
-                  <Progress
-                    value={Math.round(
-                      (t.today / Math.max(1, t.target)) * 100,
-                    )}
-                  />
-                  <p>
-                    {t.today} of {t.target} daily sales target
-                    <span>{t.activations} completed</span>
-                  </p>
-                </button>
-              ))}
-          </div>
-        </Panel>
-        <Panel
           title="Recent sales records"
           subtitle="A traceable history of completed and pending connections"
           action={
             <button
               className="text-button"
-              onClick={() => navigate("/activations")}
+              disabled={!canVisitPage("sales", user)}
+              onClick={() => navigate("/sales")}
             >
               All records
               <ArrowUpRight size={16} />
@@ -585,10 +550,12 @@ export default function Dashboard() {
           }
         >
           <div className="dashboard-records">
-            {d.recent.slice(0, 3).map((r: Row) => (
+            {!d.recent_sales?.length && <Empty text="No sales recorded yet" />}
+            {(d.recent_sales || []).slice(0, 3).map((r: Row) => (
               <button
                 key={r.id}
-                onClick={() => navigate("/activations?selected=" + r.id)}
+                disabled={!canVisitPage("sales", user)}
+                onClick={() => navigate("/sales")}
               >
                 <span className="record-symbol">
                   <ScanLine size={19} />

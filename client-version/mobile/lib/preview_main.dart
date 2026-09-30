@@ -1,5 +1,6 @@
 import 'payment_invoice.dart';
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:archive/archive.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +27,7 @@ void main() async {
 // The phone demo signs in normally and uses the same role-scoped backend.
 // Only its capture shortcuts use synthetic images; no credentials are embedded.
 class SharedPreviewService extends RelayService {
+  String? sampleReference;
   SharedPreviewService() {
     dio.options.baseUrl = Uri.base.resolve('/api').toString();
   }
@@ -35,11 +37,59 @@ class SharedPreviewService extends RelayService {
   Future<Uint8List> previewIdentity() async =>
       (await rootBundle.load('assets/demo/identity.png')).buffer.asUint8List();
   @override
-  Future<Uint8List> previewOrder() async =>
-      (await rootBundle.load('assets/demo/order.png')).buffer.asUint8List();
+  Future<Uint8List> previewOrder() async {
+    sampleReference = 'SAMPLE-REQ-${DateTime.now().microsecondsSinceEpoch}';
+    return captureImage([
+      'Order Details',
+      'Product Name: Subscriber plan',
+      'Package Name: 5G Unlimited Ultra',
+      'MSISDN: 0500000000',
+      'Request Id: $sampleReference',
+      'Basic Plan: AED 350 Monthly - AED 0 Prepayment',
+      'Grand Total: 350 Monthly / 0 Prepayment',
+      'not including VAT',
+    ]);
+  }
+
   @override
-  Future<Uint8List> previewReceipt() async =>
-      (await rootBundle.load('assets/demo/payment.png')).buffer.asUint8List();
+  Future<Uint8List> previewReceipt({String? reference}) async => captureImage([
+    'Success',
+    'Order created successfully',
+    'Request Id: ${reference ?? sampleReference ?? "Not recorded"}',
+    'Customer: Avery Stone',
+    'Date: ${DateTime.now().toIso8601String().substring(0, 10)}',
+  ]);
+
+  Future<Uint8List> captureImage(List<String> lines) async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 1100, 800),
+      Paint()..color = Colors.white,
+    );
+    var y = 50.0;
+    for (var i = 0; i < lines.length; i++) {
+      final text = TextPainter(
+        text: TextSpan(
+          text: lines[i],
+          style: TextStyle(
+            color: const Color(0xff17263c),
+            fontSize: i == 0 ? 38 : 30,
+            fontWeight: i == 0 ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout(maxWidth: 1000);
+      text.paint(canvas, Offset(48, y));
+      y += text.height + 30;
+    }
+    final picture = recorder.endRecording();
+    final image = await picture.toImage(1100, 800);
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    picture.dispose();
+    return bytes!.buffer.asUint8List();
+  }
 }
 
 Uint8List previewReceiptPdf(Json row) {
@@ -212,7 +262,7 @@ class PreviewService extends RelayService {
   }
 
   @override
-  Future<Uint8List> previewReceipt() async =>
+  Future<Uint8List> previewReceipt({String? reference}) async =>
       (await rootBundle.load('assets/demo/payment.png')).buffer.asUint8List();
   @override
   Future<Uint8List> previewIdentity() async =>

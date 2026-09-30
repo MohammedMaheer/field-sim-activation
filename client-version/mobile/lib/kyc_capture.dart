@@ -181,7 +181,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     await act(() async {
       final service = ref.read(serviceProvider);
       if (service.isPreview) {
-        final sample = await service.previewReceipt();
+        final sample = await service.previewReceipt(
+          reference: intake['order_reference']?.toString(),
+        );
         if (!mounted) return;
         setState(() {
           bytes = sample;

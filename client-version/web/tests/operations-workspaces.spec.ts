@@ -38,6 +38,7 @@ test('stock reports and return checklist stay usable',async({page})=>{
   await page.goto('/equipment');
   await page.getByRole('button',{name:'Balances & alerts',exact:true}).click();
   await expect(page.getByRole('button',{name:'Set alert level'})).toBeVisible();
+  await expect(page.locator('.skeleton')).toHaveCount(0);
   await page.screenshot({path:'../output/qa/stock-balances-desktop.png',fullPage:true,animations:'disabled'});
   await page.getByRole('button',{name:'Movements',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Stock movements'})).toBeVisible();
@@ -63,7 +64,8 @@ test('call-team phone demo signs in to the same queue',async({page})=>{
     await page.screenshot({path:'../output/qa/mobile-call-queue.png',fullPage:true,animations:'disabled'});
     await page.getByRole('button',{name:'Record call'}).first().click();
     await expect(page.getByRole('button',{name:'Save outcome'})).toBeVisible();
-    await page.keyboard.press('Escape');
+    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Save outcome'})).toHaveCount(0);
   } else {
     await expect(page.getByRole('button',{name:'Record call'}).first().or(page.getByText('No calls in this view'))).toBeVisible();
   }

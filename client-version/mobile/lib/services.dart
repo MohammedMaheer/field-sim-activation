@@ -121,7 +121,7 @@ class OfflineStore {
 
 class RelayService extends ChangeNotifier {
   bool get isPreview => false;
-  Future<Uint8List?> previewReceipt() async => null;
+  Future<Uint8List?> previewReceipt({String? reference}) async => null;
   Future<Uint8List?> previewIdentity() async => null;
   Future<Uint8List?> previewOrder() async => null;
   final queueLock = Lock();

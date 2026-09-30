@@ -66,6 +66,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
               maxLines: 3, validator: (value) => (value ?? '').trim().length < 3 ? 'Enter a remark' : null),
             const SizedBox(height: 18),
             FilledButton(onPressed: () { if (form.currentState!.validate()) Navigator.pop(context, true); }, child: const Text('Save outcome')),
+            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
           ],
         ))),
       ),

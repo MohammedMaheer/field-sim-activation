@@ -49,6 +49,7 @@ output/private/
 .qodo/
 .ruff_cache/
 **/test-results/
+**/test-results-*/
 **/playwright-report/
 **/htmlcov/
 **/.coverage

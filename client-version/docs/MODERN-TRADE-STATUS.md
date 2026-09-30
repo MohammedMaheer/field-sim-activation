@@ -21,6 +21,8 @@ Checked against `Modern_Trade_Software_Project.docx` on 30 September 2026. This 
 
 ## Still open
 
+The detailed 30 September audit is in [RIGOROUS-VERIFICATION-2026-09-30.md](RIGOROUS-VERIFICATION-2026-09-30.md). It also identifies bulk target upload and a historical Sales Manager assignment snapshot as unfinished; the current Sales Manager access is branch-scoped. Do not treat the implemented role as proof of the complete proposal hierarchy.
+
 - Grabba device integration and Etisalat carrier activation require provider SDK/API access and a supported device. The app records submitted sales; it cannot initiate or attest carrier activation.
 - Gateway payment settlement requires a payment-provider integration. An order-created request ID is only an agent payment record pending backend confirmation.
 - Exact commission forecasts, CRR/DRR projections and month-end deduction warnings require the missing commission structure and management-approved formulas. Existing incentives do not establish those rules.
@@ -31,6 +33,8 @@ Checked against `Modern_Trade_Software_Project.docx` on 30 September 2026. This 
 - No OCR or screenshot parser can guarantee correct recognition of every carrier screen. Staff must review captured values and evidence.
 
 ## Verification boundary
+
+The newer rigorous audit supersedes the test results below for the current release. It records the connection-pool fix, current-register dashboard, duplicate consolidation, live preservation checks and the final APK installation restriction.
 
 Migration 012 was deployed after rehearsing PostgreSQL upgrade, downgrade and upgrade again on an isolated copy of the live database. Existing account, plan, sale and stock counts were preserved. Release backup: `/opt/relay-client/backups/operations-before-20260929T211118Z`.
 

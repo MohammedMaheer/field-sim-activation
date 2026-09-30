@@ -497,6 +497,27 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
             }
         )
     branch_rows = records("branches", db, user, branch_id)
+    sale_rows = db.scalars(select(SalesRecord).where(
+        SalesRecord.agent_id.in_(scope),
+        SalesRecord.branch_id.in_([b["id"] for b in branch_rows]),
+    )).all()
+    actionable_sale_ids = [s.id for s in sale_rows if s.status != "CANCELLED"]
+    call_rows = db.scalars(select(SalesCallTask).where(
+        SalesCallTask.sale_id.in_(actionable_sale_ids),
+        SalesCallTask.status.in_(["PENDING", "FAILED"]),
+    )).all()
+    stock_requests = db.scalars(select(FieldAssetRequest).where(
+        FieldAssetRequest.agent_id.in_(scope),
+        FieldAssetRequest.branch_id.in_([b["id"] for b in branch_rows]),
+        FieldAssetRequest.status == "REQUESTED",
+    )).all()
+    support_rows = db.scalars(select(SupportTicket).where(
+        SupportTicket.agent_id.in_(scope), SupportTicket.status != "RESOLVED",
+    )).all()
+    closed_sales = [s for s in sale_rows if s.status == "CLOSED"]
+    closed_today = sum(business_date(s.created_at) == today for s in closed_sales)
+    sales_trend = [{**t, "activations": sum(business_date(s.created_at).isoformat() == t["date"] for s in closed_sales)} for t in trend]
+    agent_names = {a["id"]: a["name"] for a in agents}
     for branch in branch_rows:
         member_ids = {a["id"] for a in agents if a["branch_id"] == branch["id"]}
         branch["captures"] = sum(c.agent_id in member_ids for c in captures)
@@ -505,7 +526,24 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
         )
         branch["target"] = sum(a["target"] for a in agents if a["id"] in member_ids)
         branch["today"] = sum(o["agent_id"] in member_ids for o in completed)
+        branch["closed_sales"] = sum(s.branch_id == branch["id"] for s in closed_sales)
     return {
+        "sales_summary": {"closed_today": closed_today, "target": target,
+                          "achievement": round(closed_today / max(target, 1) * 100, 1),
+                          "week": sum(t["activations"] for t in sales_trend)},
+        "sales_trend": sales_trend,
+        "sales_plan_mix": [{"name": name, "value": sum(s.plan_name == name for s in closed_sales)}
+                           for name in sorted({s.plan_name for s in closed_sales})],
+        "recent_sales": [{"id": s.id, "customer": s.customer_name, "reference": s.request_id or "Not recorded",
+                          "plan": s.plan_name or "Not recorded", "agent": agent_names.get(s.agent_id, "Not recorded"),
+                          "status": s.status}
+                         for s in sorted(sale_rows, key=lambda s: s.created_at, reverse=True)[:6]],
+        "work_summary": {
+            "open_sales": sum(s.status == "IN_PROGRESS" for s in sale_rows),
+            "ready_calls": len(call_rows),
+            "stock_requests": len(stock_requests),
+            "open_support": len(support_rows),
+        },
         "branches": branch_rows,
         "capture_statuses": [
             {"name": status, "value": sum(c.status == status for c in captures)}
@@ -1456,6 +1494,9 @@ async def event_stream(request: Request, user=Depends(principal), db=Depends(get
     )
     session_id = token["sid"]
     user_id = user.id
+    # A streaming response outlives request dependencies. Release authentication's
+    # transaction now, and never hold a database connection while yielding data.
+    db.close()
 
     async def stream():
         cursor = now()
@@ -1482,9 +1523,10 @@ async def event_stream(request: Request, user=Depends(principal), db=Depends(get
                     )
                     .order_by(Event.created_at)
                 ).all()
-                for event in items:
-                    cursor = event.created_at
-                    yield f"data: {json.dumps(raw(event))}\n\n"
+                messages = [(event.created_at, json.dumps(raw(event))) for event in items]
+            for created_at, payload in messages:
+                cursor = created_at
+                yield f"data: {payload}\n\n"
             yield ": heartbeat\n\n"
             await asyncio.sleep(2)
 

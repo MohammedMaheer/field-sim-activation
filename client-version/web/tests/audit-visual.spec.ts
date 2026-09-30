@@ -6,11 +6,11 @@ test('visual audit of all edition routes',async({page})=>{
  await authenticate(page);
  for(const width of [1440,390]) {
   await page.setViewportSize({width,height:960});
-  for(const route of ['/', '/live', '/agents', '/branches', '/customers', '/activations', '/kyc-capture', '/inventory', '/incentives', '/support', '/reports', '/audit', '/plans', '/administration']) {
+  for(const route of ['/', '/live', '/agents', '/branches', '/team-leaders', '/customers', '/activations', '/kyc-capture', '/inventory', '/equipment', '/sales', '/call-work', '/incentives', '/support', '/reports', '/audit', '/plans', '/administration']) {
    await page.goto(route);await expect(page.locator('h1').first(), `${route} heading`).toBeVisible({timeout:20000});
    await expect(page.locator('.skeleton').first()).toHaveCount(0,{timeout:15000});
    await expect(page.getByText('Loading assigned agents…',{exact:true})).toHaveCount(0);
-   await page.waitForTimeout(400);
+   await page.waitForTimeout((process.env.RELAY_WEB_URL || '').startsWith('https:') ? 1400 : 400);
    if(width===390) expect(await page.locator('.page-header > div').first().evaluate(el=>el.getBoundingClientRect().height),route+' compact heading').toBeLessThan(180);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),route+' overflow').toBeTruthy();
    await page.screenshot({path:'../output/qa/audit-visual/'+width+'-'+(route.slice(1)||'dashboard')+'.png',fullPage:true});
@@ -24,6 +24,7 @@ test('mobile agent details retain sorting and drawer keyboard focus',async({page
  await page.getByLabel('Sort records').selectOption('activations');
  await page.getByRole('button',{name:'Reverse sort direction'}).click();
  await expect(page.locator('td[data-label="Activations"]').first()).toBeVisible();
+ await page.getByRole('textbox',{name:'Search records'}).fill('Zayn Mercer');
  await page.getByRole('button',{name:'View Zayn Mercer',exact:true}).click();
  const dialog=page.getByRole('dialog');await expect(dialog).toBeVisible();await expect(dialog.getByText('Zayn Mercer',{exact:true})).toBeVisible();
  await dialog.getByRole('button',{name:'Close details'}).focus();

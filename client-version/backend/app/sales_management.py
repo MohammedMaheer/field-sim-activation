@@ -12,7 +12,8 @@ from zipfile import ZipFile
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field, model_validator
+from pydantic import Field, model_validator
+from .validation import BusinessInput
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from openpyxl import load_workbook
@@ -43,12 +44,18 @@ def staff(user=Depends(principal), db=Depends(get_db)):
             for row in users]
 
 
-class StaffCreate(BaseModel):
+class StaffCreate(BusinessInput):
     name: str = Field(min_length=2, max_length=120)
     email: str = Field(min_length=5, max_length=180)
     password: str = Field(min_length=10, max_length=72)
     role: Literal["Sales Manager", "Tele Verification Officer", "Welcome Call Officer"]
     branch_id: str = ""
+
+    @model_validator(mode="after")
+    def encoded_password_limit(self):
+        if len(self.password.encode("utf-8")) > 72:
+            raise ValueError("Password must contain at most 72 UTF-8 bytes")
+        return self
 
 
 @router.post("/staff", status_code=201)
@@ -78,7 +85,7 @@ def create_staff(body: StaffCreate, request: Request, user=Depends(principal), d
     return {"id": account.id, "name": account.name, "email": account.email, "role": body.role}
 
 
-class StaffAssignment(BaseModel):
+class StaffAssignment(BusinessInput):
     role: Literal["Sales Manager", "Tele Verification Officer", "Welcome Call Officer"]
     branch_id: str = ""
     reason: str = Field(min_length=5, max_length=300)
@@ -207,7 +214,7 @@ def record_capture_activation(db, capture, outcome):
         row.status_updated_at = now()
 
 
-class SaleCreate(BaseModel):
+class SaleCreate(BusinessInput):
     agent_id: str
     order_type: Literal["NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"]
     customer_name: str = Field(min_length=2, max_length=120)
@@ -305,7 +312,7 @@ def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=
     return sale_view(db, row)
 
 
-class SaleCorrection(BaseModel):
+class SaleCorrection(BusinessInput):
     order_type: Literal["NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"]
     router_serial: str = Field(default="", max_length=100)
     reason: str = Field(min_length=5, max_length=300)
@@ -330,7 +337,7 @@ def correct_sale(sale_id: str, body: SaleCorrection, request: Request, user=Depe
     return sale_view(db, row)
 
 
-class FeedbackCreate(BaseModel):
+class FeedbackCreate(BusinessInput):
     agent_id: str
     customer_name: str = Field(default="", max_length=120)
     contact_number: str = Field(default="", max_length=40)
@@ -372,7 +379,7 @@ def create_feedback(body: FeedbackCreate, request: Request, user=Depends(princip
     return {"id": row.id, "recorded": True}
 
 
-class TargetWrite(BaseModel):
+class TargetWrite(BusinessInput):
     agent_id: str
     period: str
     order_type: Literal["ALL", "NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"] = "ALL"
@@ -428,7 +435,7 @@ def save_target(body: TargetWrite, request: Request, user=Depends(principal), db
     return {"id": row.id, "saved": True}
 
 
-class CallWrite(BaseModel):
+class CallWrite(BusinessInput):
     stage: Literal["TELE_VERIFICATION", "WELCOME_CALL"]
     outcome: Literal["REACHED", "NO_ANSWER", "RETRY", "PASSED", "FAILED"]
     remark: str = Field(min_length=3, max_length=1000)
@@ -545,7 +552,7 @@ def record_call(sale_id: str, body: CallWrite, request: Request, user=Depends(pr
     return {"id": attempt.id, "recorded": True}
 
 
-class CallSkip(BaseModel):
+class CallSkip(BusinessInput):
     reason: str = Field(min_length=5, max_length=300)
 
 
@@ -571,7 +578,7 @@ def skip_tele(sale_id: str, body: CallSkip, request: Request, user=Depends(princ
     return {"status": "SKIPPED"}
 
 
-class StatusFile(BaseModel):
+class StatusFile(BusinessInput):
     filename: str = Field(max_length=120)
     content_base64: str = Field(max_length=2_800_000)
     apply: bool = False

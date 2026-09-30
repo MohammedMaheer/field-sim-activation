@@ -412,7 +412,7 @@ export default function App() {
       .flatMap((g) => g.items)
       .find((i) => "/" + i[0] === location.pathname)?.[1] ||
     (location.pathname === "/screenshot-capture"
-      ? "Screenshot review"
+      ? "Backend verification"
       : "Workspace");
   return (
     <Context.Provider value={{ user, notify: setToast }}>

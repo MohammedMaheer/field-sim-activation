@@ -5,7 +5,7 @@ test('record names open useful details and restore focus at both widths',async({
  await authenticate(page);
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:960});
-  for(const [route,title] of [['/customers','Customer directory details'],['/incentives','Incentive details'],['/field-tasks','Task details']]){
+  for(const [route,title] of [['/customers','Customer directory details'],['/incentives','Incentive details']]){
    await page.goto(route);const trigger=page.locator('.record-link').first();await expect(trigger).toBeVisible();await trigger.click();
    const d=page.getByRole('dialog',{name:title,exact:true});await expect(d).toBeVisible();
    expect(await d.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBeTruthy();

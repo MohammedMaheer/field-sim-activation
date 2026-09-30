@@ -1,0 +1,31 @@
+import {test,expect} from '@playwright/test';
+import {mobileSignIn} from './mobile-session';
+
+test('phone draft is shared with agent web panel and new capture is empty',async({page,browser,request})=>{
+  test.setTimeout(150000);
+  await mobileSignIn(page);
+  await page.getByRole('tab',{name:'Capture',exact:true}).click();
+  await page.getByRole('button',{name:'Upload photo',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Document captured View',exact:true})).toBeVisible({timeout:60000});
+  const saved=page.waitForResponse(r=>r.request().method()==='POST'&&new URL(r.url()).pathname==='/api/kyc-captures/saved-drafts');
+  await page.getByRole('button',{name:'Save draft',exact:true}).click();
+  const response=await saved;expect(response.status()).toBe(201);const draft=await response.json();
+  await expect(page.getByText('Drafts',{exact:true})).toBeVisible();
+  await expect(page.getByRole('button',{name:`${draft.data.name} Step 1 of 3`,exact:true}).first()).toBeVisible();
+  const context=await browser.newContext(),agent=await context.newPage();
+  await agent.goto('/');await agent.locator('input[type=email]').fill('agent1@relay.demo');await agent.locator('input[type=password]').fill(process.env.DEMO_PASSWORD!);await agent.getByRole('button',{name:'Sign in to workspace'}).click();
+  await expect(agent.locator('input[type=password]')).toBeHidden();await agent.goto('/kyc-capture');
+  await agent.getByRole('button',{name:'Drafts',exact:true}).click();
+  await expect(agent.getByRole('dialog',{name:'Drafts'})).toContainText(draft.data.name);
+  await page.getByRole('button',{name:'New transaction',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Document captured View',exact:true})).toHaveCount(0);
+  await expect(page.getByRole('textbox',{name:'Full name',exact:true})).toHaveValue('');
+  await page.getByRole('button',{name:'Continue',exact:true}).click();
+  await expect(page.getByText(/^Required to continue:/)).toBeVisible();
+  await expect(page.getByRole('button',{name:'Scan order',exact:true})).toHaveCount(0);
+  await page.screenshot({path:'../output/qa/rigorous-empty-new-capture.png'});
+  const login=await request.post('/api/auth/login',{data:{email:'agent1@relay.demo',password:process.env.DEMO_PASSWORD,native:true}});
+  const headers={Authorization:`Bearer ${(await login.json()).access_token}`};
+  expect((await request.delete(`/api/kyc-captures/saved-drafts/${draft.id}`,{headers})).status()).toBe(200);
+  await context.close();
+});

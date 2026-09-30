@@ -1,12 +1,11 @@
 import IntakeCamera from "./IntakeCamera";
 import { useContext, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { Plus, Pencil, Trash2, Settings2 } from "lucide-react";
 import { api, Row } from "./api";
 import { Context } from "./App";
 import { DataTable, Drawer, ErrorState, Loading } from "./components";
-import OrganizationSetup from "./OrganizationSetup";
 import RecordOverview from "./RecordOverview";
 
 const sections: Record<string, string> = {
@@ -47,10 +46,12 @@ const labels: Record<string, string> = {
 export default function Administration() {
   const { user, notify } = useContext(Context),
     cache = useQueryClient();
-  const [kind, setKind] = useState(() => new URLSearchParams(window.location.search).get("section") === "inventory" ? "inventory" : "branches"),
-    [editing, setEditing] = useState<Row | null>(null),
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedSection = searchParams.get("section") || "branches";
+  const kind = Object.hasOwn(sections, requestedSection) ? requestedSection : "branches";
+  const setKind = (section: string) => setSearchParams({ section });
+  const [editing, setEditing] = useState<Row | null>(null),
     [removing, setRemoving] = useState<Row | null>(null),
-    [setup, setSetup] = useState(false),
     [packScanner, setPackScanner] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
@@ -159,25 +160,17 @@ export default function Administration() {
           Subscriber plans →
         </Link>
       </div>
-      {!q.isPending && !q.error && <RecordOverview rows={(q.data || []).map((row:Row) => kind === "branches" ? {...row,agents:(agents.data || []).filter(agent => agent.branch_id === row.id).length} : kind === "incentives" ? {...row,name:(agents.data || []).find(agent => agent.id === row.agent_id)?.name || "Not recorded"} : row)} field={kind === "branches" ? "agents" : kind === "agents" ? "target" : kind === "customers" ? "nationality" : kind === "incentives" ? "amount" : "status"} numeric={["branches","agents","incentives"].includes(kind)} title={kind === "branches" ? "Agents by branch" : kind === "agents" ? "Daily targets" : kind === "incentives" ? "Recorded incentives (AED)" : "Record breakdown"} />}
+      {!q.isPending && !q.error && !(["branches","incentives"].includes(kind) && (agents.isPending || agents.error)) && <RecordOverview rows={(q.data || []).map((row:Row) => kind === "branches" ? {...row,agents:(agents.data || []).filter(agent => agent.branch_id === row.id).length} : kind === "incentives" ? {...row,name:(agents.data || []).find(agent => agent.id === row.agent_id)?.name || "Not recorded"} : row)} field={kind === "branches" ? "agents" : kind === "agents" ? "target" : kind === "customers" ? "nationality" : kind === "incentives" ? "amount" : "status"} numeric={["branches","agents","incentives"].includes(kind)} title={kind === "branches" ? "Agents by branch" : kind === "agents" ? "Daily targets" : kind === "incentives" ? "Recorded incentives (AED)" : "Record breakdown"} />}
       <section className="panel">
         <div className="admin-toolbar">
           <h2>{sections[kind]}</h2>
-          <button
-            className="primary"
-            onClick={() =>
-              ["branches", "agents"].includes(kind)
-                ? setSetup(true)
-                : start({})
-            }
-          >
-            <Plus size={17} /> Add{" "}
-            {kind === "inventory"
-              ? "SIM"
-              : kind === "branches"
-                ? "branch"
-                : sections[kind].replace(/s$/, "").toLowerCase()}
-          </button>
+          {["branches", "agents"].includes(kind) ? (
+            <Link className="button primary" to={"/" + kind}>Manage {sections[kind].toLowerCase()}</Link>
+          ) : (
+            <button className="primary" onClick={() => start({})}>
+              <Plus size={17} /> Add {kind === "inventory" ? "SIM" : sections[kind].replace(/s$/, "").toLowerCase()}
+            </button>
+          )}
         </div>
         {q.isPending ? (
           <Loading />
@@ -259,12 +252,6 @@ export default function Administration() {
           />
         )}
       </section>
-      {setup && (
-        <OrganizationSetup
-          initial={kind as "branches" | "agents"}
-          onClose={() => setSetup(false)}
-        />
-      )}
       {editing && (
         <Drawer
           title={`${editing.id ? "Edit" : "Add"} ${kind === "inventory" ? "SIM" : kind === "branches" ? "branch" : sections[kind].replace(/s$/, "").toLowerCase()}`}

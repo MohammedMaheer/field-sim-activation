@@ -1,5 +1,6 @@
 import { useContext, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "react-router-dom";
 import { FileDown, Plus, RefreshCw } from "lucide-react";
 import { Context } from "./App";
 import { api, download, post, Row } from "./api";
@@ -10,7 +11,11 @@ const categories: Record<string,string> = {GRABBA_DEVICE:"Grabba device",ROUTER:
 export default function FieldAssets() {
   const {user,notify} = useContext(Context);
   const client = useQueryClient();
-  const [tab,setTab] = useState<"stock"|"requests"|"report"|"movements"|"checklist">("stock");
+  const [searchParams,setSearchParams] = useSearchParams();
+  type AssetTab = "stock"|"requests"|"report"|"movements"|"checklist";
+  const requestedTab = searchParams.get("tab");
+  const tab: AssetTab = ["stock","requests","report","movements","checklist"].includes(requestedTab || "") ? requestedTab as AssetTab : "stock";
+  const setTab = (value: AssetTab) => setSearchParams({tab:value});
   const [add,setAdd] = useState(false);
   const [move,setMove] = useState<Row|null>(null);
   const [error,setError] = useState("");

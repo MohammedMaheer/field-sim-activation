@@ -20,6 +20,7 @@ export function Badge({ value }: { value: string }) {
     "IN BOUNDS",
     "AVAILABLE",
     "RESOLVED",
+    "CLOSED",
   ];
   const danger = [
     "FAILED",
@@ -28,10 +29,12 @@ export function Badge({ value }: { value: string }) {
     "CRITICAL",
     "DAMAGED",
     "REJECTED",
+    "CANCELLED",
     "OCR_FAILED",
   ];
   const warn = [
     "PROCESSING",
+    "IN_PROGRESS",
     "MANUAL REVIEW",
     "NEAR BOUNDARY",
     "WARNING",

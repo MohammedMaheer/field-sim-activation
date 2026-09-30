@@ -5,6 +5,7 @@ import {writeFile} from 'node:fs/promises';
 test('shared phone capture reaches backend review and read-only branch leader update',async({page,browser,request})=>{
  test.setTimeout(240000);
  let created:any;
+ page.on('response',async r=>{if(new URL(r.url()).pathname==='/api/kyc-captures/read-order') await writeFile('../output/qa/rigorous-order-read.json',JSON.stringify({status:r.status(),body:await r.json()},null,2));});
  page.on('response',async r=>{if(r.request().method()==='POST' && new URL(r.url()).pathname==='/api/kyc-captures' && r.ok()) created=await r.json();});
  await mobileSignIn(page);
  await page.getByRole('tab',{name:'Capture',exact:true}).click();
@@ -30,7 +31,7 @@ test('shared phone capture reaches backend review and read-only branch leader up
  const url=`/api/kyc-captures/${created.id}`;let capture:any;
  await expect.poll(async()=>{capture=await(await request.get(url,{headers})).json();return capture.status;},{timeout:60000}).toBe('EXTRACTED');
  const validated=await request.patch(url+'/rows',{headers,data:{version:capture.version,rows:capture.rows,reason:'Checked order confirmation screenshot'}});expect(validated.ok(),await validated.text()).toBeTruthy();capture=await validated.json();
- const submit=await request.post(url+'/submit',{headers,data:{version:capture.version}});expect(submit.ok()).toBeTruthy();
+ const submit=await request.post(url+'/submit',{headers,data:{version:capture.version}});expect(submit.ok(),await submit.text()).toBeTruthy();
  const adminContext=await browser.newContext();const admin=await adminContext.newPage();
  await admin.goto('/');await admin.locator('input[type=email]').fill('admin@relay.demo');await admin.locator('input[type=password]').fill(process.env.DEMO_PASSWORD!);await admin.getByRole('button',{name:'Sign in to workspace'}).click();
  await expect(admin.locator('input[type=password]')).toBeHidden();await admin.goto('/kyc-capture');
@@ -43,8 +44,8 @@ test('shared phone capture reaches backend review and read-only branch leader up
  await admin.getByRole('checkbox',{name:/I checked/}).check();await admin.getByRole('textbox',{name:'Review note'}).fill('Customer, order and agent payment record compared with uploaded screens.');
  await admin.getByRole('button',{name:'Verify submission',exact:true}).click();
  await expect(admin.getByText(/Transaction confirmed by backend/)).toBeVisible();
- const leaderContext=await browser.newContext();const leader=await leaderContext.newPage();await mobileSignIn(leader,'leader2@relay.demo');
- await expect(leader.getByRole('group',{name:/Transaction confirmed by backend.*SAMPLE-REQ-1001/}).first()).toBeVisible({timeout:30000});
+ const leaderContext=await browser.newContext();const leader=await leaderContext.newPage();await mobileSignIn(leader,(process.env.RELAY_TEST_LEADER_ACCOUNT || 'leader2')+'@relay.demo');
+ await expect(leader.getByRole('group',{name:new RegExp('Transaction confirmed by backend.*'+created.source_reference)}).first()).toBeVisible({timeout:30000});
  await leader.screenshot({path:'../output/qa/shared-leader-confirmation.png'});
  await expect(leader.getByRole('button',{name:'Confirm',exact:true})).toHaveCount(0);
  await admin.waitForTimeout(6000);await admin.screenshot({path:'../output/qa/shared-backend-confirmed.png'});

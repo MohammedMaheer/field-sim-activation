@@ -7,7 +7,8 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import Field
+from .validation import BusinessInput
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
@@ -90,7 +91,7 @@ def assets(user=Depends(principal), db=Depends(get_db)):
     return [view(db, row) for row in rows]
 
 
-class AssetCreate(BaseModel):
+class AssetCreate(BusinessInput):
     category: str = Field(min_length=2, max_length=40, pattern=r"^[A-Z][A-Z0-9_]*$")
     label: str = Field(min_length=2, max_length=160)
     serial: str = Field(default="", max_length=120)
@@ -130,7 +131,7 @@ def create_asset(body: AssetCreate, request: Request, user=Depends(principal), d
     return view(db, row)
 
 
-class AssetChange(BaseModel):
+class AssetChange(BusinessInput):
     branch_id: str
     agent_id: str = ""
     status: Status
@@ -180,7 +181,7 @@ def move_asset(asset_id: str, body: AssetChange, request: Request, user=Depends(
     return view(db, row)
 
 
-class BulkIssue(BaseModel):
+class BulkIssue(BusinessInput):
     quantity: int = Field(ge=1, le=10000)
     agent_id: str
     reason: str = Field(min_length=5, max_length=300)
@@ -214,7 +215,7 @@ def issue_bulk(asset_id: str, body: BulkIssue, request: Request, user=Depends(pr
     return view(db, issued)
 
 
-class QuantityAdjustment(BaseModel):
+class QuantityAdjustment(BusinessInput):
     delta: int = Field(ge=-10000, le=10000)
     reason: str = Field(min_length=5, max_length=300)
 
@@ -320,7 +321,7 @@ def return_checklist(agent_id: str = "", branch_id: str = "", user=Depends(princ
             "next_action": "All stock accounted for" if not outstanding else "Return, transfer or write off outstanding stock"}
 
 
-class AgentTransfer(BaseModel):
+class AgentTransfer(BusinessInput):
     branch_id: str
     stock_action: Literal["RETURN", "TRANSFER"]
     reason: str = Field(min_length=5, max_length=300)
@@ -374,7 +375,7 @@ def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=De
     return {"transferred": True, "branch_id": body.branch_id, "agent_id": agent.id}
 
 
-class AgentExit(BaseModel):
+class AgentExit(BusinessInput):
     reason: str = Field(min_length=5, max_length=300)
 
 
@@ -397,7 +398,7 @@ def exit_agent(agent_id: str, body: AgentExit, request: Request, user=Depends(pr
     return {"closed": True, "history_preserved": True}
 
 
-class ThresholdWrite(BaseModel):
+class ThresholdWrite(BusinessInput):
     branch_id: str
     category: str = Field(min_length=2, max_length=40)
     minimum: int = Field(ge=0, le=100000)
@@ -529,7 +530,7 @@ def export_stock(kind: Literal["summary", "movements", "stock", "requests"] = "s
                     headers={"Content-Disposition": f'attachment; filename="stock-{kind}.csv"'})
 
 
-class RequestCreate(BaseModel):
+class RequestCreate(BusinessInput):
     agent_id: str
     category: str = Field(min_length=2, max_length=40, pattern=r"^[A-Z][A-Z0-9_]*$")
     quantity: int = Field(ge=1, le=10000)
@@ -566,7 +567,7 @@ def create_request(body: RequestCreate, request: Request, user=Depends(principal
     return {"id": row.id, "status": row.status}
 
 
-class RequestStatus(BaseModel):
+class RequestStatus(BusinessInput):
     status: Literal["APPROVED", "REJECTED", "FULFILLED"]
     reason: str = Field(min_length=5, max_length=300)
     asset_id: str = ""
