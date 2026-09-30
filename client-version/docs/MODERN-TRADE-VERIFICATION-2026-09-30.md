@@ -46,3 +46,7 @@ Evidence is kept outside Git in `client-version/output/qa/`: `shared-backend-ord
 Recognition is not a guarantee of identity authenticity or perfect extraction; independent human evidence review remains required. The shared browser capture shortcut uses synthetic evidence and does not prove a physical carrier device workflow. Complete real-device/carrier capture, real customer identity and gateway settlement were not tested. Historical interfaces/receipts are preserved.
 
 Commission slabs, CRR/DRR/projection formulas and deduction/reversal rules await approved management input. The Sales Manager's exact access area also awaits confirmation; assigned-branch reporting is the implemented restricted default. These dependencies are explicitly distinguished from implemented internal workflow.
+
+## GitHub checks after push
+
+Source was pushed to `master` (implementation commit `bfcb958`). GitHub Actions run [36690025542](https://github.com/MohammedMaheer/field-sim-activation/actions/runs/36690025542) did not execute either job: both had no steps, and the API/web check annotation states “The job was not started because your account is locked due to a billing issue.” The local equivalent backend tests/lint, web build and Flutter analysis/tests passed. This is an account-level CI blocker, not a claimed successful GitHub run. Account billing must be resolved by the owner before hosted Actions can execute again.
