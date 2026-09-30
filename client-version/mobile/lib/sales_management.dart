@@ -4,6 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 
+// Reporting periods match the API and web panel, regardless of device timezone.
+String salesReportingPeriod(DateTime instant) =>
+    instant.toUtc().toIso8601String().substring(0, 7);
+
 class SalesManagementScreen extends ConsumerStatefulWidget {
   const SalesManagementScreen({super.key, this.selectedId});
   final String? selectedId;
@@ -36,11 +40,12 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
     if (!quiet) setState(() { loading = true; error = ''; });
     try {
       final service = ref.read(serviceProvider);
+      final period = salesReportingPeriod(DateTime.now());
       final results = await Future.wait([
         service.dio.get('/sales-management/sales'),
         service.dio.get('/sales-management/feedback'),
-        service.dio.get('/sales-management/performance'),
-        service.dio.get('/sales-management/targets?period=${DateTime.now().toIso8601String().substring(0, 7)}'),
+        service.dio.get('/sales-management/performance?period=$period'),
+        service.dio.get('/sales-management/targets?period=$period'),
         service.dio.get('/resources/agents'),
       ]);
       if (!mounted) return;
@@ -134,7 +139,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
       const SizedBox(height: 12), FilledButton(onPressed: () {if (form.currentState!.validate()) Navigator.pop(context, true);}, child: const Text('Save target')), TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
     ]))))));
     if (saved == true) {
-      try { await ref.read(serviceProvider).dio.put('/sales-management/targets', data: {'agent_id':agentId,'order_type':product,'period':DateTime.now().toIso8601String().substring(0,7),'daily_target':int.parse(daily.text),'monthly_target':int.parse(monthly.text)}); await load(); }
+      try { await ref.read(serviceProvider).dio.put('/sales-management/targets', data: {'agent_id':agentId,'order_type':product,'period':performance['period'] ?? salesReportingPeriod(DateTime.now()),'daily_target':int.parse(daily.text),'monthly_target':int.parse(monthly.text)}); await load(); }
       catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not save target. Please retry.'))); }
     }
   }

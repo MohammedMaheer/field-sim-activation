@@ -1777,6 +1777,50 @@ def test_backend_confirmation_notifies_scoped_read_only_leader(client):
         db.commit()
 
 
+def test_confirmed_capture_stays_with_saved_leader_after_agent_transfer(client):
+    from app import captures
+    from app.db import KycCapture, SalesRecord, User, Role, Outlet
+    from uuid import uuid4
+
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.leader_id.is_not(None)))
+        old_leader = agent.leader_id
+        old_email = db.get(User, old_leader).email
+        replacement = db.scalar(select(User).join(Role).where(Role.name == "Team Leader", User.id != old_leader))
+        new_email = replacement.email
+        record = KycCapture(id=str(uuid4()), agent_id=agent.id, creator_id=agent.user_id,
+                            operation_id=str(uuid4()), source_reference="HISTORIC-LEADER-TEST",
+                            image_hash="test", image_type="image/png",
+                            image_encrypted=captures.cipher.encrypt(b"test").decode(), status="VERIFIED", version=1)
+        captures.store(record, {"rows": [], "history": []})
+        db.add(record)
+        db.flush()
+        sale = SalesRecord(capture_id=record.id, agent_id=agent.id, leader_id=old_leader,
+                           branch_id=db.get(Outlet, agent.outlet_id).branch_id, outlet_id=agent.outlet_id,
+                           order_type="NEW", customer_name="Transfer history", status="CLOSED")
+        db.add(sale)
+        agent.leader_id = replacement.id
+        db.commit()
+        capture_id, sale_id, agent_id = record.id, sale.id, agent.id
+    try:
+        for email, allowed in [(old_email, True), (new_email, False)]:
+            login(client, email.split("@")[0])
+            queue = client.get("/api/kyc-captures/leader-confirmations")
+            assert queue.status_code == 200
+            assert any(row["id"] == capture_id for row in queue.json()) == allowed
+            listing = client.get("/api/kyc-captures?search=HISTORIC-LEADER-TEST")
+            assert listing.status_code == 200
+            assert any(row["id"] == capture_id for row in listing.json()) == allowed
+            assert client.get(f"/api/kyc-captures/{capture_id}").status_code == (200 if allowed else 404)
+    finally:
+        with DB() as db:
+            db.get(Agent, agent_id).leader_id = old_leader
+            db.delete(db.get(SalesRecord, sale_id))
+            db.flush()
+            db.delete(db.get(KycCapture, capture_id))
+            db.commit()
+
+
 def test_order_payment_record_has_no_inferred_payment_values():
     from types import SimpleNamespace
     from datetime import datetime, timezone

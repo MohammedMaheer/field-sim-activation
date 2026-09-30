@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from pydantic import BaseModel, Field, model_validator
-from sqlalchemy import select, func
+from sqlalchemy import select, func, and_, or_
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -31,6 +31,7 @@ from .db import (
     Role,
     Notification,
     Movement,
+    SalesRecord,
     get_db,
     now,
 )
@@ -94,13 +95,21 @@ def view(row, detail=True):
     return result
 
 
+def capture_scope(db, user):
+    current = KycCapture.agent_id.in_(visible_agents(db, user))
+    if db.get(Role, user.role_id).name == "Team Leader":
+        linked = select(SalesRecord.id).where(SalesRecord.capture_id == KycCapture.id)
+        return or_(linked.where(SalesRecord.leader_id == user.id).exists(),
+                   and_(~linked.exists(), current))
+    return current
+
+
 def get_capture(db, user, capture_id, lock=False):
     access(db, user)
-    q = select(KycCapture).where(KycCapture.id == capture_id)
+    q = select(KycCapture).where(KycCapture.id == capture_id, capture_scope(db, user))
     row = db.scalar(q.with_for_update() if lock else q)
     if not row:
         raise HTTPException(404, "Capture not found")
-    assert_agent(db, user, row.agent_id)
     return row
 
 
@@ -630,10 +639,9 @@ def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db))
 def leader_confirmations(user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name != "Team Leader":
         raise HTTPException(403, "Team leader access required")
-    agents = visible_agents(db, user)
     rows = db.scalars(
         select(KycCapture)
-        .where(KycCapture.agent_id.in_(agents), KycCapture.status == "VERIFIED")
+        .where(capture_scope(db, user), KycCapture.status == "VERIFIED")
         .order_by(KycCapture.updated_at.desc())
     ).all()
     return [view(row) for row in rows]
@@ -806,7 +814,7 @@ def listing(
     ] = "",
 ):
     access(db, user)
-    q = select(KycCapture).where(KycCapture.agent_id.in_(visible_agents(db, user)))
+    q = select(KycCapture).where(capture_scope(db, user))
     if search.strip():
         q = q.where(KycCapture.source_reference.icontains(search.strip(), autoescape=True))
     elif not include_samples:

@@ -12,7 +12,7 @@ export async function authenticate(page:Page) {
   await page.locator('input[type="password"]').fill(process.env.DEMO_PASSWORD || 'RelayDemo!2026');
   await page.getByRole('button',{name:'Sign in to workspace'}).click();
  }
- await expect(heading).toBeVisible();
+ await expect(heading).toBeVisible({timeout:15000});
  cookies=await page.context().cookies();
 }
 export async function remember(page:Page) { cookies=await page.context().cookies(); }

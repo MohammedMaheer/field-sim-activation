@@ -1,10 +1,15 @@
 import {expect,test} from '@playwright/test';
 import {mobileSignIn} from './mobile-session';
-test('dashboard shortcuts open their matching destinations', async ({page}) => {
+test('dashboard shortcuts open their matching destinations', async ({page,request}) => {
  await mobileSignIn(page);
  await expect(page.getByText('Your day, at a glance',{exact:true})).toBeVisible();
- await page.getByRole('button',{name:/Activations/}).first().click();
- await expect(page.getByText('Sales records',{exact:true}).first()).toBeVisible();
+ const login=await request.post('/api/auth/login',{data:{email:'agent1@relay.demo',password:process.env.DEMO_PASSWORD,native:true}});
+ expect(login.ok()).toBeTruthy();
+ const headers={Authorization:`Bearer ${(await login.json()).access_token}`};
+ const dashboard=await (await request.get('/api/dashboard',{headers})).json();
+ await expect(page.getByRole('button',{name:/Confirmed sales/}).first()).toHaveAccessibleName(new RegExp(`Confirmed sales\\s+${dashboard.sales_summary.closed_today}$`));
+ await page.getByRole('button',{name:/Confirmed sales/}).first().click();
+ await expect(page.getByText('Sales management',{exact:true}).first()).toBeVisible();
  await page.getByRole('button',{name:'Back',exact:true}).click();
  await page.getByRole('button',{name:/SIMs available/}).click();
  await expect(page.getByText('Inventory',{exact:true}).first()).toBeVisible();

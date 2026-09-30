@@ -792,10 +792,10 @@ class HomeScreen extends ConsumerWidget {
                 children: [
                   Expanded(
                     child: MetricTile(
-                      'Activations',
-                      d['today'].toString(),
+                      'Confirmed sales',
+                      (d['sales_summary']?['closed_today'] ?? 0).toString(),
                       Icons.bolt_outlined,
-                      onTap: () => context.push('/records'),
+                      onTap: () => context.push('/sales-management'),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -892,7 +892,7 @@ class HomeScreen extends ConsumerWidget {
                               ),
                             ),
                             Text(
-                              '${d['achievement']}%',
+                              '${(d['sales_summary']?['achievement'] ?? 0)}%',
                               style: const TextStyle(
                                 color: burgundy,
                                 fontWeight: FontWeight.bold,
@@ -907,7 +907,7 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 13),
                         LinearProgressIndicator(
-                          value: ((d['achievement'] as num) / 100).clamp(
+                          value: (((d['sales_summary']?['achievement'] ?? 0) as num) / 100).clamp(
                             0.0,
                             1.0,
                           ),
@@ -1368,9 +1368,9 @@ class DailyReportScreen extends ConsumerWidget {
                   children: [
                     KeyValue('Transactions today', '${d['kyc_today']}'),
                     KeyValue('Awaiting review', '${d['kyc_pending_review']}'),
-                    KeyValue('Sales completed', '${d['today']}'),
+                    KeyValue('Sales completed', '${d['sales_summary']?['closed_today'] ?? 0}'),
                     KeyValue('Daily target', '${d['target']}'),
-                    KeyValue('Achievement', '${d['achievement']}%'),
+                    KeyValue('Achievement', '${(d['sales_summary']?['achievement'] ?? 0)}%'),
                     KeyValue('Available SIMs', '${d['stock']}'),
                     KeyValue(
                       'Recorded incentives this month',

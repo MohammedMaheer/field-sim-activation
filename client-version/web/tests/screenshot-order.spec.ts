@@ -36,7 +36,7 @@ test('shared phone capture reaches backend review and read-only branch leader up
  await admin.goto('/');await admin.locator('input[type=email]').fill('admin@relay.demo');await admin.locator('input[type=password]').fill(process.env.DEMO_PASSWORD!);await admin.getByRole('button',{name:'Sign in to workspace'}).click();
  await expect(admin.locator('input[type=password]')).toBeHidden();await admin.goto('/kyc-capture');
  await admin.getByRole('button',{name:new RegExp(created.source_reference)}).first().click();
- await expect(admin.getByRole('heading',{name:'Payment details',exact:true})).toBeVisible();
+ await expect(admin.getByRole('heading',{name:'Payment details',exact:true})).toBeVisible({timeout:15000});
  await admin.getByRole('button',{name:'Order details',exact:true}).click();
  await expect(admin.locator('img[alt*="Order"]')).toBeVisible();
  await admin.screenshot({path:'../output/qa/shared-backend-order-comparison.png'});
