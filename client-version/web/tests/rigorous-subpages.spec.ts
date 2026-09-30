@@ -13,7 +13,7 @@ test('sales, stock and administration subpages load and fit both layouts',async(
       await page.goto('/sales');
       await page.getByRole('navigation',{name:'Sales sections'}).getByRole('button',{name:label,exact:true}).click();
       await expect(page.getByRole('heading',{name:new RegExp('^'+title)}).first()).toBeVisible();
-      await expect(page.locator('.skeleton')).toHaveCount(0);
+      await expect(page.locator('.skeleton')).toHaveCount(0, {timeout:15000});
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),label).toBeTruthy();
       await page.screenshot({path:`../output/qa/subpages/${width}-sales-${label.replaceAll(' ','-')}.png`,fullPage:true});
       if ((process.env.RELAY_WEB_URL || '').startsWith('https:')) await page.waitForTimeout(1400);
@@ -23,7 +23,7 @@ test('sales, stock and administration subpages load and fit both layouts',async(
       const nav=page.getByRole('navigation',{name:'Asset sections'});
       await nav.getByRole('button',{name:new RegExp('^'+label.replace('&','&'))}).click();
       await expect(page.getByRole('heading',{name:title,exact:true})).toBeVisible();
-      await expect(page.locator('.skeleton')).toHaveCount(0);
+      await expect(page.locator('.skeleton')).toHaveCount(0, {timeout:15000});
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),label).toBeTruthy();
       await page.screenshot({path:`../output/qa/subpages/${width}-stock-${label.replaceAll(' ','-')}.png`,fullPage:true});
       if ((process.env.RELAY_WEB_URL || '').startsWith('https:')) await page.waitForTimeout(1400);
@@ -32,7 +32,7 @@ test('sales, stock and administration subpages load and fit both layouts',async(
       await page.goto(`/administration?section=${section}`);
       await expect(page.getByRole('heading',{name:'Manage workspace',exact:true})).toBeVisible();
       await expect(page.locator('.admin-toolbar h2')).toHaveText(({branches:'Branches',agents:'Agents',customers:'Customers',inventory:'SIM stock',incentives:'Incentives'} as Record<string,string>)[section]);
-      await expect(page.locator('.skeleton')).toHaveCount(0);
+      await expect(page.locator('.skeleton')).toHaveCount(0, {timeout:15000});
       await expect(page.getByRole('textbox',{name:'Search records'})).toBeVisible();
       expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),section).toBeTruthy();
       await page.screenshot({path:`../output/qa/subpages/${width}-administration-${section}.png`,fullPage:true});

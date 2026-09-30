@@ -80,7 +80,7 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
       ...stock.map((a)=>Card(child:ListTile(leading:const Icon(Icons.inventory_2_outlined,color:Color(0xFF8136B3)),title:Text('${a['label']}'),subtitle:Text('${a['branch']} · ${a['serial']}'),trailing:Text('${a['status']}')))),
       const SizedBox(height:18),Text('Requests',style:Theme.of(context).textTheme.titleLarge),
       if(requests.isEmpty)const Padding(padding:EdgeInsets.all(16),child:Text('No requests yet')),
-      ...requests.map((r)=>Card(child:ListTile(title:Text('${r['category']} · ${r['quantity']}'),subtitle:Text('${r['reason']} · ${r['urgency']}'),trailing:Text('${r['status']}')))),
+      ...requests.map((r)=>Card(child:ListTile(title:Text('${r['category']} · ${r['quantity']}'),subtitle:Text('${r['reason']} · ${r['urgency']}${r['response'] == null ? '' : '\n${r['response']} · ${r['responded_by']}'}'),trailing:Text('${r['status']}')))),
       const SizedBox(height:60),
     ])),
   );

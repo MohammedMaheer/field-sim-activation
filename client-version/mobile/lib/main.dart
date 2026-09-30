@@ -1,3 +1,4 @@
+import 'notifications.dart';
 import 'saved_drafts.dart';
 import 'sales_management.dart';
 import 'field_assets.dart';
@@ -24,9 +25,11 @@ void main() {
 final router = GoRouter(
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
+    GoRoute(path: '/notifications', builder: (c, s) => const NotificationsScreen()),
+    GoRoute(path: '/call-work', builder: (c, s) => CallWorkScreen(selectedId: s.uri.queryParameters['selected'])),
     GoRoute(path: '/drafts', builder: (c, s) => const SavedDraftsScreen()),
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
-    GoRoute(path: '/sales-management', builder: (c, s) => const SalesManagementScreen()),
+    GoRoute(path: '/sales-management', builder: (c, s) => SalesManagementScreen(selectedId: s.uri.queryParameters['selected'])),
     GoRoute(path: '/assets', builder: (c, s) => const FieldAssetsScreen()),
     GoRoute(
       path: '/transactions',
@@ -561,10 +564,7 @@ class _LeaderConfirmationsState
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Text(
-          'Branch updates',
-          style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800),
-        ),
+        const Row(children: [Expanded(child: Text('Branch updates', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800))), NotificationBell()]),
         const SizedBox(height: 12),
         if (busy) const LinearProgressIndicator(),
         if (error != null)
@@ -651,7 +651,7 @@ class HomeScreen extends ConsumerWidget {
                       letterSpacing: -1.5,
                     ),
                   ),
-                  StatusPill(onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT'),
+                  Row(children: [StatusPill(onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT'), const NotificationBell()]),
                 ],
               ),
               const SizedBox(height: 18),

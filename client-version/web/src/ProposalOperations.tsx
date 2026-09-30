@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -549,7 +550,8 @@ export function Incentives({ user, notify }: Props) {
 }
 
 export function Support({ user, notify }: Props) {
-  const [selectedId, setSelectedId] = useState("");
+  const [params] = useSearchParams();
+  const [selectedId, setSelectedId] = useState(params.get("selected") || "");
   const cache = useQueryClient();
   const {
     data = [],

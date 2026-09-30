@@ -248,6 +248,13 @@ class Notification(Entity):
     read: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
+class NotificationRead(Base):
+    __tablename__ = "notification_reads"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    event_key: Mapped[str] = mapped_column(String(180), primary_key=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
 class Audit(Entity):
     __tablename__ = "audit_events"
     user_id: Mapped[str] = mapped_column(String(36))

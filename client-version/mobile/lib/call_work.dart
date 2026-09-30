@@ -1,10 +1,12 @@
+import 'notifications.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 
 class CallWorkScreen extends ConsumerStatefulWidget {
-  const CallWorkScreen({super.key});
+  const CallWorkScreen({super.key, this.selectedId});
+  final String? selectedId;
   @override
   ConsumerState<CallWorkScreen> createState() => _CallWorkScreenState();
 }
@@ -18,7 +20,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   Timer? poll;
   bool fetching = false;
   @override
-  void initState() { super.initState(); load(); poll = Timer.periodic(const Duration(seconds: 15), (_) => load(silent: true)); }
+  void initState() { super.initState(); load().then((_) {if(mounted && widget.selectedId != null) {final matches=tasks.where((row)=>row['id']==widget.selectedId);if(matches.isNotEmpty) record(matches.first);}}); poll = Timer.periodic(const Duration(seconds: 15), (_) => load(silent: true)); }
 
   @override
   void dispose() { poll?.cancel(); super.dispose(); }
@@ -91,7 +93,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
       (filter == 'Waiting' && task['status'] == 'BLOCKED') ||
       (filter == 'Done' && ['COMPLETED', 'SKIPPED', 'CANCELLED'].contains(task['status']))).toList();
     return Scaffold(
-      appBar: AppBar(title: const Text('Call work queue'), actions: [
+      appBar: AppBar(title: const Text('Call work queue'), actions: [const NotificationBell(),
         IconButton(onPressed: load, tooltip: 'Refresh', icon: const Icon(Icons.refresh)),
         IconButton(onPressed: () => ref.read(serviceProvider).logout(), tooltip: 'Sign out', icon: const Icon(Icons.logout)),
       ]),

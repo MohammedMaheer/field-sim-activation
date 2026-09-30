@@ -1,3 +1,4 @@
+import { useSearchParams } from "react-router-dom";
 import { useContext, useState } from "react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -44,7 +45,8 @@ export default function SalesManagement() {
 
   const [preview, setPreview] = useState<Row | null>(null);
 
-  const [selectedSale, setSelectedSale] = useState<Row | null>(null);
+  const [params] = useSearchParams();
+  const [selectedSale, setSelectedSale] = useState<Row | null>(() => params.get("selected") ? {id:params.get("selected")} : null);
 
   const [productFilter, setProductFilter] = useState("");
 

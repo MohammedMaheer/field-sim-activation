@@ -1,4 +1,5 @@
-import { useContext, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { useContext, useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { BellRing, CheckCircle2, Clock3, PhoneCall, RefreshCw } from "lucide-react";
 import { Context } from "./App";
@@ -17,6 +18,8 @@ export default function CallWorkspace({embedded = false}: {embedded?: boolean}) 
   const [error, setError] = useState("");
   const [historySale,setHistorySale] = useState<Row|null>(null);
   const tasks = useQuery<Row[]>({queryKey:["sales-management", "call-tasks"], queryFn:()=>api("/sales-management/call-tasks"), refetchInterval:15000});
+  const [params] = useSearchParams();
+  useEffect(() => {const id=params.get('selected');if(id && tasks.data) setSelected(tasks.data.find(row=>row.id===id) || null);},[params,tasks.data]);
   const summary = useQuery<Row>({queryKey:["sales-management", "call-summary"], queryFn:()=>api("/sales-management/call-tasks/summary"), refetchInterval:15000});
   const history = useQuery<Row[]>({queryKey:["sales-management","calls"],queryFn:()=>api("/sales-management/calls"),enabled:!!historySale});
   const canTele = user.permissions?.includes("call.tele.write") || user.permissions?.includes("compliance.write");

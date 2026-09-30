@@ -56,6 +56,7 @@ def configure(app):
         or r.path in PATHS
         or r.path.startswith(
             (
+                "/api/notifications",
                 "/api/transactions",
                 "/api/organization",
                 "/api/administration",

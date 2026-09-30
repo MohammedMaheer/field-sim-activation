@@ -1,3 +1,4 @@
+import Notifications from "./Notifications";
 import OrganizationSetup from "./OrganizationSetup";
 import TeamLeaders from "./TeamLeaders";
 import RecordOverview from "./RecordOverview";
@@ -126,6 +127,7 @@ const navigation = [
     label: "WORKSPACE",
     items: [
       ["", "Overview", LayoutDashboard],
+      ["notifications", "Notifications", Bell],
       ["live", "Live operations", Radio],
     ],
   },
@@ -169,6 +171,7 @@ const navigation = [
 export function canVisitPage(path: string, user: Row) {
   path = path.replace(/^\//, "");
   if (path === "screenshot-capture") path = "kyc-capture";
+  if (path === "notifications") return true;
   const permissions = user.permissions || [];
   if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) return path === "call-work";
   if (user.role === "Sales Manager") return ["", "sales", "equipment", "reports"].includes(path);
@@ -285,8 +288,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [live, setLive] = useState(false);
   const [toast, setToast] = useState("");
-  const [simNotificationsOpen,setSimNotificationsOpen] = useState(false);
-  const simNotifications = useQuery({queryKey:['sim-scan-notifications'],queryFn:() => api('/inventory/scan-notifications'),enabled:!!user?.permissions?.includes('inventory.write'),refetchInterval:10000});
+  const inbox = useQuery({queryKey:['notifications',user?.id],queryFn:() => api('/notifications'),enabled:!!user,refetchInterval:20000});
   const callAlerts = useQuery({queryKey:['sales-management','call-summary'],queryFn:() => api('/sales-management/call-tasks/summary'),enabled:!!user && (user.permissions?.includes('compliance.write') || user.permissions?.includes('call.tele.read') || user.permissions?.includes('call.welcome.read')),refetchInterval:15000});
   const stockAlerts = useQuery({queryKey:['field-assets','alerts'],queryFn:async()=>{const [requests,levels]=await Promise.all([api('/field-assets/requests/list'),api('/field-assets/report/summary')]);return requests.filter((r:Row)=>['REQUESTED','APPROVED'].includes(r.status)).length+levels.filter((r:Row)=>r.low_stock).length},enabled:!!user && !!user.permissions?.includes('read') && canVisitPage('equipment',user),refetchInterval:20000});
   const [mobileMenu, setMobileMenu] = useState(false);
@@ -308,7 +310,7 @@ export default function App() {
   }, [client]);
   useEffect(() => {
     if (!user) return;
-    if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role) && location.pathname !== "/call-work") navigate("/call-work", {replace:true});
+    if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role) && !["/call-work", "/notifications"].includes(location.pathname)) navigate("/call-work", {replace:true});
   }, [user, location.pathname, navigate]);
   useEffect(() => {
     if (!user) return;
@@ -577,22 +579,20 @@ export default function App() {
               </button>}
               <button
                 className="icon-btn notification-btn"
-                title={callAlerts.data?.actionable || user.permissions.includes("call.tele.read") || user.permissions.includes("call.welcome.read") ? "Call queue alerts" : user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
-                aria-label={callAlerts.data?.actionable || user.permissions.includes("call.tele.read") || user.permissions.includes("call.welcome.read") ? "Call queue alerts" : user.permissions.includes("inventory.write") ? "SIM activity" : "Backend verification"}
-                onClick={() => (user.permissions.includes("call.tele.read") || user.permissions.includes("call.welcome.read") || !!callAlerts.data?.actionable) ? navigate("/call-work") : user.permissions.includes("inventory.write") ? setSimNotificationsOpen(true) : navigate(user.role === "Sales Manager" ? "/sales" : user.role === "Team Leader" ? "/team-leaders" : "/kyc-capture")}
+                title="Notifications"
+                aria-label="Notifications"
+                onClick={() => navigate('/notifications')}
               >
                 <Bell size={18} />
-                {callAlerts.data?.actionable ? <b className="call-alert-count">{callAlerts.data.actionable}</b> : <i />}
+                {!!inbox.data?.unread && <b className="call-alert-count">{inbox.data.unread > 99 ? '99+' : inbox.data.unread}</b>}
               </button>
               <Avatar name={user.name} size="small" />
             </div>
           </header>
-          {simNotificationsOpen && <Drawer title="SIM activity" onClose={() => setSimNotificationsOpen(false)}>
-            {simNotifications.isLoading ? <Loading/> : simNotifications.isError ? <ErrorState error={simNotifications.error} retry={() => simNotifications.refetch()}/> : (simNotifications.data || []).length === 0 ? <p>No SIM scans yet</p> : (simNotifications.data || []).map((n:Row) => <button key={n.id} className="sim-notification" onClick={() => {setSimNotificationsOpen(false);navigate(n.sim_id ? `/inventory?selected=${encodeURIComponent(n.sim_id)}` : '/inventory');}}><b>{n.message}</b><small>{new Date(n.created_at).toLocaleString()}</small></button>)}
-          </Drawer>}
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>
               {canVisitPage(location.pathname, user) ? <Routes>
+                <Route path="/notifications" element={<Notifications />} />
                 <Route path="/kyc-capture" element={<KycCapture />} />
                 <Route path="/sales" element={<SalesManagement />} />
                 <Route path="/call-work" element={<CallWorkspace />} />

@@ -17,6 +17,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, or_, text
 from sqlalchemy.exc import IntegrityError
+from .notifications import router as notifications_router
 from .db import *
 from .security import *
 from .services import *
@@ -77,6 +78,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
+app.include_router(notifications_router)
 app.include_router(capture_router)
 app.include_router(inventory_bulk_router)
 app.include_router(sim_scanning_router)

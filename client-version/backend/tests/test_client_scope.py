@@ -2128,3 +2128,46 @@ def test_order_reference_recovers_split_digits_but_never_invents_words():
     assert order_fields([{'text': 'Request Id: 1570837 383'}])['order_reference'] == '1570837383'
     assert 'order_reference' not in order_fields([{'text': 'Request Id: order created successfully'}])
     assert 'order_reference' not in order_fields([{'text': 'Order Details'}])
+
+@pytest.mark.parametrize('account',['admin','ops','agent1','leader','leader2','salesmanager','compliance','tele','welcome','inventory'])
+def test_notification_inbox_roles_and_safe_paths(client, account):
+    login(client, account)
+    response = client.get('/api/notifications')
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result['unread'] == sum(not row['read'] for row in result['items'])
+    assert len({row['id'] for row in result['items']}) == len(result['items'])
+    for row in result['items']:
+        assert row['web_path'].startswith('/') and row['mobile_path'].startswith('/')
+        assert 'document_number' not in row and 'image' not in row
+        if account in {'tele','welcome'}:
+            assert row['category'] in {'Calls','Workspace'}
+        if account.startswith('leader') and row['category']=='Transactions':
+            assert row['title'] == 'Confirmed by backend'
+
+
+def test_notification_read_scope_persistence_and_no_business_mutation(client):
+    from app.db import Notification, User, NotificationRead
+    with DB() as db:
+        agent = db.scalar(select(User).where(User.email=='agent1@relay.demo'))
+        other = db.scalar(select(User).where(User.email=='leader2@relay.demo'))
+        notice = Notification(user_id=agent.id,message='Your workspace update')
+        foreign = Notification(user_id=other.id,message='Other account only')
+        db.add_all([notice,foreign])
+        db.commit()
+        key,foreign_key = f'notice:{notice.id}',f'notice:{foreign.id}'
+        user_id = agent.id
+    login(client,'agent1')
+    assert foreign_key not in {row['id'] for row in client.get('/api/notifications').json()['items']}
+    assert client.post('/api/notifications/read',json={'ids':[key,foreign_key]}).status_code==404
+    assert not next(row for row in client.get('/api/notifications').json()['items'] if row['id']==key)['read']
+    for _ in range(2):
+        assert client.post('/api/notifications/read',json={'ids':[key,key]}).status_code==200
+    login(client,'agent1')
+    assert next(row for row in client.get('/api/notifications').json()['items'] if row['id']==key)['read']
+    with DB() as db:
+        assert db.get(NotificationRead,(user_id,key))
+    assert client.post('/api/notifications/read',json={'ids':[key],'read':False}).status_code==200
+    assert not next(row for row in client.get('/api/notifications').json()['items'] if row['id']==key)['read']
+    login(client,'leader2')
+    assert client.post('/api/notifications/read',json={'ids':[key]}).status_code==404

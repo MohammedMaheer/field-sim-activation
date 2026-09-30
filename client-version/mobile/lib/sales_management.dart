@@ -1,10 +1,12 @@
+import 'notifications.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 
 class SalesManagementScreen extends ConsumerStatefulWidget {
-  const SalesManagementScreen({super.key});
+  const SalesManagementScreen({super.key, this.selectedId});
+  final String? selectedId;
   @override
   ConsumerState<SalesManagementScreen> createState() => _SalesManagementScreenState();
 }
@@ -23,7 +25,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
   Timer? poll;
 
   @override
-  void initState() { super.initState(); load(); poll = Timer.periodic(const Duration(seconds: 20), (_) {if (!saving) load(quiet: true);}); }
+  void initState() { super.initState(); load().then((_) {if(mounted && widget.selectedId != null) saleDetails({'id':widget.selectedId});}); poll = Timer.periodic(const Duration(seconds: 20), (_) {if (!saving) load(quiet: true);}); }
 
   @override
   void dispose() {poll?.cancel(); super.dispose();}
@@ -142,7 +144,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
     final isAgent = ref.watch(serviceProvider).user?['agent_id'] != null;
     final canSet = ['Administrator', 'Operations Manager', 'Team Leader'].contains(ref.watch(serviceProvider).user?['role']);
     return Scaffold(
-      appBar: AppBar(title: const Text('Sales management'), actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh), tooltip: 'Refresh'), IconButton(onPressed: () => ref.read(serviceProvider).logout(), icon: const Icon(Icons.logout), tooltip: 'Sign out')]),
+      appBar: AppBar(title: const Text('Sales management'), actions: [const NotificationBell(),IconButton(onPressed: load, icon: const Icon(Icons.refresh), tooltip: 'Refresh'), IconButton(onPressed: () => ref.read(serviceProvider).logout(), icon: const Icon(Icons.logout), tooltip: 'Sign out')]),
       floatingActionButton: tab == 1 && isAgent ? FloatingActionButton.extended(onPressed: saving ? null : addFeedback, icon: const Icon(Icons.add), label: const Text('Add feedback')) : tab == 2 && canSet ? FloatingActionButton.extended(onPressed: setTarget, icon: const Icon(Icons.flag_outlined), label: const Text('Set target')) : null,
       body: loading ? const Center(child: CircularProgressIndicator()) : error.isNotEmpty ? Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text(error), TextButton(onPressed: load, child: const Text('Retry'))])) : Column(children: [
         Container(
