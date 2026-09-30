@@ -50,7 +50,7 @@ def reset_samples():
     with DB.begin() as db:
         admin = db.scalar(select(User).where(User.email == 'admin@relay.demo'))
         reviewer = db.scalar(select(User).join(Role).where(Role.name == 'Compliance Officer'))
-        plans = list(db.scalars(select(Plan).where(Plan.active == True).order_by(Plan.name)))
+        plans = list(db.scalars(select(Plan).where(Plan.active.is_(True)).order_by(Plan.name)))
         agents = list(db.scalars(select(Agent).order_by(Agent.employee_id)))
         if not admin or not reviewer or not plans or not agents:
             raise RuntimeError('Existing administrator, reviewer, active plan and agent accounts required')

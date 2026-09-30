@@ -43,6 +43,8 @@ test('stock reports and return checklist stay usable',async({page})=>{
   await page.getByRole('button',{name:'Movements',exact:true}).click();
   await expect(page.getByRole('heading',{name:'Stock movements'})).toBeVisible();
   await page.getByRole('button',{name:'Returns & transfers',exact:true}).click();
+  await expect(page.getByRole('heading',{name:'Stock return checklist',exact:true})).toBeVisible();
+  await expect(page.getByRole('heading',{name:'Stock return checklist',exact:true})).toBeVisible();
   await page.getByRole('combobox',{name:'Agent',exact:true}).last().selectOption({label:'Zayn Mercer'});
   await expect(page.getByText(/^Return, transfer or write off outstanding stock/)).toBeVisible();
   await page.screenshot({path:'../output/qa/stock-checklist-desktop.png',fullPage:true,animations:'disabled'});

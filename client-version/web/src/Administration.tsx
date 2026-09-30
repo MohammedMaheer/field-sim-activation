@@ -55,7 +55,7 @@ export default function Administration() {
     [packScanner, setPackScanner] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const allowed = user.role === "Administrator";
+  const allowed = ["Administrator", "Operations Manager"].includes(user.role);
   const q = useQuery<Row[]>({
     queryKey: ["administration", kind],
     queryFn: () => api(`/administration/${kind}`),
@@ -116,7 +116,7 @@ export default function Administration() {
     }
   }
   if (!allowed)
-    return <section className="panel">Administrator access required.</section>;
+    return <section className="panel">Staff management access required.</section>;
   return (
     <>
       <header className="page-header">
@@ -220,6 +220,7 @@ export default function Administration() {
                 label: "Actions",
                 render: (r) => (
                   <div className="admin-row-actions">
+                    {kind === "branches" && <Link to={`/equipment?tab=checklist&branch=${r.id}`}>Stock return checklist</Link>}
                     {kind === "agents" && (
                       <button onClick={() => start(r)}>
                         <Pencil size={16} /> Edit profile
@@ -234,7 +235,7 @@ export default function Administration() {
                         <Pencil size={16} /> Edit
                       </button>
                     )}
-                    {!["tasks", "incentives", "inventory"].includes(kind) && (
+                    {user.role === "Administrator" && !["tasks", "incentives", "inventory"].includes(kind) && (
                       <button
                         aria-label={`Delete ${label(r)}`}
                         onClick={() => {

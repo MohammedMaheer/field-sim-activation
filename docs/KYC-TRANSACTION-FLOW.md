@@ -1,3 +1,7 @@
+# Modern Trade clarification — 30 September 2026
+
+The complete client document and owner clarification govern new submissions: activation is completed externally on the salesperson's existing device; Relay captures customer, order and confirmation screens, records the sale and independently verifies its evidence. Backend verification confirms the linked sale and matching SIM once; it does not initiate a second activation. The sale's saved branch leader receives a read-only update. No Grabba/carrier API is required. All seven order types and the document's optional sales fields are predefined in both clients. Commission/CRR/DRR/projection/deduction calculations remain unconfigured until management supplies approved rules. See `client-version/docs/MODERN-TRADE-STATUS.md` for the current requirement matrix. Earlier sequences below describe retained historical workflows.
+
 # Branch leader clarification - 29 September 2026
 
 Backend staff independently verify transactions. Branch team leaders receive read-only notifications and transaction updates after backend confirmation; they do not verify, approve or confirm transactions. This supersedes the earlier leader-confirmation handoff.

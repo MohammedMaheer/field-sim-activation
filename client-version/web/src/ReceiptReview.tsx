@@ -393,6 +393,7 @@ export default function ReceiptReview({
       </section>
       {capture.status === "VERIFIED" && <div className="setup-summary" role="status">Transaction confirmed by backend</div>}
       {capture.document_kind === "PAYMENT_CONFIRMATION" &&
+        !orderMode &&
         capture.status === "VERIFIED" && (
           <section className="panel activation-completion">
             <h2>

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
-from .db import Agent, Branch, Outlet, Role, User, get_db
+from .db import Agent, Branch, Outlet, Role, User, Session, get_db, now
 from .security import principal, password_hash
 from .services import audit
 
@@ -14,8 +14,8 @@ router = APIRouter(prefix="/api/organization")
 
 
 def administrator(db, user):
-    if db.get(Role, user.role_id).name != "Administrator":
-        raise HTTPException(403, "Only administrators can manage the organization")
+    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
+        raise HTTPException(403, "Only administrators and backend staff can manage the organization")
 
 
 @router.get("")
@@ -212,7 +212,11 @@ def assign_leader(
         other.branch_id = None
     leader.branch_id = branch_id
     for agent in db.scalars(select(Agent).join(Outlet).where(Outlet.branch_id == branch_id)):
-        agent.leader_id = leader.id
+        if agent.leader_id != leader.id:
+            agent.leader_id = leader.id
+            agent.assignment_effective_at = now()
+            for session in db.scalars(select(Session).where(Session.user_id == agent.user_id)):
+                session.revoked = True
     audit(
         db, user, "Branch leader assigned", branch_id, new={"leader_id": leader.id}, request=request
     )

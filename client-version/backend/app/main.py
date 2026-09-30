@@ -264,6 +264,8 @@ def records(resource, db, user, branch_id=""):
         branches = {db.get(Outlet, a.outlet_id).branch_id for a in agents}
         if db.get(Role, user.role_id).name == "Administrator":
             branches = set(db.scalars(select(Branch.id)))
+        if branch_id:
+            branches.intersection_update({branch_id})
         visible_orders = db.scalars(select(Order).where(Order.agent_id.in_(ids))).all()
         today = business_date()
         return [
@@ -298,7 +300,7 @@ def records(resource, db, user, branch_id=""):
         ]
     if resource == "outlets":
         if db.get(Role, user.role_id).name == "Administrator":
-            outlet_ids = set(db.scalars(select(Outlet.id)))
+            outlet_ids = set(db.scalars(select(Outlet.id).where(Outlet.branch_id == branch_id))) if branch_id else set(db.scalars(select(Outlet.id)))
         return [
             {
                 **{k: v for k, v in raw(o).items() if k not in {"lat", "lng"}},
@@ -497,10 +499,16 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
             }
         )
     branch_rows = records("branches", db, user, branch_id)
-    sale_rows = db.scalars(select(SalesRecord).where(
-        SalesRecord.agent_id.in_(scope),
-        SalesRecord.branch_id.in_([b["id"] for b in branch_rows]),
-    )).all()
+    from .sales_management import scoped as scoped_sales
+    sales_query = scoped_sales(db, user, SalesRecord)
+    if branch_id:
+        sales_query = sales_query.where(SalesRecord.branch_id == branch_id)
+    sale_rows = db.scalars(sales_query).all()
+    existing_branches = {row["id"] for row in branch_rows}
+    for historic_id in {row.branch_id for row in sale_rows} - existing_branches:
+        historic = db.get(Branch, historic_id)
+        if historic:
+            branch_rows.append({**raw(historic), "agents": 0, "target": 0, "today": 0, "activations": 0})
     actionable_sale_ids = [s.id for s in sale_rows if s.status != "CANCELLED"]
     call_rows = db.scalars(select(SalesCallTask).where(
         SalesCallTask.sale_id.in_(actionable_sale_ids),
@@ -1252,7 +1260,7 @@ class AgentManagement(BaseModel):
 
 
 def admin_only(db, user):
-    if db.get(Role, user.role_id).name != "Administrator":
+    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only an administrator can manage agent assignments")
 
 
@@ -1298,7 +1306,8 @@ def save_agent_management(
     if any(old[k] != getattr(body, "expected_" + k) for k in old):
         raise HTTPException(409, "Assignment changed. Reopen management before saving.")
     outlet = db.get(Outlet, body.outlet_id)
-    leader = db.get(User, body.leader_id) if body.leader_id else None
+    leader = db.get(User, body.leader_id) if body.leader_id else db.scalar(select(User).join(Role).where(Role.name == "Team Leader", User.branch_id == outlet.branch_id)) if outlet else None
+    new_assignment = {"target": body.target, "outlet_id": body.outlet_id, "leader_id": leader.id if leader else None}
     if not outlet or (leader and db.get(Role, leader.role_id).name != "Team Leader"):
         raise HTTPException(422, "Select a valid branch")
     if leader and leader.branch_id != outlet.branch_id:
@@ -1319,8 +1328,12 @@ def save_agent_management(
             409,
             "Return or transfer the agent's available/reserved SIM stock before changing outlet",
         )
+    if old["outlet_id"] != new_assignment["outlet_id"] or old["leader_id"] != new_assignment["leader_id"]:
+        agent.assignment_effective_at = now()
+        for session in db.scalars(select(Session).where(Session.user_id == agent.user_id)):
+            session.revoked = True
     for key in old:
-        setattr(agent, key, getattr(body, key))
+        setattr(agent, key, new_assignment[key])
     db.get(User, agent.user_id).branch_id = outlet.branch_id
     audit(
         db,

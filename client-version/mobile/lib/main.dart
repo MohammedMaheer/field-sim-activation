@@ -108,10 +108,14 @@ final router = GoRouter(
   ],
 );
 
-class RelayApp extends StatelessWidget {
+class RelayApp extends ConsumerWidget {
   const RelayApp({super.key});
   @override
-  Widget build(BuildContext context) => MaterialApp.router(
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen<String?>(serviceProvider.select((service) => service.user?['id']?.toString()), (previous, next) {
+      if (previous != null && next == null) router.go('/');
+    });
+    return MaterialApp.router(
     title: 'Relay Client',
     debugShowCheckedModeBanner: false,
     routerConfig: router,
@@ -212,6 +216,7 @@ class RelayApp extends StatelessWidget {
       ),
     ),
   );
+  }
 }
 
 class Gate extends ConsumerStatefulWidget {

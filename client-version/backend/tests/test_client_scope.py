@@ -16,6 +16,146 @@ from app.main import app, limits
 from app.seed import seed
 
 
+def test_target_file_preview_apply_stale_and_scoped_access(client):
+    import csv
+    from app.sales_management import TARGET_COLUMNS
+    login(client)
+    agents = client.get('/api/resources/agents').json()
+    agent = next(row for row in agents if row['employee_id'] == 'RLY-1041')
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(TARGET_COLUMNS)
+    writer.writerow([agent['employee_id'], '2031-02', 'ALL', '', '', 3, 50])
+    body = {'filename':'targets.csv','content_base64':base64.b64encode(out.getvalue().encode()).decode()}
+    preview = client.post('/api/sales-management/targets/file', json=body)
+    assert preview.status_code == 200 and not preview.json()['errors']
+    assert not client.get('/api/sales-management/targets?period=2031-02').json()
+    assert client.post('/api/sales-management/targets/file', json={**body,'apply':True}).json()['applied']
+    assert client.post('/api/sales-management/targets/file', json={**body,'apply':True}).status_code == 422
+    exported = client.get('/api/sales-management/targets/template?period=2031-02')
+    from openpyxl import load_workbook
+    book = load_workbook(io.BytesIO(exported.content))
+    assert list(next(book.active.values)) == list(TARGET_COLUMNS)
+    login(client, 'agent1')
+    assert client.post('/api/sales-management/targets/file', json=body).status_code == 403
+    assert next(row for row in client.get('/api/sales-management/targets?period=2031-02').json() if row['agent_id'] == agent['id'])['monthly_target'] == 50
+    login(client, 'leader2')
+    response = client.post('/api/sales-management/targets/file', json=body)
+    if not any(row['id'] == agent['id'] for row in client.get('/api/resources/agents').json()):
+        assert response.json()['errors']
+
+
+def test_target_file_rejects_bad_rows_atomically(client):
+    from app.sales_management import TARGET_COLUMNS
+    login(client)
+    agent = client.get('/api/resources/agents').json()[0]
+    text = ','.join(TARGET_COLUMNS) + '\n' + f"{agent['employee_id']},2032-04,ALL,,,2,25\n{agent['employee_id']},2032-04,ALL,,,2,25"
+    body = {'filename':'targets.csv','content_base64':base64.b64encode(text.encode()).decode(),'apply':True}
+    assert client.post('/api/sales-management/targets/file',json=body).status_code == 422
+    assert client.get('/api/sales-management/targets?period=2032-04').json() == []
+    for invalid in ['-1', '2.5', '=SUM(1)', '10001']:
+        text = ','.join(TARGET_COLUMNS) + '\n' + f"{agent['employee_id']},2032-04,ALL,,,2,{invalid}"
+        body['content_base64'] = base64.b64encode(text.encode()).decode()
+        assert client.post('/api/sales-management/targets/file',json=body).status_code == 422
+
+
+def test_sales_manager_snapshot_and_full_report(client):
+    from app.db import Role, User, Outlet
+    from app.security import password_hash
+    from uuid import uuid4
+    login(client)
+    agent = client.get('/api/resources/agents').json()[0]
+    with DB() as db:
+        existing = db.scalars(select(User).join(Role).where(Role.name=='Sales Manager',User.branch_id==agent['branch_id'])).all()
+        previous = [(person.id,person.branch_id) for person in existing]
+        for person in existing:
+            person.branch_id = None
+        manager = User(name='Historical Sales Manager',email=f'snapshot-{uuid4()}@relay.demo',password_hash=password_hash('test-client-password'),role_id=db.scalar(select(Role.id).where(Role.name=='Sales Manager')),branch_id=agent['branch_id'])
+        db.add(manager)
+        db.commit()
+        manager_id, manager_email = manager.id, manager.email
+    try:
+        row = client.post('/api/sales-management/sales',json={'agent_id':agent['id'],'order_type':'NEW','customer_name':'Report Customer','plan_name':'Captured plan','document_number':'784123456789123','request_id':f'REPORT-{uuid4()}','account_number':'ACCOUNT-123','sr_number':'SR-123','alternate_number':'0500000000'}).json()
+        assert row['manager_id'] == manager_id
+        with DB() as db:
+            db.get(User,manager_id).branch_id = next(outlet.branch_id for outlet in db.scalars(select(Outlet)) if outlet.branch_id != agent['branch_id'])
+            db.commit()
+        login(client,manager_email.split('@')[0])
+        assert client.get(f"/api/sales-management/sales/{row['id']}").json()['manager_id'] == manager_id
+        report = client.get('/api/sales-management/export?format=xlsx')
+        from openpyxl import load_workbook
+        book = load_workbook(io.BytesIO(report.content))
+        columns = list(next(book.active.values))
+        assert {'sales_manager','router_serial','sr_number','tele_status','tele_remark','welcome_status','welcome_remark'} <= set(columns)
+        assert '784123456789123' not in str(list(book.active.values))
+        assert client.get('/api/sales-management/sales?branch_id=not-allowed').json() == []
+    finally:
+        with DB() as db:
+            for identifier, branch in previous:
+                db.get(User,identifier).branch_id = branch
+            db.commit()
+
+
+@pytest.mark.parametrize('account',['leader','leader2','cluster','compliance','inventory','salesmanager'])
+def test_reporting_roles_cannot_create_sales_or_feedback(client, account):
+    login(client, account)
+    assert client.post('/api/sales-management/sales',json={'agent_id':'any','order_type':'NEW','customer_name':'Not allowed','plan_name':'Plan'}).status_code == 403
+    assert client.post('/api/sales-management/feedback',json={'agent_id':'any','product_suggested':'Plan','feedback':'Customer feedback','rejection_reason':'No purchase'}).status_code == 403
+
+
+def test_order_parser_captures_proposal_fields_without_guessing_type():
+    from app.captures import order_fields
+    parsed = order_fields([{'text':text} for text in ['Order Type: HW','Account Number: A123','Router Serial Number: ROUTER123','SIM Serial Number: SIM123','SR Number: SR123','Request Id: REQ123','MSISDN: 0500000000']])
+    assert parsed['order_type']=='HW' and parsed['account_number']=='A123' and parsed['router_serial']=='ROUTER123'
+    assert parsed['sim_identifier']=='SIM123' and parsed['sr_number']=='SR123'
+    assert 'order_type' not in order_fields([{'text':'Order Type: random text'}])
+
+
+def test_backend_review_closes_external_sale_and_consumes_stock_once(client):
+    from app import captures
+    from app.db import KycCapture, SalesRecord, Sim, Notification, Movement
+    from app.sales_management import register_capture_sale
+    from uuid import uuid4
+    login(client)
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.employee_id=='RLY-1041'))
+        plan_id = client.get('/api/resources/plans').json()[0]['id']
+        serial = f'SIM-{uuid4()}'
+        sim = Sim(serial=serial,iccid=serial,sim_type='POSTPAID',agent_id=agent.id,outlet_id=agent.outlet_id,status='AVAILABLE')
+        db.add(sim)
+        capture = KycCapture(agent_id=agent.id,creator_id=agent.user_id,operation_id=str(uuid4()),source_reference=f'FLOW-{uuid4()}',image_hash='test',image_type='image/png',image_encrypted=captures.cipher.encrypt(b'test').decode(),status='SUBMITTED',version=1)
+        captures.store(capture,{'document_kind':'PAYMENT_CONFIRMATION','intake':{'capture_mode':'SCREENSHOT_ORDER','order_type':'NEW','name':'Flow Customer','document_number':'SAMPLE','nationality':'Sample','birth_date':'1990-01-01','expiry_date':'2090-01-01','document_image':'','order_image':'','plan_id':plan_id,'msisdn':'0500000000','order_reference':f'ORDER-{uuid4()}','sim_identifier':serial},'rows':[],'history':[]})
+        # Review complete() checks required image presence, not authenticity; extraction evidence is tested separately.
+        data = captures.payload(capture)
+        data['intake']['document_image']='stored'
+        data['intake']['order_image']='stored'
+        # Use a valid synthetic image for the intake validator.
+        from PIL import Image
+        image = io.BytesIO()
+        Image.new('RGB',(80,80),'white').save(image,format='PNG')
+        data['intake']['document_image']=base64.b64encode(image.getvalue()).decode()
+        data['intake']['order_image']=data['intake']['document_image']
+        captures.store(capture,data)
+        db.add(capture)
+        db.flush()
+        register_capture_sale(db,capture)
+        db.commit()
+        capture_id, sim_id = capture.id, sim.id
+        sale_id = db.scalar(select(SalesRecord.id).where(SalesRecord.capture_id==capture_id))
+        leader_id = agent.leader_id
+    rejected = client.post('/api/sales-management/status-file',json={'filename':'sales.csv','content_base64':base64.b64encode(f'sale_id,current_status,new_status\n{sale_id},IN_PROGRESS,CLOSED'.encode()).decode(),'apply':True})
+    assert rejected.status_code == 422
+    response = client.post(f'/api/kyc-captures/{capture_id}/review',json={'version':1,'outcome':'VERIFIED','reason':'External activation evidence checked'})
+    assert response.status_code == 200, response.text
+    assert client.get(f'/api/sales-management/sales/{sale_id}').json()['status']=='CLOSED'
+    assert response.json()['invoice']['status']=='Verified'
+    assert client.post(f'/api/kyc-captures/{capture_id}/review',json={'version':response.json()['version'],'outcome':'VERIFIED','reason':'Repeated review'}).status_code == 409
+    with DB() as db:
+        assert db.get(Sim,sim_id).status=='ACTIVATED'
+        assert len(db.scalars(select(Movement).where(Movement.sim_id==sim_id)).all())==1
+        assert db.scalar(select(Notification.id).where(Notification.user_id==leader_id,Notification.message.contains('FLOW-')))
+
+
 @pytest.fixture(scope="module", autouse=True)
 def database():
     Base.metadata.create_all(engine)
@@ -647,7 +787,7 @@ def test_admin_management_validation_conflicts_and_permissions(client):
         ).status_code
         == 200
     )
-    for account in ["agent1", "leader", "ops", "compliance"]:
+    for account in ["agent1", "leader", "compliance"]:
         login(client, account)
         assert client.get(path).status_code == 403
         assert client.patch(path, json=body).status_code == 403
@@ -1885,12 +2025,15 @@ def test_agent_transfer_moves_stock_and_exit_requires_returns(client):
         target = db.scalar(select(Branch.id).where(Branch.name == "Dubai Central"))
         role_id = db.scalar(select(Role.id).where(Role.name == "Field Agent"))
         person = User(name="Transfer Test", email="transfer-test@relay.demo", password_hash=password_hash("test-client-password"), role_id=role_id, branch_id=origin.branch_id)
-        db.add(person); db.flush()
+        db.add(person)
+        db.flush()
         agent = Agent(user_id=person.id, employee_id="TRANSFER-TEST", outlet_id=origin.id, lat=0, lng=0)
-        db.add(agent); db.flush()
+        db.add(agent)
+        db.flush()
         sim = Sim(serial="TRANSFER-SIM", iccid="TRANSFER-ICCID", sim_type="Physical", outlet_id=origin.id, agent_id=agent.id)
         asset = FieldAsset(category="ROUTER", label="Transfer router", serial="TRANSFER-ROUTER", quantity=1, status="ASSIGNED", branch_id=origin.branch_id, agent_id=agent.id)
-        db.add_all([sim,asset]); db.commit()
+        db.add_all([sim,asset])
+        db.commit()
         agent_id, asset_id, sim_id, user_id = agent.id,asset.id,sim.id,person.id
     login(client)
     assert client.post(f"/api/field-assets/agents/{agent_id}/exit", json={"reason":"Employee leaving"}).status_code == 409
@@ -1915,4 +2058,73 @@ def test_agent_transfer_moves_stock_and_exit_requires_returns(client):
         db.execute(delete(Sim).where(Sim.id==sim_id))
         db.execute(delete(Audit).where(Audit.agent_id==agent_id))
         db.execute(delete(Session).where(Session.user_id==user_id))
-        db.delete(db.get(Agent,agent_id)); db.flush(); db.delete(db.get(User,user_id)); db.commit()
+        db.delete(db.get(Agent,agent_id))
+        db.flush()
+        db.delete(db.get(User,user_id))
+        db.commit()
+
+
+def test_backend_staff_provisioning_does_not_grant_admin_deletion(client):
+    login(client, "ops")
+    directory = client.get("/api/organization")
+    assert directory.status_code == 200
+    added = client.post("/api/organization/branches", json={"name": "Backend managed branch"})
+    assert added.status_code == 201
+    branch_id = added.json()["id"]
+    assert client.get("/api/administration/branches").status_code == 200
+    assert client.request("DELETE", f"/api/administration/branches/{branch_id}", json={"values":{},"reason":"Remove empty branch"}).status_code == 403
+    assert client.get("/api/sales-management/staff").status_code == 200
+    login(client, "agent1")
+    assert client.get("/api/sales-management/staff").status_code == 403
+
+
+def test_stock_request_response_is_visible_only_to_assigned_scope(client):
+    login(client, "agent1")
+    agent_id = client.get("/api/auth/me").json()["agent_id"]
+    added = client.post("/api/field-assets/requests", json={"agent_id":agent_id,"category":"UNIFORM","quantity":1,"reason":"Replacement required"})
+    assert added.status_code == 201
+    request_id = added.json()["id"]
+    login(client)
+    assert client.patch(f"/api/field-assets/requests/{request_id}", json={"status":"APPROVED","reason":"Collect your replacement tomorrow"}).status_code == 200
+    login(client, "agent1")
+    row = next(row for row in client.get("/api/field-assets/requests/list").json() if row["id"] == request_id)
+    assert row["response"] == "Collect your replacement tomorrow"
+    assert row["responded_by"]
+    login(client, "leader2")
+    assert request_id not in {row["id"] for row in client.get("/api/field-assets/requests/list").json()}
+
+
+def test_target_change_keeps_designated_branch_leader(client):
+    login(client)
+    agent = next(row for row in client.get("/api/resources/agents").json() if row["employee_id"] == "RLY-1041")
+    response = client.patch(f"/api/agents/{agent['id']}/management", json={"target":agent["target"]+1, "outlet_id":agent["outlet_id"], "leader_id":None, "expected_target":agent["target"], "expected_outlet_id":agent["outlet_id"], "expected_leader_id":agent["leader_id"], "reason":"Change target without changing supervisor"})
+    assert response.status_code == 200, response.text
+    assert response.json()["leader_id"] == agent["leader_id"]
+
+
+def test_sales_date_filters_use_business_dates_and_export_same_records(client):
+    from datetime import datetime
+    from app.db import SalesRecord
+    login(client)
+    agent = next(row for row in client.get('/api/resources/agents').json() if row['employee_id']=='RLY-1041')
+    ids=[]
+    for day in [31, 30]:
+        row=client.post('/api/sales-management/sales',json={'agent_id':agent['id'],'order_type':'NEW','customer_name':'Date boundary check','plan_name':'Plan'}).json()
+        ids.append(row['id'])
+        with DB() as db:
+            db.get(SalesRecord,row['id']).created_at=datetime(2033,1,day,22)
+            db.commit()
+    response=client.get('/api/sales-management/sales?period=2033-01&from_date=2033-01-31&to_date=2033-01-31')
+    assert response.status_code==200 and [row['id'] for row in response.json()]==[ids[1]]
+    export=client.get('/api/sales-management/export?period=2033-01&from_date=2033-01-31&to_date=2033-01-31')
+    assert ids[1] in export.text and ids[0] not in export.text
+    assert client.get('/api/sales-management/sales?from_date=2033-02-31').status_code==422
+    assert client.get('/api/sales-management/sales?from_date=2033-02-01&to_date=2033-01-01').status_code==422
+
+
+def test_order_reference_recovers_split_digits_but_never_invents_words():
+    from app.captures import order_fields
+    assert order_fields([{'text': 'Request Id: SAMPLE-REQ-1790755791 762000'}])['order_reference'] == 'SAMPLE-REQ-1790755791762000'
+    assert order_fields([{'text': 'Request Id: 1570837 383'}])['order_reference'] == '1570837383'
+    assert 'order_reference' not in order_fields([{'text': 'Request Id: order created successfully'}])
+    assert 'order_reference' not in order_fields([{'text': 'Order Details'}])

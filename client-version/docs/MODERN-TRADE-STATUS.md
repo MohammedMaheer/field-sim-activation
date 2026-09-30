@@ -1,43 +1,43 @@
-# Modern Trade proposal implementation status
+# Modern Trade document alignment — 30 September 2026
 
-Checked against `Modern_Trade_Software_Project.docx` on 30 September 2026. This is an internal implementation record, not client-facing copy.
+The complete `Modern_Trade_Software_Project.docx` was read again and compared with the maintained client edition. This record supersedes the earlier status notes. The owner confirmed that calculations must remain unconfigured until management supplies approved commission slabs, CRR/DRR/projection formulas and deduction rules.
 
-## Implemented in the Relay client edition
+## Current workflow
 
-- Agents submit the current screenshot-order workflow. New submissions create a sales-register entry linked to the agent, current team leader, branch and outlet at submission time. The assignment snapshot remains on the sale when current assignments change.
-- Agents can record no-sale feedback separately. It does not count as a sale.
-- Sales support New, MNP, P2P, Home Wireless, eLife, Wasel and Visitor categories. Backend managers can correct a category and router serial with an audited reason. Missing data remains Not recorded.
-- Management can set monthly and daily targets; team leaders can set targets only for their assigned agents. Role-scoped sales, target, feedback and performance views are available in the web panel; agents have sales and feedback in the app and phone-framed demo.
-- Performance counts closed, in-progress and cancelled sales, monthly target, remaining sales, achievement percentage and closed sales by product.
-- Managers can export the sale register, preview validated CSV/XLSX status changes and apply them with audit history. The import uses unique sale IDs and rejects duplicate, unmatched or stale rows.
-- Authorized backend/compliance staff can record independent tele-verification and welcome-call attempts and remarks without overwriting the other stage.
-- Non-SIM field assets have branch stock records, agent assignment, movement history and agent requests. SIM inventory remains separate.
-- Sales Manager is a separate branch-scoped reporting role. Administrators can create and reassign Sales Manager and dedicated call-team accounts; these roles do not gain transaction verification or stock-edit access.
-- Tele-verification and welcome-call teams have separate work queues, recorded outcomes, remarks and history. Welcome calls wait until tele-verification passes or authorized management records an audited skip. In-app queue counts refresh automatically. Cancelled sales are not actionable calls.
-- Stock supports serialised equipment, bulk supplies and partial issue quantities; branch, warehouse, batch, size and condition; balance adjustments with reasons; urgent requests; quantity-matched fulfilment; minimum levels and shortage alerts; movement and balance reports; filtered CSV/XLSX exports. Activated SIMs count as consumed; no stock is deducted from an order-created message alone.
-- Administrators can transfer agents with assigned stock transferred or returned, and close agent access only after outstanding stock is accounted for. Sessions are revoked when assignment or employment status changes. Branch return checklists are available. Historical sale assignments remain unchanged.
-- The web panel, Android app and signed-in phone demo share the same backend. Agents see permitted branch stock and can submit requests; dedicated call roles can record their queue outcomes in the app and demo.
-- The existing screenshot capture, backend evidence review, external activation record and leader read-only notification remain the transaction path. Carrier activation and payment settlement are not claimed by Relay.
+External activation on the salesperson's existing device → customer-details screenshot → order-details screenshot → order-created confirmation/request ID → agent reviews and submits → independent backend evidence review → confirmed sale/report/stock updates → read-only notification to the sale's saved branch leader.
 
-## Still open
+Relay does not initiate carrier activation, perform Grabba verification or require a carrier API. The screenshots are evidence of work performed outside Relay. The request ID is an agent payment record, not a payment method or proof of gateway settlement. New invoices say **Payment recorded / Pending backend confirmation** until backend review. Historical workflows and receipts remain available.
 
-The detailed 30 September audit is in [RIGOROUS-VERIFICATION-2026-09-30.md](RIGOROUS-VERIFICATION-2026-09-30.md). It also identifies bulk target upload and a historical Sales Manager assignment snapshot as unfinished; the current Sales Manager access is branch-scoped. Do not treat the implemented role as proof of the complete proposal hierarchy.
+## Requirement coverage
 
-- Grabba device integration and Etisalat carrier activation require provider SDK/API access and a supported device. The app records submitted sales; it cannot initiate or attest carrier activation.
-- Gateway payment settlement requires a payment-provider integration. An order-created request ID is only an agent payment record pending backend confirmation.
-- Exact commission forecasts, CRR/DRR projections and month-end deduction warnings require the missing commission structure and management-approved formulas. Existing incentives do not establish those rules.
-- The exact commission and projection formulas remain an input dependency, not an external API dependency. Management must supply them before calculated forecasts can be accurate.
-- A configurable SIM deduction trigger by sale status would conflict with the owner's current rule: SIM activation is recorded only after independent backend verification and externally completed activation. This release preserves that rule. A branch checklist does not itself perform a branch closure or relocation.
-- Calling, SMS and off-device push delivery are not integrated. Queue alerts and call outcomes work inside the signed-in web panel and app without those services.
-- Old historical activation records were preserved; they were not all backfilled into the new sales register. New screenshot-order submissions enter it automatically.
-- No OCR or screenshot parser can guarantee correct recognition of every carrier screen. Staff must review captured values and evidence.
+| Document requirement | Implemented path and behavior |
+| --- | --- |
+| Agent, employee ID, TL, SM, branch/outlet, effective assignment date | Sales register and detail drawer/app detail; submission snapshots TL, SM, branch/outlet and the known effective date. Transfers retain previous sale assignments and revoke changed staff sessions. Missing historic dates/SM assignments remain Not recorded; missing supervision is flagged. |
+| Manual entry or screenshots after activation | Web sales-entry form and shared screenshot capture in web, Android and phone demo. No barcode or signature in new screenshot submissions. |
+| Customer/EID/nationality/plan/order type/account/request/SIM/router/advance/SR/alternate phone/status/time | Predefined shared capture fields, full manual-entry fields, grouped invoice/details and CSV/XLSX exports. Seven order types; Home Wireless requires router serial. EID is masked in reports, protected in storage and available with evidence only to permitted reviewers. Optional unknown fields are Not recorded. |
+| No-sale feedback | Separate agent interaction record, including contact and rejection reason, excluded from completed sale counts. |
+| Daily/monthly/product targets | Scoped target editor in web/app; Excel template and validated CSV/XLSX preview/apply upload with duplicate, stale, invalid and unauthorized row rejection. TL edits only assigned agents. |
+| Actual sales, target, achievement, remaining, daily product counts | Sales performance and current-register dashboard; closed/in-progress/cancelled counts, all seven daily product counts and monthly product summaries. Feedback does not increase sales. |
+| Historical TL/agency/SM assignment | Saved sale assignments remain unchanged after current staff reassignment. Unknown pre-migration SM/date values are not fabricated. |
+| Reporting by product/date/agent/TL/branch | Filtered sales register and matching Excel/CSV export; extra date/TL filters are collapsed initially. Full call columns, saved supervision, employee ID and explicitly captured order charges are included. Reports link to current sales; historical activation exports retain their original records. |
+| Backend staff add/update staff and locations | Operations Manager and Administrator can provision/update branch/agent and sales/call staff assignments. Permanent master-data deletion and account closure remain Administrator actions. Reporting/call roles cannot gain these controls. |
+| Download/edit/upload/preview/apply sale statuses | Unique record IDs, independent verification gate for screenshot sales, stale/duplicate/unmatched checks, atomic apply and uploader/change audit. Counts and call queues refresh after changes. |
+| Tele-verification and welcome calls | Separate role-scoped queues/alerts, outcomes, remarks, timestamps, actor and history. Welcome call remains blocked until tele-verification passes or an audited management skip; one stage never overwrites the other. These are staff-made calls. |
+| Branch-leader notification | Backend verifies independently. The leader saved on the sale receives a read-only confirmation; leaders have no transaction approval action. |
+| Stock/assets | Serialized Grabba/equipment/router records and bulk supplies, custom categories, central-store/warehouse, branch/agent, batch, size, condition, issue/partial issue/return/transfer/adjustment/write-off history. Existing SIM register and bulk import remain connected. |
+| Automatic SIM deduction | Independent verification closes the linked external sale and consumes a matching owned SIM once. A request ID, failed extraction or incomplete transaction cannot consume stock. A missing SIM identifier does not invent a deduction. The owner's verification gate supersedes arbitrary earlier deduction triggers. |
+| Stock requests and alerts | Agent request includes item/quantity/branch/urgency/remarks; TL/backend views are scoped, with pending counts and low-level alerts. Latest backend response, actor and time are returned to agent web/app views. |
+| Stock reports | Balance, assigned/consumed SIM stock, movement, requests, damaged/lost, adjustment reports and CSV/XLSX exports, with scoped date/category/branch/agent/status filters and configurable minimum levels. |
+| Staff transfer/exit and branch closure/relocation checklist | Stock return checklist lists all outstanding equipment and SIMs. Branch management links directly to its checklist. Transfer returns or carries accounted stock; admin cannot close agent access until stock is accounted for. Linked branches cannot be deleted to bypass stock history. A checklist does not itself close or relocate a branch. |
+| Account isolation and audit | Individual sign-in, server-side account/role/branch scope, masked sensitive exports, audited corrections/imports/stock actions, optimistic changes, session revocation and the existing regular client database backup. |
+| Web/mobile/demo connectivity | One shared API/database; stored drafts, captures, plans, sales, stock requests, targets and backend/leader updates use the same role-scoped records. Synthetic browser capture shortcuts still store and parse evidence through the API. No embedded credentials. |
 
-## Verification boundary
+## Deliberately unconfigured
 
-The newer rigorous audit supersedes the test results below for the current release. It records the connection-pool fix, current-register dashboard, duplicate consolidation, live preservation checks and the final APK installation restriction.
+Commission slabs, eligibility, cancellation/reversal/deduction rules, CRR, DRR and projection calculations remain unconfigured. No guessed formula or estimated commission is presented as an approved calculation. Existing recorded incentive history is not a commission forecast. Management must supply the missing rules before calculation and commission-rule configuration can be finalized.
 
-Migration 012 was deployed after rehearsing PostgreSQL upgrade, downgrade and upgrade again on an isolated copy of the live database. Existing account, plan, sale and stock counts were preserved. Release backup: `/opt/relay-client/backups/operations-before-20260929T211118Z`.
+The Sales Manager's exact access area is listed as requiring confirmation in the document. The implemented default is assigned-branch reporting with saved manager history; no unrestricted manager access is granted.
 
-The final backend suite passed 73 tests and lint passed. Web production build, Flutter analysis and 25 Flutter tests passed (one skipped). Local browser checks covered the cross-account call handoff, role-scoped screens, stock reports and the phone call-record form. Seven focused hosted browser checks passed; the destructive queue-handoff test was intentionally skipped on the hosted dataset and passed locally instead. The APK was installed on the connected phone; physical navigation checked the existing agent home, profile, SIM stock, branch equipment, shortage banner and stock-request form. Dedicated call-role physical testing is not claimed.
+External carrier/device integration, payment gateway settlement, automated calling, SMS and off-device push are not requirements for this manual screenshot/call workflow. They are not reported as unfinished requirements. In-app alerts and recorded call outcomes work without those integrations. Recognition remains subject to evidence review; recognition scores never replace independent verification.
 
-These checks do not prove Grabba, carrier, payment-gateway or live call-center integration. The older broad browser suite includes selectors for superseded screens and was not treated as a passing release gate.
+See [MODERN-TRADE-VERIFICATION-2026-09-30.md](MODERN-TRADE-VERIFICATION-2026-09-30.md) for release evidence and limitations.

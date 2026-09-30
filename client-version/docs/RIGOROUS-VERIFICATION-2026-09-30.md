@@ -1,5 +1,7 @@
 # Relay verification — 30 September 2026
 
+Latest Modern Trade changes and release evidence: [MODERN-TRADE-VERIFICATION-2026-09-30.md](MODERN-TRADE-VERIFICATION-2026-09-30.md). The earlier audit below remains historical.
+
 This audit covers the maintained client edition. It is an internal evidence record, not client-facing copy. Requirements were checked against the supplied Modern Trade document and the latest owner clarifications. The latest screenshot-order workflow takes precedence over the older barcode/signature and leader-approval workflows.
 
 ## Changes released

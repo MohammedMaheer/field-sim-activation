@@ -611,6 +611,8 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     'document_image' => 'customer details screen',
     'order_image' => 'order details screen',
     'order_reference' => 'request ID',
+    'order_type' => 'order type',
+    'router_serial' => 'router serial',
     'sim_identifier' => 'SIM barcode',
     'msisdn' => 'phone number',
     'plan_id' => 'subscriber plan',
@@ -819,9 +821,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 'expiry_date',
                 'document_image',
               ]
-            : ['order_image', 'order_reference', 'plan_id', 'msisdn'];
+            : ['order_image', 'order_reference', 'plan_id', 'msisdn', 'order_type', if (data['order_type'] == 'HW') 'router_serial'];
         final missingFields = required
-            .where((k) => (data[k] ?? '').toString().trim().isEmpty)
+            .where((k) => (data[k] ?? '').toString().trim().isEmpty || (k == 'order_type' && data[k] == 'UNSPECIFIED'))
             .toSet();
         if (missingFields.isNotEmpty) {
           await showMissing(missingFields);
@@ -1257,6 +1259,15 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             ),
             ...[
               const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                key: ValueKey('order-type-${data['order_type'] ?? ''}-$revision'),
+                initialValue: const ['NEW', 'MNP', 'P2P', 'HW', 'ELIFE', 'WASEL', 'VISITOR'].contains(data['order_type']) ? data['order_type'] : null,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Order type', isDense: true),
+                items: [for (final entry in const {'NEW':'New postpaid', 'MNP':'Number transfer', 'P2P':'Prepaid to postpaid', 'HW':'Home wireless', 'ELIFE':'eLife', 'WASEL':'Wasel / prepaid', 'VISITOR':'Visitor'}.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value))],
+                onChanged: busy ? null : (value) => setState(() {data['order_type'] = value; missing.remove('order_type');}),
+              ),
+              const SizedBox(height: 8),
               field('package_name', 'Package name', locked: true),
               Row(
                 children: [
@@ -1317,6 +1328,17 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                     missing.remove('plan_id');
                   });
                 },
+              ),
+              if (data['order_type'] == 'HW') field('router_serial', 'Router serial'),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text('Additional sale details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                children: [
+                  Row(children: [Expanded(child: field('account_number', 'Account number')), const SizedBox(width: 8), Expanded(child: field('sim_identifier', 'SIM serial'))]),
+                  if (data['order_type'] != 'HW') field('router_serial', 'Router serial'),
+                  Row(children: [Expanded(child: field('sr_number', 'SR number')), const SizedBox(width: 8), Expanded(child: field('alternate_number', 'Alternate number'))]),
+                  field('advance_transaction_number', 'Advance transaction number'),
+                ],
               ),
             ],
           ],

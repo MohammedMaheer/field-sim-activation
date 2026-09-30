@@ -66,7 +66,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
           field('Review', status),
           field(
             'Activation',
-            row['activation']?['status'] ?? 'Awaiting backend team',
+            orderMode ? (row['status'] == 'VERIFIED' ? 'Confirmed by backend' : 'Recorded by agent') : row['activation']?['status'] ?? 'Awaiting backend team',
           ),
         ],
       },
@@ -105,6 +105,14 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
           field('Request ID', intake['order_reference']),
           field('Monthly charge', intake['monthly_cost']),
           field('Prepayment on order', intake['prepayment']),
+          if (orderMode) ...[
+            field('Order type', intake['order_type']),
+            field('Account number', intake['account_number']),
+            field('Router serial', intake['router_serial']),
+            field('Advance transaction number', intake['advance_transaction_number']),
+            field('SR number', intake['sr_number']),
+            field('Alternate contact number', intake['alternate_number']),
+          ],
           field(
             'Plan price',
             plan['monthly_cost'] == null

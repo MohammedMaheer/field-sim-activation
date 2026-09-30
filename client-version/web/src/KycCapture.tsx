@@ -31,7 +31,7 @@ export default function KycCapture() {
   const [intakeReady, setIntakeReady] = useState(false);
   const [draftsOpen,setDraftsOpen] = useState(false);
   const drafts = useQuery({queryKey:['saved-capture-drafts'],queryFn:() => api('/kyc-captures/saved-drafts'),enabled:draftsOpen});
-  const [selected, setSelected] = useState(""),
+  const [selected, setSelected] = useState(() => new URLSearchParams(window.location.search).get("capture") || ""),
     [agent, setAgent] = useState(""),
     [source, setSource] = useState(""),
     [file, setFile] = useState<File | null>(null);

@@ -174,7 +174,8 @@ export function canVisitPage(path: string, user: Row) {
   if (user.role === "Sales Manager") return ["", "sales", "equipment", "reports"].includes(path);
   if (path === "call-work") return permissions.includes("compliance.write") || permissions.includes("call.tele.read") || permissions.includes("call.welcome.read");
   if (path === "team-leaders") return ["Administrator", "Team Leader"].includes(user.role);
-  if (["plans", "administration"].includes(path)) return permissions.includes("settings.write");
+  if (path === "administration") return ["Administrator", "Operations Manager"].includes(user.role);
+  if (path === "plans") return permissions.includes("settings.write");
   if (path === "audit") return permissions.includes("audit.read");
   if (path === "reports") return permissions.includes("report.read");
   if (user.role === "Field Agent") return ["", "customers", "activations", "sales", "equipment", "kyc-capture", "inventory", "incentives", "support"].includes(path);
@@ -468,8 +469,7 @@ export default function App() {
                   )
                   .filter(
                     ([path]) =>
-                      (path !== "plans" && path !== "administration") ||
-                      user.permissions.includes("settings.write"),
+                      (path === "administration" ? ["Administrator", "Operations Manager"].includes(user.role) : path !== "plans" || user.permissions.includes("settings.write")),
                   )
                   .map(([path, label, Icon]: any) => (
                     <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
@@ -863,7 +863,7 @@ function AgentDrawer({
 
           "Inventory",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
-          ...(user.role === "Administrator" ? ["Manage"] : []),
+          ...(["Administrator", "Operations Manager"].includes(user.role) ? ["Manage"] : []),
         ].map((t) => (
           <button
             className={tab === t ? "active" : ""}
@@ -1166,7 +1166,7 @@ function ResourcePage({ resource }: { resource: string }) {
             }}
           />
         )}
-        {user.role === "Administrator" &&
+        {["Administrator", "Operations Manager"].includes(user.role) &&
           ["agents", "branches"].includes(resource) && (
             <button
               className="primary"
@@ -1555,8 +1555,8 @@ function Reports() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState("");
   const reports = [
-    ["daily", "Daily activation", "A complete snapshot of daily connections."],
-    ["monthly", "Monthly activation", "Activation performance over the month."],
+    ["daily", "Historical daily activation", "A complete snapshot of daily connections."],
+    ["monthly", "Historical monthly activation", "Activation performance over the month."],
     ["agent", "Agent performance", "Productivity and quality by field agent."],
 
     [
@@ -1585,6 +1585,7 @@ function Reports() {
         title="Reports & exports"
         description="Structured data. Clear reporting. Ready for your next decision."
       />
+      <section className="panel report-card" style={{marginBottom:16}}><h2>Sales, targets &amp; follow-ups</h2><p>Current sales with product, agent, branch and call outcomes</p><Link className="primary button-link" to="/sales">Open sales reports &amp; Excel export</Link></section>
       <div className="report-filters">
         <BranchFilter value={branch} onChange={setBranch} />
         <label>

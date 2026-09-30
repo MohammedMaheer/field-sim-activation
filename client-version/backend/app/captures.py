@@ -145,6 +145,12 @@ class Intake(BaseModel):
     package_name: str = Field(default="", max_length=160)
     monthly_cost: str = Field(default="", max_length=80)
     prepayment: str = Field(default="", max_length=80)
+    order_type: Literal["UNSPECIFIED", "NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"] = "UNSPECIFIED"
+    account_number: str = Field(default="", max_length=120)
+    router_serial: str = Field(default="", max_length=100)
+    advance_transaction_number: str = Field(default="", max_length=120)
+    sr_number: str = Field(default="", max_length=120)
+    alternate_number: str = Field(default="", max_length=40)
     order_fields: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     selfie_image: str = Field(default="", max_length=1_333_336)
     sim_type: Literal["PHYSICAL", "ESIM"] = "PHYSICAL"
@@ -200,6 +206,8 @@ class Intake(BaseModel):
         ]
         if self.capture_mode == "SCREENSHOT_ORDER":
             required.extend([self.order_image, self.order_reference])
+            if self.order_type == "HW" and not self.router_serial.strip():
+                raise HTTPException(422, "Router serial is required for home wireless sales")
         else:
             required.append(self.sim_identifier)
         if not all(v.strip() for v in required) or (
@@ -527,6 +535,16 @@ def order_fields(lines):
         "mobile number": "msisdn",
         "product name": "product_name",
         "package name": "package_name",
+        "account number": "account_number",
+        "account no": "account_number",
+        "sim serial number": "sim_identifier",
+        "iccid": "sim_identifier",
+        "router serial number": "router_serial",
+        "router serial": "router_serial",
+        "advance payment transaction number": "advance_transaction_number",
+        "sr number": "sr_number",
+        "service request number": "sr_number",
+        "order type": "order_type",
     }
     values = {}
     texts = [str(line.get("text", "")).strip() for line in lines]
@@ -552,8 +570,19 @@ def order_fields(lines):
                 values["prepayment"] = advance.group(1)
     if not re.fullmatch(r"[+\d][\d\s-]{7,19}", values.get("msisdn", "")):
         values.pop("msisdn", None)
+    reference = values.get("order_reference", "")
+    # Recognition can split an explicitly labelled numeric identifier into groups.
+    # Do not turn arbitrary words or an absent identifier into a request ID.
+    if re.fullmatch(r"[\w-]*\d(?:\s+\d+)+", reference):
+        values["order_reference"] = re.sub(r"\s+", "", reference)
     if not re.fullmatch(r"[\w-]{5,80}", values.get("order_reference", "")):
         values.pop("order_reference", None)
+    category = re.sub(r"[^A-Z0-9]", "", values.get("order_type", "").upper())
+    category = {"HOMEWIRELESS": "HW", "PREPAID": "WASEL", "POSTPAID": "NEW"}.get(category, category)
+    if category in {"NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"}:
+        values["order_type"] = category
+    else:
+        values.pop("order_type", None)
     return values
 
 
@@ -1058,11 +1087,14 @@ def review(
     }
     data.pop("leader_confirmation", None)
     if body.outcome == "VERIFIED":
+        from .db import SalesRecord
+        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id))
         agent = db.get(Agent, row.agent_id)
-        if agent and agent.leader_id:
+        leader_id = sale.leader_id if sale else agent.leader_id if agent else None
+        if leader_id:
             db.add(
                 Notification(
-                    user_id=agent.leader_id,
+                    user_id=leader_id,
                     message=f"Transaction confirmed by backend: {row.source_reference[:120]}.",
                 )
             )
@@ -1075,6 +1107,12 @@ def review(
             "READY_FOR_ACTIVATION" if body.outcome == "VERIFIED" else "CORRECTION_REQUIRED"
         )
     row.status, row.reviewer_id = body.outcome, user.id
+    if (data.get("intake") or {}).get("capture_mode") == "SCREENSHOT_ORDER":
+        from .db import SalesRecord
+        from .sales_management import change_sale_status
+        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id).with_for_update())
+        if sale:
+            change_sale_status(db, sale, "CLOSED" if body.outcome == "VERIFIED" else "IN_PROGRESS", user, request)
     record(db, row, user, "KYC Backend " + body.outcome, request, data)
     db.commit()
     return view(row)
@@ -1263,6 +1301,8 @@ def complete_activation(
     if len(body.reference.strip()) < 3 or len(body.reason.strip()) < 5:
         raise HTTPException(422, "Enter the activation reference and completion note")
     intake = data.get("intake") or {}
+    if intake.get("capture_mode") == "SCREENSHOT_ORDER":
+        raise HTTPException(409, "External activation is recorded through independent backend review")
     sim = None
     if intake.get("sim_identifier"):
         sim = db.scalar(

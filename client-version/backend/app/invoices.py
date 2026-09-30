@@ -49,7 +49,7 @@ def invoice(row, data):
                 field("Invoice number", "PAY-" + row.id[:8].upper()),
                 field("Date", row.created_at.strftime("%d %b %Y, %H:%M UTC")),
                 field("Review", review),
-                field("Activation", activation.get("status") or "Awaiting backend team"),
+                field("Activation", ("Confirmed by backend" if row.status == "VERIFIED" else "Recorded by agent") if order_mode else activation.get("status") or "Awaiting backend team"),
             ],
         },
         {
@@ -85,6 +85,11 @@ def invoice(row, data):
                 field("Request ID", intake.get("order_reference")),
                 field("Monthly charge", intake.get("monthly_cost")),
                 field("Prepayment on order", intake.get("prepayment")),
+                *([field(label, intake.get(key)) for key, label in [
+                    ("order_type", "Order type"), ("account_number", "Account number"),
+                    ("router_serial", "Router serial"), ("advance_transaction_number", "Advance transaction number"),
+                    ("sr_number", "SR number"), ("alternate_number", "Alternate contact number"),
+                ]] if order_mode else []),
                 field(
                     "Plan price",
                     f"AED {plan['monthly_cost']:.2f}" if "monthly_cost" in plan else None,

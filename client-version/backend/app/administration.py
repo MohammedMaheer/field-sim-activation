@@ -211,6 +211,8 @@ def update(kind: Kind, record_id: str, body: Change, request: Request, user=Depe
 
 @router.delete("/{kind}/{record_id}")
 def remove(kind: Kind, record_id: str, body: Change, request: Request, user=Depends(principal), db=Depends(get_db)):
+    if db.get(Role, user.role_id).name != "Administrator":
+        raise HTTPException(403, "Only administrators can permanently delete records")
     locked(db, user)
     row = item(db, kind, record_id)
     if kind in {"inventory", "tasks", "incentives"}:

@@ -70,7 +70,7 @@ for(const account of ['admin','ops','leader','leader2','cluster','compliance','i
       const inventory=await(await request.get('/api/resources/inventory',{headers})).json();
       for(const sim of inventory)expect(sim).not.toHaveProperty('lat');
     }
-    expect((await request.get('/api/sales-management/staff',{headers})).status()).toBe(account==='admin'?200:403);
+    expect((await request.get('/api/sales-management/staff',{headers})).status()).toBe(['admin','ops'].includes(account)?200:403);
     if(!['admin','ops','compliance'].includes(account))expect((await request.post('/api/kyc-captures/no-such-capture/review',{headers,data:{version:1,outcome:'VERIFIED',reason:'Unauthorized review attempt'}})).status()).toBe(403);
   });
 }
@@ -105,7 +105,7 @@ test('blank labels, blank reasons and oversized encoded passwords are rejected c
 
 test('bulk stock balances, urgency, fulfilment and shortage alerts reconcile across roles',async({request})=>{
   const admin=await auth(request),agent=await auth(request,'agent1'),other=await auth(request,'agent4');
-  const branch_id=(await(await request.get('/api/resources/agents',{headers:agent.headers})).json())[0].branch_id;const category='QA_SUPPLY';
+  const branch_id=(await(await request.get('/api/resources/agents',{headers:agent.headers})).json())[0].branch_id;const category=`QA_SUPPLY_${Date.now()}`;
   const created=await request.post('/api/field-assets',{headers:admin.headers,data:{category,label:'Audit uniform batch',quantity:10,branch_id,warehouse:'QA warehouse',batch:`AUDIT-${Date.now()}`,size:'M',condition:'New'}});
   expect(created.status(),await created.text()).toBe(201);const stock=await created.json();
   expect((await request.post(`/api/field-assets/${stock.id}/issue`,{headers:admin.headers,data:{quantity:11,agent_id:agent.user.agent_id,reason:'Excess issue must be rejected'}})).status()).toBe(409);
@@ -149,21 +149,22 @@ test('status imports preserve atomicity and cancelled sales leave actionable cal
 test('simultaneous stock operations cannot over-issue or fulfil two requests with one allocation',async({request})=>{
   const admin=await auth(request),agent=await auth(request,'agent1');
   const branch_id=(await(await request.get('/api/resources/agents',{headers:agent.headers})).json())[0].branch_id;
-  const stock=await(await request.post('/api/field-assets',{headers:admin.headers,data:{category:'RACE_SUPPLY',label:'Concurrent issue check',quantity:5,branch_id}})).json();
+  const category=`RACE_SUPPLY_${Date.now()}`;
+  const stock=await(await request.post('/api/field-assets',{headers:admin.headers,data:{category,label:'Concurrent issue check',quantity:5,branch_id}})).json();
   const issue=()=>request.post(`/api/field-assets/${stock.id}/issue`,{headers:admin.headers,data:{quantity:3,agent_id:agent.user.agent_id,reason:'Simultaneous issue check'}});
   const results=await Promise.all([issue(),issue()]);
   expect(results.map(result=>result.status()).sort()).toEqual([201,409]);
   const allocation=await results.find(result=>result.status()===201)!.json();
   const requests=[];
   for(let i=0;i<2;i++){
-    const created=await request.post('/api/field-assets/requests',{headers:agent.headers,data:{agent_id:agent.user.agent_id,category:'RACE_SUPPLY',quantity:3,reason:'Concurrent fulfilment check'}});
+    const created=await request.post('/api/field-assets/requests',{headers:agent.headers,data:{agent_id:agent.user.agent_id,category,quantity:3,reason:'Concurrent fulfilment check'}});
     expect(created.status()).toBe(201);const row=await created.json();requests.push(row.id);
     expect((await request.patch(`/api/field-assets/requests/${row.id}`,{headers:admin.headers,data:{status:'APPROVED',reason:'Approved isolated audit'}})).status()).toBe(200);
   }
   const outcomes=await Promise.all(requests.map(id=>request.patch(`/api/field-assets/requests/${id}`,{headers:admin.headers,data:{status:'FULFILLED',asset_id:allocation.id,reason:'One allocation cannot be counted twice'}})));
   expect(outcomes.map(response=>response.status()).sort()).toEqual([200,409]);
   const balances=await(await request.get('/api/field-assets/report/summary',{headers:admin.headers})).json();
-  const balance=balances.find((row:any)=>row.branch_id===branch_id&&row.category==='RACE_SUPPLY');expect(balance.available).toBe(2);expect(balance.assigned).toBe(3);
+  const balance=balances.find((row:any)=>row.branch_id===branch_id&&row.category===category);expect(balance.available).toBe(2);expect(balance.assigned).toBe(3);
 });
 
 test('real server extraction binds both images and rejects missing or replaced evidence',async({request})=>{

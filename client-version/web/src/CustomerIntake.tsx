@@ -28,6 +28,8 @@ export default function CustomerIntake({
     document_image: "customer details screen",
     order_image: "order details screen",
     order_reference: "request ID",
+    order_type: "order type",
+    router_serial: "router serial",
     sim_identifier: "SIM barcode",
     plan_id: "subscriber plan",
     msisdn: "phone number",
@@ -181,8 +183,8 @@ export default function CustomerIntake({
                 "expiry_date",
                 "document_image",
               ]
-            : ["order_image", "order_reference", "plan_id", "msisdn"];
-        const absent = keys.filter((k) => !String(value[k] || "").trim());
+            : ["order_image", "order_reference", "plan_id", "msisdn", "order_type", ...(value.order_type === "HW" ? ["router_serial"] : [])];
+        const absent = keys.filter((k) => !String(value[k] || "").trim() || (k === "order_type" && value[k] === "UNSPECIFIED"));
         if (absent.length) {
           setMissing(absent);
           const labels: Record<string, string> = {
@@ -404,6 +406,7 @@ export default function CustomerIntake({
             <input type="file" aria-label="Order details screen" accept="image/png,image/jpeg" capture="environment" disabled={busy} onChange={(e) => photo(e.target.files?.[0], "order_image")} />
           </label></div>
           {<>
+            <label data-intake-field="order_type">Order type<select value={value.order_type === "UNSPECIFIED" ? "" : value.order_type || ""} onChange={e => set("order_type", e.target.value)}><option value="">Choose order type</option>{[["NEW","New postpaid"],["MNP","Number transfer"],["P2P","Prepaid to postpaid"],["HW","Home wireless"],["ELIFE","eLife"],["WASEL","Wasel / prepaid"],["VISITOR","Visitor"]].map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label>
             <div className="intake-grid order-fields">
               {[["package_name","Package name"],["order_reference","Request ID"],["msisdn","Phone number"],["monthly_cost","Monthly charge"],["prepayment","Order prepayment"]].map(([key,label]) => <label key={key}>{label}<input value={value[key] || ""} readOnly /></label>)}
             </div>
@@ -413,6 +416,15 @@ export default function CustomerIntake({
                 {(plans.data || []).map((p:Row) => <option key={p.id} value={p.id}>{p.name}</option>)}
               </select>
             </label>
+            {value.order_type === "HW" && input("router_serial", "Router serial", "text", 100)}
+            <details className="intake-extra"><summary>Additional sale details</summary><div className="intake-grid">
+              {input("account_number", "Account number", "text", 120)}
+              {input("sim_identifier", "SIM serial", "text", 100)}
+              {value.order_type !== "HW" && input("router_serial", "Router serial", "text", 100)}
+              {input("advance_transaction_number", "Advance transaction number", "text", 120)}
+              {input("sr_number", "SR number", "text", 120)}
+              {input("alternate_number", "Alternate contact number", "tel", 40)}
+            </div></details>
           </>}
         </>
       )}

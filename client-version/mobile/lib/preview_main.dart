@@ -41,6 +41,7 @@ class SharedPreviewService extends RelayService {
     sampleReference = 'SAMPLE-REQ-${DateTime.now().microsecondsSinceEpoch}';
     return captureImage([
       'Order Details',
+      'Order Type: NEW',
       'Product Name: Subscriber plan',
       'Package Name: 5G Unlimited Ultra',
       'MSISDN: 0500000000',

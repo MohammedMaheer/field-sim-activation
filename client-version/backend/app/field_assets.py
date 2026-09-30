@@ -13,7 +13,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
 
-from .db import Agent, Branch, FieldAsset, FieldAssetMovement, FieldAssetRequest, Movement, Outlet, Role, Session, Sim, SimProgress, StockThreshold, User, get_db
+from .db import Audit, Agent, Branch, FieldAsset, FieldAssetMovement, FieldAssetRequest, Movement, Outlet, Role, Session, Sim, SimProgress, StockThreshold, User, get_db, now
 from .security import assert_agent, permissions, principal, visible_agents
 from .services import audit
 
@@ -329,8 +329,8 @@ class AgentTransfer(BusinessInput):
 
 @router.post("/agents/{agent_id}/transfer")
 def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=Depends(principal), db=Depends(get_db)):
-    if role(db, user) != "Administrator":
-        raise HTTPException(403, "Only administrators can transfer agents")
+    if role(db, user) not in {"Administrator", "Operations Manager"}:
+        raise HTTPException(403, "Only administrators and backend staff can transfer agents")
     agent = db.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
     outlet = db.scalar(select(Outlet).where(Outlet.branch_id == body.branch_id).order_by(Outlet.created_at).limit(1))
     if not agent or not outlet:
@@ -364,6 +364,7 @@ def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=De
         db.add(Movement(sim_id=sim.id, agent_id=sim.agent_id, user_id=user.id, old_status=old,
                         new_status=sim.status, reason=body.reason.strip()))
     agent.outlet_id, agent.leader_id = outlet.id, leader.id
+    agent.assignment_effective_at = now()
     account = db.get(User, agent.user_id)
     account.branch_id = body.branch_id
     for session in db.scalars(select(Session).where(Session.user_id == agent.user_id)):
@@ -541,7 +542,10 @@ class RequestCreate(BusinessInput):
 @router.get("/requests/list")
 def requests(user=Depends(principal), db=Depends(get_db)):
     rows = db.scalars(request_scope(db, user).order_by(FieldAssetRequest.created_at.desc()).limit(1000)).all()
-    return [{"id": row.id, "agent_id": row.agent_id,
+    responses = {}
+    for event in db.scalars(select(Audit).where(Audit.entity.in_([row.id for row in rows]), Audit.action == "Field Asset Request Updated").order_by(Audit.created_at.desc())):
+        responses.setdefault(event.entity, {"response": event.reason, "responded_by": event.actor, "responded_at": event.created_at})
+    return [{"id": row.id, "agent_id": row.agent_id, **responses.get(row.id, {}),
              "agent": db.get(User, db.get(Agent, row.agent_id).user_id).name,
              "branch_id": row.branch_id, "category": row.category,
              "branch": db.get(Branch, row.branch_id).name,
