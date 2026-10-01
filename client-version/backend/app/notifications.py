@@ -10,13 +10,33 @@ from .security import principal, permissions, visible_agents
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
 
+def categories(db, user):
+    role = db.get(Role, user.role_id).name
+    granted = permissions(db, user)
+    result = []
+    if role in {"Administrator", "Operations Manager", "Compliance Officer", "Field Agent", "Team Leader", "Branch Manager", "Sales Manager"}:
+        result.append("Transactions")
+    if granted & {"compliance.write", "call.tele.read", "call.welcome.read"}:
+        result.append("Calls")
+    if role in {"Administrator", "Operations Manager", "Inventory Manager", "Field Agent", "Team Leader", "Sales Manager", "Branch Manager"}:
+        result.append("Stock")
+    if role in {"Administrator", "Operations Manager", "Inventory Manager", "Field Agent", "Team Leader", "Branch Manager"}:
+        result.append("Support")
+    if granted:
+        result.append("Workspace")
+    return result
+
+
 def feed(db, user):
     granted = permissions(db, user)
     role = db.get(Role, user.role_id).name
     agents = visible_agents(db, user)
     result = []
+    allowed_categories = categories(db, user)
 
     def add(key, category, title, message, at, web, mobile, attention=False):
+        if category not in allowed_categories:
+            return
         result.append(dict(id=key, category=category, title=title, message=message,
                            created_at=at, web_path=web, mobile_path=mobile, attention=attention))
 
@@ -35,20 +55,20 @@ def feed(db, user):
                 row.status in {"REJECTED", "OCR_FAILED"} or (row.status == "SUBMITTED" and "compliance.write" in granted))
 
     # Saved assignment scopes are authoritative for leader/manager sale updates.
-    if role in {"Team Leader", "Sales Manager", "Field Agent", "Administrator", "Operations Manager", "Compliance Officer"}:
+    if role in {"Team Leader", "Branch Manager", "Sales Manager", "Field Agent", "Administrator", "Operations Manager", "Compliance Officer"}:
         from .sales_management import scoped
         from .db import SalesRecord
         for row in db.scalars(scoped(db, user, SalesRecord)
                               .order_by(SalesRecord.status_updated_at.desc()).limit(150)):
-            if role in {"Team Leader", "Sales Manager"} and row.status != "CLOSED":
+            if role in {"Team Leader", "Branch Manager", "Sales Manager"} and row.status != "CLOSED":
                 continue
-            if role not in {"Team Leader", "Sales Manager"} and row.capture_id:
+            if role not in {"Team Leader", "Branch Manager", "Sales Manager"} and row.capture_id:
                 continue
             add(f"sale:{row.id}:{row.status_updated_at.isoformat()}:{row.status}", "Transactions", {"CLOSED":"Confirmed by backend", "IN_PROGRESS":"Sale awaiting review", "CANCELLED":"Sale cancelled"}.get(row.status, "Sale updated"),
                 row.request_id or "Sale confirmed", row.status_updated_at,
                 f"/sales?selected={row.id}", f"/sales-management?selected={row.id}")
         # No duplicate current-agent capture notifications for leaders.
-        if role in {"Team Leader", "Sales Manager"}:
+        if role in {"Team Leader", "Branch Manager", "Sales Manager"}:
             result = [r for r in result if not r["id"].startswith("capture:")]
 
     if granted & {"compliance.write", "call.tele.read", "call.welcome.read"}:
@@ -91,8 +111,9 @@ def feed(db, user):
         stock = "SIM transaction" in row.message
         if stock and "inventory.write" not in granted:
             continue
+        home = "/call-work" if role in {"Tele Verification Officer", "Welcome Call Officer"} else "/"
         add(f"notice:{row.id}", "Stock" if stock else "Workspace", "SIM activity" if stock else "Workspace update",
-            row.message, row.created_at, "/inventory" if stock else "/", "/stock" if stock else "/")
+            row.message, row.created_at, "/inventory" if stock else home, "/stock" if stock else home)
     result.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
     return result[:500]
 
@@ -103,7 +124,7 @@ def inbox(user=Depends(principal), db=Depends(get_db)):
     reads = set(db.scalars(select(NotificationRead.event_key).where(NotificationRead.user_id == user.id)))
     for row in rows:
         row["read"] = row["id"] in reads
-    return {"items": rows, "unread": sum(not row["read"] for row in rows)}
+    return {"categories": categories(db, user), "items": rows, "unread": sum(not row["read"] for row in rows)}
 
 
 class ReadBody(BaseModel):

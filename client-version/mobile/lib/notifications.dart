@@ -1,3 +1,4 @@
+import 'role_access.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +36,10 @@ class _NotificationsState extends ConsumerState<NotificationsScreen> {
   static const icons = {'Transactions': Icons.receipt_long, 'Calls': Icons.call_outlined, 'Stock': Icons.inventory_2_outlined, 'Support': Icons.support_agent, 'Workspace': Icons.notifications_outlined};
   static const tones = {'Transactions': Color(0xFF7739AC), 'Calls': Color(0xFF176CAC), 'Stock': Color(0xFF08765F), 'Support': Color(0xFFA94C0C), 'Workspace': Color(0xFF7739AC)};
   Future<void> mark(List<Json> rows, bool read, [String? path]) async {
+    if (path != null && (!path.startsWith('/') || path.startsWith('//') || !canVisitMobilePage(Uri.parse(path).path, ref.read(serviceProvider).user))) {
+      setState(() => error = 'This page is not available for your role');
+      return;
+    }
     setState(() {busy = true; error = '';});
     try {
       await ref.read(serviceProvider).dio.post('/notifications/read', data: {'ids': rows.map((r) => r['id']).toList(), 'read': read});
@@ -51,12 +56,13 @@ class _NotificationsState extends ConsumerState<NotificationsScreen> {
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (e, st) => Center(child: TextButton(onPressed: () => ref.invalidate(notificationsProvider), child: const Text('Could not load notifications. Retry'))),
       data: (value) {
-        final rows = (value['items'] as List).map((r) => Map<String, dynamic>.from(r)).toList();
+        final categories = (value['categories'] as List? ?? []).cast<String>();
+        final rows = (value['items'] as List).map((r) => Map<String, dynamic>.from(r)).where((r) => categories.contains(r['category']) && r['mobile_path'] is String && (r['mobile_path'] as String).startsWith('/') && !(r['mobile_path'] as String).startsWith('//') && canVisitMobilePage(Uri.parse(r['mobile_path']).path, ref.read(serviceProvider).user)).toList();
         final visible = rows.where((r) => (category == 'All' || category == r['category']) && (!unread || r['read'] != true) && '${r['title']} ${r['message']}'.toLowerCase().contains(search.toLowerCase())).toList();
         return RefreshIndicator(onRefresh: () async {ref.invalidate(notificationsProvider); await ref.read(notificationsProvider.future);}, child: ListView(padding: const EdgeInsets.all(16), children: [
           Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), gradient: const LinearGradient(colors: [Color(0xFFF3D9F1), Color(0xFFDAF6EF)])), child: Row(children: [Expanded(child: Text('${value['unread']} unread', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800))), TextButton(onPressed: busy || !visible.any((r) => r['read'] != true) ? null : () => mark(visible.where((r) => r['read'] != true).toList(), true), child: const Text('Read shown'))])),
           const SizedBox(height: 12),
-          SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: ['All', ...icons.keys].map((c) => Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(c), selected: category == c, onSelected: (_) => setState(() => category = c)))).toList())),
+          SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: ['All', ...categories].map((c) => Padding(padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(c), selected: category == c, onSelected: (_) => setState(() => category = c)))).toList())),
           const SizedBox(height: 10),
           TextField(decoration: const InputDecoration(hintText: 'Search notifications', prefixIcon: Icon(Icons.search)), onChanged: (s) => setState(() => search = s)),
           SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Unread only'), value: unread, onChanged: (v) => setState(() => unread = v)),

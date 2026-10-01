@@ -45,3 +45,28 @@ Only `/opt/relay-client` changed. Schema remains 014; no migration or operationa
 - `/opt/relay-client/backups/client-assets-before-20261001T062932Z`
 
 This is a focused implementation and role-access regression audit, not an exhaustive penetration-test certification. Native iOS was not tested. Client commission rules remain unconfigured. Evidence, APK files and deployment secrets remain outside Git.
+
+## Notification and UI follow-up — build 56
+
+Notification categories now come from the backend role policy rather than a fixed set of tabs. Web and Flutter also check destination access before displaying or opening a notification. Record queries and read-state updates retain user/branch scope; foreign notification IDs cannot be marked read.
+
+- Administrator/Operations: Transactions, Calls, Stock, Support, Workspace.
+- Compliance: Transactions, Calls, Workspace. Flutter now also blocks stock, assets, incentives and support destinations, matching the web UI.
+- Agents, Team Leaders and Branch Managers: Transactions, Stock, Support, Workspace. Leaders/managers receive confirmed sales updates with read-only destinations; no verification handoff.
+- Sales Managers: Transactions, Stock, Workspace.
+- Inventory Managers: Stock, Support, Workspace.
+- Tele-verification and Welcome Call officers: Calls, Workspace. General workspace notices open their call workspace, not the restricted dashboard.
+
+Verification for this follow-up:
+
+- Full backend suite: **125 passed**, Ruff clean. Added category coverage across eleven accounts, authorized record destinations, and call-officer workspace notice routing.
+- Full Flutter suite: **32 passed**, one existing optional visual-fixture test skipped; analysis clean. Production web, phone-demo and APK builds passed.
+- Local browser regression: **32 passed**, covering role routes, dashboard links and notification visibility.
+- Hosted notification checks: **13 passed**, covering eight web roles and five phone-demo roles, including notification navigation. Loaded desktop compliance and mobile notification screenshots visually inspected; evidence remains outside Git.
+- Published web index, phone-demo JavaScript and APK match local SHA-256 values. No API HTTP 500 entries in the five-minute post-release log check.
+- APK **56** SHA-256: `3668d68af7054b344d6eb200fbe0b879fb622beafd7dd9cc36a059cb8263b338`. Physical installation/testing of build 56 was not performed in this follow-up.
+
+Client-only release: schema remains 014, with no operational data reset. Database dump manifests, old backend/image and assets were retained for rollback:
+
+- `/opt/relay-client/backups/role-access-before-20261001T072553Z`
+- `/opt/relay-client/backups/client-assets-before-20261001T072606Z`

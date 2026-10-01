@@ -2,6 +2,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/role_access.dart';
 
 void main() {
+  test('compliance mobile routes match its web workspace', () {
+    final user = {'role': 'Compliance Officer', 'permissions': ['read', 'compliance.write']};
+    for (final path in ['/stock', '/assets', '/support', '/incentives']) {
+      expect(canVisitMobilePage(path, user), isFalse);
+    }
+    for (final path in ['/notifications', '/transaction/123', '/sales-management', '/call-work']) {
+      expect(canVisitMobilePage(path, user), isTrue);
+    }
+  });
   test('direct navigation denies signed-out and unknown roles', () {
     expect(canVisitMobilePage('/transactions', null), isFalse);
     expect(canVisitMobilePage('/notifications', {'role': 'Unknown', 'permissions': ['read']}), isFalse);

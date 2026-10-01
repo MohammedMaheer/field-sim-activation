@@ -2287,3 +2287,54 @@ def test_stale_elevated_grants_cannot_escalate_an_agent_session(client):
         with DB() as db:
             db.execute(delete(Permission).where(Permission.role_id == role_id, Permission.name.in_(["settings.write", "compliance.write", "inventory.write"])))
             db.commit()
+
+
+@pytest.mark.parametrize("account,expected", [
+    ("admin", ["Transactions", "Calls", "Stock", "Support", "Workspace"]),
+    ("ops", ["Transactions", "Calls", "Stock", "Support", "Workspace"]),
+    ("compliance", ["Transactions", "Calls", "Workspace"]),
+    ("agent1", ["Transactions", "Stock", "Support", "Workspace"]),
+    ("leader", ["Transactions", "Stock", "Support", "Workspace"]),
+    ("leader2", ["Transactions", "Stock", "Support", "Workspace"]),
+    ("cluster", ["Transactions", "Stock", "Support", "Workspace"]),
+    ("salesmanager", ["Transactions", "Stock", "Workspace"]),
+    ("inventory", ["Stock", "Support", "Workspace"]),
+    ("tele", ["Calls", "Workspace"]),
+    ("welcome", ["Calls", "Workspace"]),
+])
+def test_notification_categories_and_destinations_match_role(client, account, expected):
+    login(client, account)
+    inbox = client.get("/api/notifications").json()
+    assert inbox["categories"] == expected
+    from urllib.parse import urlsplit, parse_qs
+    for row in inbox["items"]:
+        assert row["category"] in expected
+        parsed = urlsplit(row["web_path"])
+        assert not parsed.netloc and not parsed.scheme
+        query = parse_qs(parsed.query)
+        if parsed.path == "/kyc-capture":
+            assert client.get("/api/kyc-captures/" + query["capture"][0]).status_code == 200
+        elif parsed.path == "/sales":
+            assert client.get("/api/sales-management/sales/" + query["selected"][0]).status_code == 200
+        elif parsed.path == "/call-work":
+            tasks = client.get("/api/sales-management/call-tasks").json()
+            assert query["selected"][0] in {task["id"] for task in tasks}
+            if account == "tele":
+                assert row["title"] == "Tele-verification"
+            elif account == "welcome":
+                assert row["title"] == "Welcome call"
+
+
+@pytest.mark.parametrize("account", ["tele", "welcome"])
+def test_call_officer_workspace_notice_opens_own_workspace(client, account):
+    from app.db import User, Notification
+    login(client, account)
+    with DB() as db:
+        user = db.scalar(select(User).where(User.email == account + "@relay.demo"))
+        row = Notification(user_id=user.id, message="Your work queue was updated")
+        db.add(row)
+        db.commit()
+        key = "notice:" + row.id
+    notice = next(row for row in client.get('/api/notifications').json()['items'] if row['id'] == key)
+    assert notice['category'] == 'Workspace'
+    assert notice['web_path'] == notice['mobile_path'] == '/call-work'

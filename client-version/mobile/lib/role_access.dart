@@ -16,6 +16,7 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
   if (role == 'Sales Manager') {
     return ['/sales-management', '/assets', '/reports'].contains(path);
   }
+  if (role == 'Compliance Officer' && ['/assets', '/stock', '/incentives', '/support'].contains(path)) return false;
   if (path == '/call-work') return permissions.contains('compliance.write');
   if (['/ekyc', '/screenshot-capture', '/drafts'].contains(path)) {
     return ['Field Agent', 'Administrator', 'Operations Manager'].contains(role) &&
