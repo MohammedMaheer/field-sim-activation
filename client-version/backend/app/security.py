@@ -9,6 +9,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from .db import User, Role, Permission, Session, Agent, Outlet, now, get_db
+from .role_policy import ROLE_PERMISSIONS
 
 SECRET = os.getenv("JWT_SECRET") or secrets.token_hex(48)
 KEY = os.getenv("PII_KEY")
@@ -31,11 +32,24 @@ def password_hash(value):
     return bcrypt.hashpw(value.encode(), bcrypt.gensalt()).decode()
 
 
+KNOWN_ROLES = set(ROLE_PERMISSIONS)
+GLOBAL_AGENT_ROLES = {"Administrator", "Operations Manager", "Compliance Officer", "Inventory Manager"}
+CAPTURE_WRITERS = {"Administrator", "Operations Manager", "Field Agent"}
+
+
 def permissions(db, user):
-    return set(db.scalars(select(Permission.name).where(Permission.role_id == user.role_id))) - {
-        "location.write",
-        "territory.write",
+    role = db.get(Role, user.role_id)
+    if not role or role.name not in KNOWN_ROLES:
+        return set()
+    granted = set(db.scalars(select(Permission.name).where(Permission.role_id == user.role_id))) - {
+        "location.write", "territory.write",
     }
+    # Old database grants must not let reporting roles alter customer evidence.
+    if role.name not in CAPTURE_WRITERS:
+        granted -= {"ekyc.write", "activation.write"}
+    if role.name not in {"Administrator", "Operations Manager", "Compliance Officer"}:
+        granted.discard("compliance.write")
+    return granted & set(ROLE_PERMISSIONS[role.name])
 
 
 def require(db, user, permission):
@@ -50,7 +64,7 @@ def principal(credentials: HTTPAuthorizationCredentials = Depends(bearer), db=De
         if not session or session.revoked or session.expires < now():
             raise ValueError("Session expired")
         user = db.get(User, token["sub"])
-        if not user or session.user_id != user.id:
+        if not user or session.user_id != user.id or not permissions(db, user):
             raise ValueError("Invalid subject")
         agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
         if agent and agent.employment_status != "ACTIVE":
@@ -94,6 +108,8 @@ def visible_agents(db, user):
         query = query.join(Outlet, Outlet.id == Agent.outlet_id).where(
             Outlet.branch_id == user.branch_id
         )
+    elif role not in GLOBAL_AGENT_ROLES:
+        return []
     return list(db.scalars(query))
 
 

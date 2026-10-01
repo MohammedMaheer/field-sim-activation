@@ -486,8 +486,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         ),
       );
     }
+    final canWrite = (ref.watch(serviceProvider).user?['permissions'] as List? ?? []).contains('ekyc.write');
     final editable =
-        capture != null &&
+        canWrite && capture != null &&
         ['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(capture!['status']);
     if (!loading && capture == null && !intakeReady) {
       return CustomerIntakeScreen(
@@ -975,7 +976,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         ? 'Preparing payment details…'
                         : 'Preparing receipt…',
                   ),
-                if (capture!['status'] == 'OCR_FAILED') ...[
+                if (canWrite && capture!['status'] == 'OCR_FAILED') ...[
                   const Text(
                     "We couldn't read this image automatically. Add the details below or try again.",
                   ),
@@ -1182,7 +1183,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     child: const Text('Share Excel'),
                   ),
                 ],
-                if (capture!['status'] == 'VALIDATED')
+                if (canWrite && capture!['status'] == 'VALIDATED')
                   FilledButton(
                     onPressed: busy || dirty ? null : () => command('submit'),
                     child: const Text('Submit for review'),

@@ -5,58 +5,7 @@ from sqlalchemy import select
 from .db import *
 from .security import password_hash, cipher
 
-ROLE_PERMISSIONS = {
-    "Field Agent": ["read", "ekyc.write", "shift.write", "inventory.self"],
-    "Team Leader": [
-        "read",
-        "task.write",
-        "support.write",
-        "ekyc.write",
-        "report.read",
-        "audit.read",
-        "device.ping",
-    ],
-    "Branch Manager": [
-        "read",
-        "task.write",
-        "support.write",
-        "ekyc.write",
-        "report.read",
-        "audit.read",
-        "device.ping",
-    ],
-    "Operations Manager": [
-        "read",
-        "task.write",
-        "incentive.write",
-        "inventory.write",
-        "support.write",
-        "ekyc.write",
-        "report.read",
-        "audit.read",
-        "device.ping",
-        "compliance.write",
-    ],
-    "Compliance Officer": ["read", "report.read", "audit.read", "compliance.write"],
-    "Inventory Manager": ["read", "report.read", "audit.read", "inventory.write"],
-    "Sales Manager": ["read", "report.read"],
-    "Tele Verification Officer": ["call.tele.read", "call.tele.write"],
-    "Welcome Call Officer": ["call.welcome.read", "call.welcome.write"],
-        "Administrator": [
-            "read",
-            "settings.write",
-        "task.write",
-        "incentive.write",
-        "inventory.write",
-        "support.write",
-        "ekyc.write",
-        "report.read",
-        "audit.read",
-        "device.ping",
-        "compliance.write",
-        "shift.write",
-    ],
-}
+from .role_policy import ROLE_PERMISSIONS
 
 
 def seed():

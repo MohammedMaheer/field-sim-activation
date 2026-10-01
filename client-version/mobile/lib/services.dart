@@ -300,6 +300,12 @@ class RelayService extends ChangeNotifier {
     notifyListeners();
     try {
       await dio.get('/health');
+      if (['Tele Verification Officer', 'Welcome Call Officer'].contains(user?['role'])) {
+        await dio.get('/sales-management/call-tasks');
+        await dio.get('/notifications');
+        online = true;
+        return;
+      }
       await dashboard();
       await proposalList('incentives');
       await proposalList('support-tickets');

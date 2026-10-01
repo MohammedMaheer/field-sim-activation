@@ -2215,3 +2215,75 @@ def test_notification_read_scope_persistence_and_no_business_mutation(client):
     assert not next(row for row in client.get('/api/notifications').json()['items'] if row['id']==key)['read']
     login(client,'leader2')
     assert client.post('/api/notifications/read',json={'ids':[key]}).status_code==404
+
+
+@pytest.mark.parametrize("account", ["leader", "leader2", "cluster", "salesmanager", "inventory", "compliance", "tele", "welcome"])
+def test_reporting_and_review_roles_cannot_mutate_agent_evidence(client, account):
+    data = login(client, account)
+    assert "ekyc.write" not in data["user"]["permissions"]
+    assert client.put("/api/kyc-captures/draft", json={"version": 0, "data": {}}).status_code == 403
+    assert client.post("/api/kyc-captures/missing/submit", json={"version": 1}).status_code == 403
+    assert client.patch("/api/kyc-captures/missing/rows", json={"version": 1, "reason": "Forbidden edit", "rows": [{"fields": [{"label": "Reference", "value": "123"}]}]}).status_code == 403
+    assert client.post("/api/transactions", json={"agent_id": "missing", "operation_id": "forbidden-operation"}).status_code == 403
+    if account in {"leader", "leader2", "cluster"}:
+        assert client.get("/api/kyc-captures").status_code == 200
+        assert client.post("/api/kyc-captures/missing/review", json={"version": 1, "outcome": "VERIFIED", "reason": "Forbidden review"}).status_code == 403
+
+
+def test_unrecognized_role_fails_closed_even_with_old_read_grant(client):
+    from app.db import User, Role, Permission
+    from app.security import permissions, visible_agents
+    from uuid import uuid4
+    session = login(client, "agent1")
+    with DB() as db:
+        user = db.scalar(select(User).where(User.email == "agent1@relay.demo"))
+        old_role = user.role_id
+        role = Role(name="Unrecognized-" + str(uuid4()))
+        db.add(role)
+        db.flush()
+        db.add(Permission(role_id=role.id, name="read"))
+        user.role_id = role.id
+        db.commit()
+        assert permissions(db, user) == set()
+        assert visible_agents(db, user) == []
+    try:
+        assert client.post("/api/auth/login", json={"email": "agent1@relay.demo", "password": "test-client-password"}).status_code == 403
+        assert client.post("/api/auth/refresh", json={"refresh_token": session["refresh_token"]}).status_code == 401
+        for path in ["/api/auth/me", "/api/dashboard", "/api/resources/customers", "/api/field-assets/requests/list", "/api/notifications"]:
+            assert client.get(path).status_code == 401, path
+    finally:
+        with DB() as db:
+            db.scalar(select(User).where(User.email == "agent1@relay.demo")).role_id = old_role
+            db.commit()
+
+
+def test_every_private_endpoint_has_authentication_dependency():
+    from fastapi.routing import APIRoute
+    from app.security import principal
+    public = {"/api/health", "/api/auth/login", "/api/auth/refresh", "/api/public/plans"}
+    def authenticated(dependency):
+        return dependency.call is principal or any(authenticated(child) for child in dependency.dependencies)
+    routes = [route for route in app.routes if isinstance(route, APIRoute)]
+    assert len(routes) > 100
+    for route in routes:
+        assert route.path in public or authenticated(route.dependant), route.path
+
+
+def test_stale_elevated_grants_cannot_escalate_an_agent_session(client):
+    from app.db import User, Permission
+    from sqlalchemy import delete
+    login(client, "agent1")
+    with DB() as db:
+        role_id = db.scalar(select(User.role_id).where(User.email == "agent1@relay.demo"))
+        for name in ["settings.write", "compliance.write", "inventory.write"]:
+            db.add(Permission(role_id=role_id, name=name))
+        db.commit()
+    try:
+        me = client.get("/api/auth/me").json()
+        assert not set(me['permissions']) & {"settings.write", "compliance.write", "inventory.write"}
+        assert client.get("/api/admin/plans").status_code == 403
+        assert client.post("/api/kyc-captures/missing/review", json={"version": 1, "outcome": "VERIFIED", "reason": "Forbidden review"}).status_code == 403
+    finally:
+        with DB() as db:
+            db.execute(delete(Permission).where(Permission.role_id == role_id, Permission.name.in_(["settings.write", "compliance.write", "inventory.write"])))
+            db.commit()

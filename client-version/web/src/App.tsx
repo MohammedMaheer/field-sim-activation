@@ -171,6 +171,7 @@ const navigation = [
 export function canVisitPage(path: string, user: Row) {
   path = path.replace(/^\//, "");
   if (path === "screenshot-capture") path = "kyc-capture";
+  if (!["Administrator", "Operations Manager", "Compliance Officer", "Inventory Manager", "Field Agent", "Team Leader", "Branch Manager", "Sales Manager", "Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) return false;
   if (path === "notifications") return true;
   const permissions = user.permissions || [];
   if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) return path === "call-work";
@@ -183,7 +184,8 @@ export function canVisitPage(path: string, user: Row) {
   if (path === "reports") return permissions.includes("report.read");
   if (user.role === "Field Agent") return ["", "customers", "activations", "sales", "equipment", "kyc-capture", "inventory", "incentives", "support"].includes(path);
   if (user.role === "Compliance Officer") return ["", "agents", "branches", "customers", "activations", "sales", "kyc-capture", "audit", "reports"].includes(path);
-  return true;
+  if (path === "kyc-capture") return ["Administrator", "Operations Manager", "Team Leader", "Branch Manager"].includes(user.role);
+  return ["", "live", "agents", "branches", "customers", "activations", "sales", "equipment", "inventory", "incentives", "support"].includes(path);
 }
 
 function Login({ onLogin }: { onLogin: (u: Row) => void }) {
@@ -411,6 +413,7 @@ export default function App() {
       />
     );
   const current =
+    (["/kyc-capture", "/screenshot-capture"].includes(location.pathname) && !user.permissions.includes("compliance.write") ? (user.role === "Field Agent" ? "New transaction" : "Transaction history") : "") ||
     navigation
       .flatMap((g) => g.items)
       .find((i) => "/" + i[0] === location.pathname)?.[1] ||
@@ -476,7 +479,7 @@ export default function App() {
                   .map(([path, label, Icon]: any) => (
                     <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
                       <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
-                      <span>{path === "kyc-capture" && user.role === "Field Agent" ? "New transaction" : label}</span>
+                      <span>{path === "kyc-capture" ? user.role === "Field Agent" ? "New transaction" : user.permissions.includes("compliance.write") ? label : "Transaction history" : label}</span>
                       {path === "equipment" && !!stockAlerts.data && <span className="nav-tag" title="Stock requests and shortage alerts">{stockAlerts.data}</span>}
                       {path === "live" && <i className="live-dot" />}
                       {path === "compliance" && (
@@ -639,7 +642,7 @@ export default function App() {
                     />
                   }
                 />
-              </Routes> : <div className="panel"><h2>This page is not available for your role</h2><Link className="primary" to="/">Return to overview</Link></div>}
+              </Routes> : <div className="panel access-denied"><h2>This page is not available for your role</h2><Link className="button primary" to="/">Return to overview</Link></div>}
             </div>
             <footer className="page-footer">
               <span>

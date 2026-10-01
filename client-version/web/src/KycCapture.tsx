@@ -43,7 +43,7 @@ export default function KycCapture() {
     [review, setReview] = useState(""),
     [dirty, setDirty] = useState(false),
     [preview, setPreview] = useState("");
-  const [showUpload, setShowUpload] = useState(!canReview);
+  const [showUpload, setShowUpload] = useState(canWrite && !canReview);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historySearch, setHistorySearch] = useState("");
   const [historyStatus, setHistoryStatus] = useState(
@@ -149,7 +149,7 @@ export default function KycCapture() {
       <div className={`page-header ${reviewMode ? "review-page-header" : ""}`}>
         <div>
           <div className="eyebrow">TRANSACTIONS</div>
-          <h1>{canReview ? "Backend verification" : "New transaction"}</h1>
+          <h1>{canReview ? "Backend verification" : canWrite ? "New transaction" : "Transaction history"}</h1>
         </div>
         <button
           onClick={() =>
@@ -199,14 +199,14 @@ export default function KycCapture() {
       {draftsOpen && <Drawer title="Drafts" onClose={() => setDraftsOpen(false)}>
         {drafts.isLoading ? <p>Loading drafts…</p> : drafts.isError ? <p role="alert">Could not load drafts</p> : (drafts.data || []).length === 0 ? <p>No saved drafts</p> : (drafts.data || []).map((d:Row) => <div key={d.id} className="draft-card"><button onClick={() => {setIntake(d.data);setIntakeReady(false);setSelected('');setShowUpload(true);setDraftsOpen(false);}}><b>{d.data.name || 'New customer'}</b><small>Step {(d.data.step || 0)+1} of 3</small></button><button onClick={async () => {if(!window.confirm('Discard this draft?'))return;try{await api(`/kyc-captures/saved-drafts/${d.id}`,{method:'DELETE'});drafts.refetch();}catch(e:any){setError(e.message);}}}>Discard</button></div>)}
       </Drawer>}
-      {canReview && !selected && !showUpload && activity.data && (
+      {(canReview || !canWrite) && !selected && !showUpload && activity.data && (
         <RecordOverview rows={activity.data || []} title="Latest verification records" />
       )}
-      {canReview && !selected && !showUpload && (
+      {(canReview || !canWrite) && !selected && !showUpload && (
         <section className="review-inbox">
           <div className="review-inbox-header">
             <div>
-              <h2>Submissions for verification</h2>
+              <h2>{canReview ? "Submissions for verification" : "Transaction history"}</h2>
             </div>
             <label>
               Status

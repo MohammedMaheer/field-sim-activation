@@ -160,6 +160,8 @@ def login(body: Login, response: Response, request: Request, db=Depends(get_db))
     agent_account = db.scalar(select(Agent).where(Agent.user_id == user.id))
     if agent_account and agent_account.employment_status != "ACTIVE":
         raise HTTPException(403, "This agent account is inactive. Contact your administrator.")
+    if not permissions(db, user):
+        raise HTTPException(403, "This account has no authorized workspace role")
     access, refresh = issue(db, user, body.device)
     audit(db, user, "Signed In", user.id, request=request)
     db.commit()
@@ -189,6 +191,11 @@ def refresh(body: Refresh, request: Request, response: Response, db=Depends(get_
     if not session or session.revoked or session.expires < now():
         raise HTTPException(401, "Refresh expired")
     user = db.get(User, session.user_id)
+    agent = db.scalar(select(Agent).where(Agent.user_id == session.user_id))
+    if not user or not permissions(db, user) or (agent and agent.employment_status != "ACTIVE"):
+        session.revoked = True
+        db.commit()
+        raise HTTPException(401, "This account no longer has access")
     replacement = secrets.token_urlsafe(48)
     session.refresh_hash = digest(replacement)
     db.commit()

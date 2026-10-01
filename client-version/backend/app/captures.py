@@ -55,7 +55,8 @@ def access(db, user, write=False):
     allowed = {"activation.write", "ekyc.write"}
     if not write:
         allowed.add("compliance.write")
-    if not permissions(db, user) & allowed:
+    reporting_reader = not write and db.get(Role, user.role_id).name in {"Team Leader", "Branch Manager"}
+    if not reporting_reader and not permissions(db, user) & allowed:
         raise HTTPException(403, "Your role cannot access transaction captures")
 
 

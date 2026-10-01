@@ -1,3 +1,4 @@
+import 'role_access.dart';
 import 'notifications.dart';
 import 'saved_drafts.dart';
 import 'sales_management.dart';
@@ -23,6 +24,10 @@ void main() {
 }
 
 final router = GoRouter(
+  redirect: (context, state) {
+    final service = ProviderScope.containerOf(context, listen: false).read(serviceProvider);
+    return canVisitMobilePage(state.uri.path, service.user) ? null : '/';
+  },
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
     GoRoute(path: '/notifications', builder: (c, s) => const NotificationsScreen()),
@@ -117,6 +122,7 @@ class RelayApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.listen<String?>(serviceProvider.select((service) => service.user?['id']?.toString()), (previous, next) {
       if (previous != null && next == null) router.go('/');
+      router.refresh();
     });
     return MaterialApp.router(
     title: 'Relay Client',
@@ -241,7 +247,15 @@ class _GateState extends ConsumerState<Gate> {
     if (!s.ready) return const Scaffold(body: LoadingCards());
     if (s.user == null) return const LoginScreen();
     if (['Tele Verification Officer', 'Welcome Call Officer'].contains(s.user?['role'])) return const CallWorkScreen();
-    if (s.user?['role'] == 'Sales Manager') return const SalesManagementScreen();
+    if (!knownRoles.contains(s.user?['role'])) return const LoginScreen();
+    if (s.user?['role'] == 'Inventory Manager') {
+      return Scaffold(appBar: AppBar(title: const Text('Inventory'), actions: [
+        const NotificationBell(),
+        IconButton(onPressed: () => context.push('/assets'), icon: const Icon(Icons.inventory_2_outlined), tooltip: 'Assets & supplies'),
+        IconButton(onPressed: s.logout, icon: const Icon(Icons.logout), tooltip: 'Sign out'),
+      ]), body: const SafeArea(child: StockScreen()));
+    }
+    if (!['Field Agent', 'Team Leader'].contains(s.user?['role'])) return const SalesManagementScreen();
     return const FieldShell();
   }
 }
