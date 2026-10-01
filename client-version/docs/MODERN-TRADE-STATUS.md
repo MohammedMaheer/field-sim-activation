@@ -42,3 +42,10 @@ The Sales Manager's exact access area is listed as requiring confirmation in the
 External carrier/device integration, payment gateway settlement, automated calling, SMS and off-device push are not requirements for this manual screenshot/call workflow. They are not reported as unfinished requirements. In-app alerts and recorded call outcomes work without those integrations. Recognition remains subject to evidence review; recognition scores never replace independent verification.
 
 See [MODERN-TRADE-VERIFICATION-2026-09-30.md](MODERN-TRADE-VERIFICATION-2026-09-30.md) for release evidence and limitations.
+
+
+## Re-audit corrections - 2 October 2026
+
+The fresh whole-document audit does not classify all stock requirements as complete. The serialized SIM register currently supports Physical/eSIM form factor, without an independent Wasel/Prepaid, Postpaid, HW and Visitor business category. Automatic SIM deduction is guarded and idempotent at backend-confirmed CLOSED status, but there is no management-configurable deduction trigger. Branch stock return checklists and agent transfer/exit controls exist; a dedicated branch closure/relocation event and automatic required checklist workflow do not. These are remaining internal work, separate from the explicitly deferred commission/forecast rules.
+
+Regular client database backups were not scheduled at the start of this re-audit. A client-only daily cron schedule has now been enabled at 03:30 UTC. Its backup script ran successfully, and the resulting archive was restored into a fresh isolated database at schema 014 before the temporary database was removed. Future scheduled executions have not yet occurred at the time of this report. See REQUIREMENTS-AUDIT-2026-10-02.md for current evidence, limitations and outstanding decisions.

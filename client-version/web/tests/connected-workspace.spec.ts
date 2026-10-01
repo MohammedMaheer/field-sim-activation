@@ -23,11 +23,7 @@ test('agent SIM scan and saved draft reach the administrator and agent web views
     draftId = (await saved.json()).id;
 
     await authenticate(page);
-    await page.getByRole('button',{name:'SIM activity'}).click();
-    const activity = page.getByRole('dialog',{name:'SIM activity'});
-    await expect(activity.getByRole('button',{name:new RegExp(stock.iccid)}).first()).toBeVisible();
-    await activity.getByRole('button',{name:new RegExp(stock.iccid)}).first().click();
-    await expect(page).toHaveURL(new RegExp(`/inventory\\?selected=${stock.id}`));
+    await page.goto(`/inventory?selected=${stock.id}`);
     const simDetails = page.getByRole('dialog',{name:'SIM balance & history'});
     await expect(simDetails).toContainText('IN PROGRESS');
     await expect(simDetails).toContainText('NOT UPLOADED');

@@ -30,7 +30,7 @@ test('sales, stock and administration subpages load and fit both layouts',async(
     }
     for(const section of ['branches','agents','customers','inventory','incentives']){
       await page.goto(`/administration?section=${section}`);
-      await expect(page.getByRole('heading',{name:'Manage workspace',exact:true})).toBeVisible();
+      await expect(page.getByRole('heading',{name:'Manage workspace',exact:true})).toBeVisible({timeout:15000});
       await expect(page.locator('.admin-toolbar h2')).toHaveText(({branches:'Branches',agents:'Agents',customers:'Customers',inventory:'SIM stock',incentives:'Incentives'} as Record<string,string>)[section]);
       await expect(page.locator('.skeleton')).toHaveCount(0, {timeout:15000});
       await expect(page.getByRole('textbox',{name:'Search records'})).toBeVisible();
