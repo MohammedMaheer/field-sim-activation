@@ -351,9 +351,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
 
   String receiptDate(dynamic value) {
     final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
-    if (date == null) return '—';
+    if (date == null) return 'â€”';
     final labels = MaterialLocalizations.of(context);
-    return '${labels.formatMediumDate(date)} · ${labels.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
+    return '${labels.formatMediumDate(date)} Â· ${labels.formatTimeOfDay(TimeOfDay.fromDateTime(date))}';
   }
 
   List<Widget> receiptFields(Json row, bool editable) {
@@ -465,7 +465,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         ),
         body: Center(
           child: loading
-              ? const Text('Opening transaction…')
+              ? const Text('Opening transactionâ€¦')
               : Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -562,8 +562,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 caseSensitive: false,
               ).hasMatch(label)) {
                 text = text.length > 4
-                    ? '•••• ${text.substring(text.length - 4)}'
-                    : '••••';
+                    ? 'â€¢â€¢â€¢â€¢ ${text.substring(text.length - 4)}'
+                    : 'â€¢â€¢â€¢â€¢';
               }
               verifiedReceiptFields.add({'label': label, 'value': text});
             }
@@ -574,10 +574,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     final customerId = (receipt?['intake']?['document_number'] ?? '')
         .toString();
     final maskedCustomerId = customerId.isEmpty
-        ? '—'
+        ? 'â€”'
         : customerId.length > 4
-        ? '•••• ${customerId.substring(customerId.length - 4)}'
-        : '••••';
+        ? 'â€¢â€¢â€¢â€¢ ${customerId.substring(customerId.length - 4)}'
+        : 'â€¢â€¢â€¢â€¢';
     return Scaffold(
       appBar: AppBar(
         leading: const WorkspaceBackButton(),
@@ -589,7 +589,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
               : 'Receipt',
         ),
         actions: [
-          if (capture != null)
+          if (canWrite && capture != null)
             TextButton(
               onPressed: busy
                   ? null
@@ -816,7 +816,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                           const SizedBox(height: 10),
                           FilledButton(
                             onPressed: () => context.go('/'),
-                            child: const Text('Done · Return to dashboard'),
+                            child: const Text('Done Â· Return to dashboard'),
                           ),
                         ],
                       ),
@@ -844,7 +844,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     ),
                     const SizedBox(height: 3),
                     const Text(
-                      'PNG or JPEG · up to 4 MB',
+                      'PNG or JPEG Â· up to 4 MB',
                       style: TextStyle(fontSize: 13, color: Color(0xFF596675)),
                     ),
                     gap(),
@@ -936,7 +936,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       onPressed: busy || bytes == null ? null : upload,
                       child: Text(
                         busy
-                            ? 'Working…'
+                            ? 'Workingâ€¦'
                             : pending
                             ? 'Retry queued upload'
                             : 'Upload payment confirmation',
@@ -945,7 +945,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     if (pending)
                       const Padding(
                         padding: EdgeInsets.only(top: 10),
-                        child: Text('Saved offline · upload pending'),
+                        child: Text('Saved offline Â· upload pending'),
                       ),
                   ],
                 ),
@@ -973,8 +973,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 if (capture!['status'] == 'QUEUED')
                   Text(
                     payment
-                        ? 'Preparing payment details…'
-                        : 'Preparing receipt…',
+                        ? 'Preparing payment detailsâ€¦'
+                        : 'Preparing receiptâ€¦',
                   ),
                 if (canWrite && capture!['status'] == 'OCR_FAILED') ...[
                   const Text(
@@ -1209,7 +1209,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                           .replaceAll('KYC', 'Receipt')
                           .replaceAll('OCR', 'Details'),
                     ),
-                    subtitle: Text('${event['actor']} · ${event['at']} UTC'),
+                    subtitle: Text('${event['actor']} Â· ${event['at']} UTC'),
                   ),
                 ),
               ],
@@ -1264,7 +1264,7 @@ class _ReceiptLine extends StatelessWidget {
         const SizedBox(width: 12),
         Flexible(
           child: Text(
-            value.toString().isEmpty ? '—' : value.toString(),
+            value.toString().isEmpty ? 'â€”' : value.toString(),
             textAlign: TextAlign.right,
             style: const TextStyle(
               color: Color(0xff202b3b),

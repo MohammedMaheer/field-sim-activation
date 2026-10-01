@@ -70,3 +70,19 @@ Client-only release: schema remains 014, with no operational data reset. Databas
 
 - `/opt/relay-client/backups/role-access-before-20261001T072553Z`
 - `/opt/relay-client/backups/client-assets-before-20261001T072606Z`
+
+## Physical Android follow-up — 2 October 2026, build 57
+
+The connected Xiaomi Android device successfully installed the normal release APK, first build 56 and then build 57. Device package inspection confirms versionCode 57, versionName 1.0.0. This closes the earlier unverified-installation limitation for this Android device.
+
+Manually exercised seven signed-in roles against the hosted backend: Field Agent, Team Leader, Compliance Officer, Inventory Manager, Sales Manager, Tele Verification Officer and Welcome Call Officer. Checked role-specific landing screens, notification category visibility, navigation and sign-out. Agent notifications opened the matching pending-confirmation invoice. The leader's branch update opened the confirmed historical invoice without verification controls. Call officers showed their call workspace and Calls/Workspace categories. Inventory and Sales Manager showed their own permitted categories.
+
+A physical UI finding was corrected: the invoice header's New shortcut was visible to read-only users. It now requires evidence-write permission. Reinstalled build 57 and verified the shortcut is absent on the leader invoice. The shared phone demo was rebuilt with the same correction.
+
+Camera permission, inline live camera and expanded capture view worked on the phone. Continue with empty customer fields remained in stage one and displayed required inputs/evidence. Capturing an ordinary room scene returned Customer details weren't captured clearly. Try again; no customer fields were populated and no transaction was submitted. This tests the observed negative case, not all possible false-document images. No valid document/order/confirmation journey was replayed during this focused role-access follow-up.
+
+Flutter analysis passed; full Flutter suite 32 passed with one existing optional fixture skip. Production APK and phone-demo builds passed. Physical screenshots and UI dumps are under ignored output/qa/phone56-* and phone57-* paths. The sampled Android log check contained no fatal exception entries.
+
+APK 57 SHA-256: `1aeb6863f7b6f1eb60a00554516275bbf06f2707e396ec42757a075bba8e787e`; hosted and local copies match. Client asset-only release backed up the database and prior files under `/opt/relay-client/backups/client-assets-before-20261001T210948Z` (UTC timestamp). Backend schema and business records were not reset.
+
+After publication, the 13 hosted notification-category/navigation checks passed again against build 57's shared phone demo. The phone was left on the agent home screen with the normal release app installed.
