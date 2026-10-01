@@ -86,3 +86,8 @@ Flutter analysis passed; full Flutter suite 32 passed with one existing optional
 APK 57 SHA-256: `1aeb6863f7b6f1eb60a00554516275bbf06f2707e396ec42757a075bba8e787e`; hosted and local copies match. Client asset-only release backed up the database and prior files under `/opt/relay-client/backups/client-assets-before-20261001T210948Z` (UTC timestamp). Backend schema and business records were not reset.
 
 After publication, the 13 hosted notification-category/navigation checks passed again against build 57's shared phone demo. The phone was left on the agent home screen with the normal release app installed.
+
+
+Final publication supersedes build 57 with build **58**, correcting punctuation encoding introduced while saving the UI condition. A byte-accurate source comparison confirms kyc_capture.dart differs from the pre-audit UTF-8 source only in the intended permission condition. APK and phone-demo production builds passed. Build 58 installed successfully on the physical phone; the agent home, notification-to-invoice navigation and pending-confirmation invoice rendered correctly. The dashboard Awaiting verification link was also physically checked and opened the filtered list. The phone was left on the agent home with the normal release app.
+
+Build 58 local/hosted APK SHA-256: `8d021295681bf886a1fa4120db96a9489b40f330164343c5ee884c6c91f88212`. Asset rollback backup: `/opt/relay-client/backups/client-assets-before-20261001T211433Z` (UTC). The full 13 hosted notification checks passed on build 57; build 58's targeted hosted leader notification smoke check passed after its punctuation-only rebuild.
