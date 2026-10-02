@@ -71,6 +71,8 @@ def create(
     if kind != "branches":
         if not db.get(Branch, body.branch_id):
             raise HTTPException(422, "Select a valid branch")
+        from .branch_lifecycle import active_branch
+        active_branch(db, body.branch_id)
         values["branch_id"] = body.branch_id
     if kind == "branches":
         if db.scalar(select(Branch.id).where(func.lower(Branch.name) == body.name.lower())):
@@ -210,6 +212,8 @@ def assign_leader(
         .where(Role.name == "Team Leader", User.branch_id == branch_id, User.id != leader.id)
     ):
         other.branch_id = None
+    from .branch_lifecycle import active_branch
+    active_branch(db, branch_id)
     leader.branch_id = branch_id
     for agent in db.scalars(select(Agent).join(Outlet).where(Outlet.branch_id == branch_id)):
         if agent.leader_id != leader.id:

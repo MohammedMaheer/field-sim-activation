@@ -65,6 +65,7 @@ def configure(app):
                 "/api/support-tickets",
                 "/api/sales-management",
                 "/api/field-assets",
+                "/api/branch-lifecycle",
             )
         )
     ]

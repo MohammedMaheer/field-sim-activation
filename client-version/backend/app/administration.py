@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from .db import Base, Agent, Branch, Customer, FieldTask, Incentive, Movement, Outlet, Role, Sim, User, get_db
+from .stock_categories import validate_category
 from .organization import administrator
 from .proposal import valid_amount, valid_period
 from .security import principal
@@ -21,7 +22,7 @@ FIELDS = {
     "branches": {"name"}, "teams": {"name", "email", "branch_id"},
     "outlets": {"name", "area", "branch_id"},
     "customers": {"name", "arabic_name", "mobile", "nationality", "agent_id"},
-    "inventory": {"iccid", "serial", "sim_type", "outlet_id", "agent_id"},
+    "inventory": {"iccid", "serial", "sim_type", "business_category", "outlet_id", "agent_id"},
     "tasks": {"title", "note", "due_date", "agent_id"},
     "incentives": {"period", "amount", "note", "agent_id"},
 }
@@ -138,6 +139,9 @@ def validated(db, kind, values, row=None):
     if kind == "inventory":
         if row:
             raise HTTPException(422, "Use the inventory editor to change SIM details")
+        from .branch_lifecycle import active_branch
+        active_branch(db, db.get(Outlet, merged["outlet_id"]).branch_id)
+        validate_category(merged.get("business_category", "Not recorded"))
         if merged["sim_type"] not in {"Physical", "eSIM"}:
             raise HTTPException(422, "Select a SIM type")
         if merged.get("agent_id") and db.get(Agent, merged["agent_id"]).outlet_id != merged["outlet_id"]:
@@ -218,6 +222,8 @@ def remove(kind: Kind, record_id: str, body: Change, request: Request, user=Depe
     if kind in {"inventory", "tasks", "incentives"}:
         raise HTTPException(409, "Use stock movements, task completion or incentive history; these records are retained")
     if kind == "branches":
+        if row.lifecycle_status != "ACTIVE":
+            raise HTTPException(409, "Branch departure history must be retained")
         for outlet in db.scalars(select(Outlet).where(Outlet.branch_id == row.id)).all():
             for table in Base.metadata.tables.values():
                 for column in table.columns:

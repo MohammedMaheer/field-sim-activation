@@ -109,6 +109,8 @@ def create_asset(body: AssetCreate, request: Request, user=Depends(principal), d
     may_manage(db, user)
     if not db.get(Branch, body.branch_id):
         raise HTTPException(404, "Branch not found")
+    from .branch_lifecycle import active_branch
+    active_branch(db, body.branch_id)
     serial = body.serial.strip() or None
     if serial and body.quantity != 1:
         raise HTTPException(422, "A serialised item must have quantity one")
@@ -150,6 +152,9 @@ def move_asset(asset_id: str, body: AssetChange, request: Request, user=Depends(
         raise HTTPException(404, "Asset not found")
     if not db.get(Branch, body.branch_id):
         raise HTTPException(404, "Branch not found")
+    from .branch_lifecycle import active_branch
+    if body.branch_id != row.branch_id or body.status in {"AVAILABLE", "ASSIGNED"}:
+        active_branch(db, body.branch_id)
     agent_id = body.agent_id.strip() or None
     if agent_id:
         agent = db.get(Agent, agent_id)
@@ -197,6 +202,8 @@ def issue_bulk(asset_id: str, body: BulkIssue, request: Request, user=Depends(pr
         raise HTTPException(404, "Asset not found")
     if not outlet or outlet.branch_id != row.branch_id:
         raise HTTPException(422, "Agent must belong to the stock branch")
+    from .branch_lifecycle import active_branch
+    active_branch(db, row.branch_id)
     if row.serial or row.status != "AVAILABLE" or row.agent_id or body.quantity > row.quantity:
         raise HTTPException(409, "Choose unassigned bulk stock within its available balance")
     row.quantity -= body.quantity
@@ -226,6 +233,9 @@ def adjust_asset(asset_id: str, body: QuantityAdjustment, request: Request, user
     row = db.scalar(select(FieldAsset).where(FieldAsset.id == asset_id).with_for_update())
     if not row:
         raise HTTPException(404, "Asset not found")
+    from .branch_lifecycle import active_branch
+    if body.delta > 0:
+        active_branch(db, row.branch_id)
     if row.serial or row.agent_id or row.status != "AVAILABLE":
         raise HTTPException(422, "Only unassigned bulk stock can be adjusted")
     if not body.delta or row.quantity + body.delta < 0:
@@ -269,7 +279,7 @@ def summary_rows(db, user):
     outlets = {outlet.id: outlet.branch_id for outlet in db.scalars(select(Outlet).where(Outlet.branch_id.in_(branch_ids)))}
     if outlets:
         for sim in db.scalars(select(Sim).where(Sim.outlet_id.in_(outlets))):
-            key = (outlets[sim.outlet_id], "SIM:" + sim.sim_type.upper())
+            key = (outlets[sim.outlet_id], "SIM:" + sim.sim_type.upper() + ":" + sim.business_category)
             bucket = balances.setdefault(key, {"available": 0, "assigned": 0, "reserved": 0,
                                                 "damaged": 0, "consumed": 0, "returned": 0, "lost": 0, "retired": 0})
             field = {"AVAILABLE": "available", "ASSIGNED TO AGENT": "assigned",
@@ -302,7 +312,7 @@ def return_checklist(agent_id: str = "", branch_id: str = "", user=Depends(princ
         raise HTTPException(422, "Choose an agent or branch")
     if branch_id and branch_id not in branches or agent_id and agent_id not in visible_agents(db, user):
         raise HTTPException(404, "Assignment not found")
-    query = asset_scope(db, user).where(FieldAsset.status.in_(["AVAILABLE", "ASSIGNED", "DAMAGED", "LOST"]))
+    query = asset_scope(db, user).where(FieldAsset.status.in_(["AVAILABLE", "ASSIGNED", "DAMAGED", "LOST"]), FieldAsset.quantity > 0)
     if branch_id:
         query = query.where(FieldAsset.branch_id == branch_id)
     if agent_id:
@@ -314,7 +324,7 @@ def return_checklist(agent_id: str = "", branch_id: str = "", user=Depends(princ
     if agent_id:
         sim_query = sim_query.where(Sim.agent_id == agent_id)
     for sim in db.scalars(sim_query):
-        outstanding.append({"id": sim.id, "category": "SIM:" + sim.sim_type.upper(), "label": "SIM",
+        outstanding.append({"id": sim.id, "category": "SIM:" + sim.sim_type.upper() + ":" + sim.business_category, "label": "SIM",
             "serial": sim.serial, "quantity": 1, "status": sim.status, "branch": db.get(Branch, db.get(Outlet, sim.outlet_id).branch_id).name,
             "agent": db.get(User, db.get(Agent, sim.agent_id).user_id).name if sim.agent_id else "Unassigned"})
     return {"outstanding": outstanding, "clear": not outstanding,
@@ -335,6 +345,8 @@ def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=De
     outlet = db.scalar(select(Outlet).where(Outlet.branch_id == body.branch_id).order_by(Outlet.created_at).limit(1))
     if not agent or not outlet:
         raise HTTPException(404, "Agent or destination branch not found")
+    from .branch_lifecycle import active_branch
+    active_branch(db, body.branch_id)
     previous = db.get(Outlet, agent.outlet_id).branch_id
     if previous == body.branch_id or agent.employment_status != "ACTIVE":
         raise HTTPException(409, "Choose a different branch for an active agent")
@@ -465,7 +477,7 @@ def movement_report(category: str = "", branch_id: str = "", agent_id: str = "",
         if not sim:
             continue
         outlet = db.get(Outlet, sim.outlet_id)
-        sim_category = "SIM:" + sim.sim_type.upper()
+        sim_category = "SIM:" + sim.sim_type.upper() + ":" + sim.business_category
         if outlet.branch_id not in branch_ids or category and category != sim_category:
             continue
         if role(db, user) == "Field Agent" and move.agent_id and move.agent_id not in visible_agents(db, user):
@@ -561,6 +573,8 @@ def create_request(body: RequestCreate, request: Request, user=Depends(principal
     assert_agent(db, user, body.agent_id)
     agent = db.get(Agent, body.agent_id)
     outlet = db.get(Outlet, agent.outlet_id)
+    from .branch_lifecycle import active_branch
+    active_branch(db, outlet.branch_id)
     row = FieldAssetRequest(agent_id=agent.id, branch_id=outlet.branch_id,
                             category=body.category, quantity=body.quantity,
                             reason=body.reason.strip(), urgency=body.urgency, status="REQUESTED")

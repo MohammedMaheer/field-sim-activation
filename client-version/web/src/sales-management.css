@@ -31,3 +31,9 @@
 @media(max-width:420px){.sale-detail-grid{grid-template-columns:1fr}}
 
 .daily-sales-summary{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 16px;background:linear-gradient(110deg,#edf9f6,#f4ecff);border:1px solid #ded2ef;border-radius:14px}.daily-sales-summary>b{margin-right:8px;font-size:13px}.daily-sales-summary>span{display:flex;gap:8px;background:#fff;padding:5px 8px;border-radius:8px;font-size:12px}.daily-sales-summary strong{color:#7938bf}
+
+.branch-lifecycle{margin:16px 0;padding:18px;border:1px solid #ddd3ed;border-radius:16px;background:linear-gradient(120deg,#f4edff,#edf8f6)}.lifecycle-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:12px 0}.lifecycle-counts span{display:flex;gap:8px;align-items:center}.lifecycle-counts b{color:#792653;font-size:20px}
+
+.sim-stock-edit{grid-template-columns:repeat(2,minmax(0,1fr))}.sim-stock-edit .wide,.sim-stock-edit label:has(input[name="edit_reason"]){grid-column:1/-1}.lifecycle-counts{grid-template-columns:repeat(4,minmax(0,1fr))}.lifecycle-counts span{font-size:13px}.branch-lifecycle .sales-form button{height:44px}@media(max-width:720px){.lifecycle-counts{grid-template-columns:repeat(2,minmax(0,1fr))}.sim-stock-edit{grid-template-columns:1fr}}
+
+.drawer .proposal-form.sim-stock-edit{grid-template-columns:repeat(2,minmax(0,1fr))}.drawer .proposal-form.sim-stock-edit>.wide,.drawer .proposal-form.sim-stock-edit>label:has(input[name="edit_reason"]){grid-column:1/-1}@media(max-width:720px){.drawer .proposal-form.sim-stock-edit{grid-template-columns:1fr}}

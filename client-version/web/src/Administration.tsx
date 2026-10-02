@@ -19,7 +19,7 @@ const fields: Record<string, string[]> = {
   agents: ["name", "email", "employee_id", "target"],
   branches: ["name"],
   customers: ["name", "arabic_name", "mobile", "nationality", "agent_id"],
-  inventory: ["iccid", "serial", "sim_type", "outlet_id", "agent_id"],
+  inventory: ["iccid", "serial", "sim_type", "business_category", "outlet_id", "agent_id"],
   incentives: ["period", "amount", "note", "agent_id"],
 };
 const labels: Record<string, string> = {
@@ -34,6 +34,7 @@ const labels: Record<string, string> = {
   outlet_id: "Branch",
   agent_id: "Agent",
   sim_type: "SIM type",
+  business_category: "Business category",
   iccid: "ICCID",
   serial: "SIM serial",
   arabic_name: "Arabic name",
@@ -201,7 +202,7 @@ export default function Administration() {
                   kind === "agents"
                     ? `${r.employee_id} · ${r.target} / day`
                     : kind === "inventory"
-                      ? `${r.sim_type} · ${r.status}`
+                      ? `${r.sim_type} · ${r.business_category || "Not recorded"} · ${r.status}`
                       : kind === "customers"
                         ? r.mobile
                         : kind === "branches"
@@ -286,6 +287,8 @@ export default function Administration() {
                       </option>
                     ))}
                   </select>
+                ) : key === "business_category" ? (
+                  <select name={key} defaultValue={editing[key] || "Not recorded"}>{["Not recorded","Wasel / Prepaid","Postpaid","Home Wireless","Visitor"].map(value=><option key={value}>{value}</option>)}</select>
                 ) : key === "sim_type" ? (
                   <select name={key} defaultValue={editing[key] || "Physical"}>
                     <option>Physical</option>

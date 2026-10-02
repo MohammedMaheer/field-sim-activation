@@ -991,6 +991,7 @@ const inventoryColumns: Column[] = [
     ),
   },
   { key: "sim_type", label: "Type" },
+  { key: "business_category", label: "Business category" },
   { key: "agent", label: "Assigned agent" },
   { key: "outlet", label: "Outlet" },
   { key: "status", label: "Stock", render: (r) => <Badge value={r.status} /> },
@@ -1363,6 +1364,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
           iccid: sim.iccid,
           serial: sim.serial,
           type: sim.sim_type,
+          category: sim.business_category || "Not recorded",
           status: sim.status,
           agent: sim.agent,
           outlet: sim.outlet,
@@ -1372,13 +1374,13 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
       />
       {user.permissions.includes("inventory.write") && sim.scan_transaction_id && !sim.capture_id && <button disabled={busy} onClick={async () => {if(!window.confirm('Discard the unfinished SIM transaction and free this stock?')) return;setBusy(true);try{await api(`/inventory/scan/${sim.scan_transaction_id}`,{method:'DELETE'});await client.invalidateQueries({queryKey:['inventory']});notify('Unfinished SIM scan cleared');onClose();}catch(e:any){notify(e.message);}finally{setBusy(false);}}}>Clear unfinished scan</button>}
       {user.permissions.includes("inventory.write") && !["ACTIVATED", "RESERVED"].includes(sim.status) && (!sim.scan_transaction_id || sim.activation_stage === "ACTIVATED") && (
-        <form className="proposal-form" onSubmit={async e => {
+        <form className="proposal-form sim-stock-edit" onSubmit={async e => {
           e.preventDefault();
           const form = new FormData(e.currentTarget);
           setBusy(true);
           try {
             await patch(`/inventory/${sim.id}`, {
-              iccid: form.get("iccid"), serial: form.get("serial"), sim_type: form.get("sim_type"),
+              iccid: form.get("iccid"), serial: form.get("serial"), sim_type: form.get("sim_type"), business_category: form.get("business_category"), expected_category: sim.business_category,
               expected_iccid: sim.iccid, expected_serial: sim.serial, expected_type: sim.sim_type,
               reason: form.get("edit_reason"),
             });
@@ -1391,6 +1393,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
           <h3 className="wide">Edit SIM details</h3>
           <label>ICCID<input name="iccid" defaultValue={sim.iccid} required minLength={3} maxLength={60} /></label>
           <label>SIM serial<input name="serial" defaultValue={sim.serial} required minLength={3} maxLength={60} /></label>
+          <label>Business category<select name="business_category" defaultValue={sim.business_category || "Not recorded"}>{["Not recorded","Wasel / Prepaid","Postpaid","Home Wireless","Visitor"].map(value=><option key={value}>{value}</option>)}</select></label>
           <label>SIM type<select name="sim_type" defaultValue={sim.sim_type}><option>Physical</option><option>eSIM</option></select></label>
           <label>Reason for edit<input name="edit_reason" required minLength={5} maxLength={300} /></label>
           <button className="primary wide" disabled={busy}>{busy ? "Saving…" : "Save SIM details"}</button>

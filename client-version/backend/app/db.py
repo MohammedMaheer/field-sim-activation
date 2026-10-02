@@ -60,6 +60,8 @@ class Permission(Entity):
 class Branch(Entity):
     __tablename__ = "branches"
     name: Mapped[str] = mapped_column(String(120))
+    lifecycle_status: Mapped[str] = mapped_column(String(20), default="ACTIVE")
+    relocation_branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
 
 
 class User(Entity):
@@ -173,6 +175,7 @@ class Sim(Entity):
     iccid: Mapped[str] = mapped_column(String(60), unique=True)
     serial: Mapped[str] = mapped_column(String(60), unique=True)
     sim_type: Mapped[str] = mapped_column(String(20))
+    business_category: Mapped[str] = mapped_column(String(30), default="Not recorded")
     status: Mapped[str] = mapped_column(String(40), default="AVAILABLE", index=True)
     agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True, index=True)
     outlet_id: Mapped[str] = mapped_column(ForeignKey("outlets.id"), index=True)
@@ -281,6 +284,7 @@ class Event(Entity):
 
 class KycCapture(Entity):
     __tablename__ = "kyc_captures"
+    branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
     creator_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     operation_id: Mapped[str] = mapped_column(String(80), unique=True)

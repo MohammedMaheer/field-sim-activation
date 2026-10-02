@@ -2338,3 +2338,95 @@ def test_call_officer_workspace_notice_opens_own_workspace(client, account):
     notice = next(row for row in client.get('/api/notifications').json()['items'] if row['id'] == key)
     assert notice['category'] == 'Workspace'
     assert notice['web_path'] == notice['mobile_path'] == '/call-work'
+
+
+def test_sim_business_categories_import_edit_and_report(client):
+    from app.db import Sim, Outlet
+    from uuid import uuid4
+    login(client)
+    branch = client.get('/api/resources/branches').json()[0]
+    book = Workbook()
+    book.active.append(['ICCID', 'SIM Serial', 'SIM Type', 'Business Category'])
+    token = str(uuid4())[:8]
+    for index, category in enumerate(['Wasel / Prepaid', 'Postpaid', 'Home Wireless', 'Visitor']):
+        book.active.append([f'CATEGORY-{token}-{index}', f'SERIAL-{token}-{index}', 'Physical', category])
+    content = io.BytesIO(); book.save(content)
+    payload = {'branch_id': branch['id'], 'content_base64': base64.b64encode(content.getvalue()).decode(), 'reason':'New business category stock'}
+    assert client.post('/api/inventory/bulk', json=payload).status_code == 201
+    rows = [s for s in client.get('/api/resources/inventory').json() if s['iccid'].startswith(f'CATEGORY-{token}')]
+    assert {s['business_category'] for s in rows} == {'Wasel / Prepaid','Postpaid','Home Wireless','Visitor'}
+    sim = rows[0]
+    body = {'iccid':sim['iccid'],'serial':sim['serial'],'sim_type':sim['sim_type'],
+            'business_category':'Visitor','expected_category':sim['business_category'],
+            'expected_iccid':sim['iccid'],'expected_serial':sim['serial'],'expected_type':sim['sim_type'],'reason':'Reclassify unallocated stock'}
+    assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 200
+    body['business_category']='invalid'
+    assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 422
+    body['business_category']='Postpaid'; body['expected_category']='stale'
+    assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 409
+    summary = client.get('/api/field-assets/report/summary').json()
+    assert any(row['category']=='SIM:PHYSICAL:Visitor' and row['available'] for row in summary)
+    login(client,'agent1')
+    assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 403
+
+
+def test_branch_departure_requires_accounting_and_preserves_history(client):
+    from uuid import uuid4
+    login(client)
+    created = client.post('/api/organization/branches',json={'name':'Closure '+str(uuid4())[:8]})
+    assert created.status_code == 201
+    branch = created.json()['id']
+    stock = client.post('/api/field-assets',json={'category':'STAMP','label':'Branch stamp','quantity':1,'branch_id':branch})
+    assert stock.status_code == 201
+    endpoint = '/api/branch-lifecycle/'+branch
+    assert client.get(endpoint).json()['ready'] is False
+    assert client.post(endpoint,json={'action':'START_CLOSURE','reason':'Outlet lease ended'}).status_code == 200
+    assert client.post(endpoint,json={'action':'COMPLETE','reason':'Closing branch records'}).status_code == 409
+    assert client.post('/api/field-assets',json={'category':'STAMP','label':'New stamp','quantity':1,'branch_id':branch}).status_code == 409
+    assert client.post('/api/organization/outlets',json={'name':'Blocked assignment','branch_id':branch}).status_code == 409
+    assert client.patch('/api/field-assets/'+stock.json()['id'],json={'branch_id':branch,'status':'RETURNED','reason':'Stamp returned to warehouse'}).status_code == 200
+    done = client.post(endpoint,json={'action':'COMPLETE','reason':'Stock fully accounted for'})
+    assert done.status_code == 200 and done.json()['status']=='CLOSED'
+    assert client.get(endpoint).json()['ready']
+    assert any(b['id']==branch for b in client.get('/api/resources/branches').json())
+    assert client.post(endpoint,json={'action':'CANCEL','reason':'Invalid reopen attempt'}).status_code == 409
+    login(client,'agent1')
+    assert client.post(endpoint,json={'action':'START_CLOSURE','reason':'Unauthorized attempt'}).status_code == 403
+    assert client.get(endpoint).status_code == 404
+
+
+def test_branch_relocation_destination_and_cancellation(client):
+    from uuid import uuid4
+    login(client)
+    ids = [client.post('/api/organization/branches',json={'name':'Relocation '+str(uuid4())[:8]}).json()['id'] for _ in range(2)]
+    endpoint='/api/branch-lifecycle/'+ids[0]
+    assert client.post(endpoint,json={'action':'START_RELOCATION','destination_branch_id':ids[0],'reason':'Invalid same branch'}).status_code==422
+    started=client.post(endpoint,json={'action':'START_RELOCATION','destination_branch_id':ids[1],'reason':'Move branch operations'})
+    assert started.status_code==200 and started.json()['status']=='RELOCATING'
+    assert client.post(endpoint,json={'action':'CANCEL','reason':'Relocation deferred'}).json()['status']=='ACTIVE'
+    assert client.post(endpoint,json={'action':'START_RELOCATION','destination_branch_id':ids[1],'reason':'Move branch operations'}).status_code==200
+    done=client.post(endpoint,json={'action':'COMPLETE','reason':'All records accounted for'})
+    assert done.status_code==200 and done.json()['status']=='RELOCATED'
+    assert done.json()['destination_branch_id']==ids[1]
+
+
+def test_branch_checklist_tracks_evidence_snapshot_after_agent_moves(client):
+    from app.db import Branch, KycCapture, Sim
+    from uuid import uuid4
+    login(client)
+    agent=client.get('/api/resources/agents').json()[0]
+    old_branch=client.post('/api/organization/branches',json={'name':'Evidence history '+str(uuid4())[:8]}).json()['id']
+    with DB() as db:
+        row=KycCapture(branch_id=old_branch, agent_id=agent['id'],creator_id=db.get(Agent,agent['id']).user_id,
+                       operation_id=str(uuid4()),source_reference='Historical branch evidence',image_hash='0'*64,
+                       image_type='image/png',image_encrypted='synthetic-not-an-image',status='SUBMITTED')
+        db.add(row); db.commit(); capture_id=row.id
+    endpoint='/api/branch-lifecycle/'+old_branch
+    check=client.get(endpoint).json()
+    assert check['active_agents']==[] and check['pending_evidence']==1 and not check['ready']
+    assert client.post(endpoint,json={'action':'START_CLOSURE','reason':'Close original branch'}).status_code==200
+    assert client.post(endpoint,json={'action':'COMPLETE','reason':'Evidence still pending'}).status_code==409
+    with DB() as db:
+        db.get(KycCapture,capture_id).status='REJECTED'; db.commit()
+    assert client.post(endpoint,json={'action':'COMPLETE','reason':'Independent review complete'}).status_code==200
+    assert client.request('DELETE','/api/administration/branches/'+old_branch,json={'values':{},'reason':'Do not delete history'}).status_code==409

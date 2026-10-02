@@ -680,6 +680,8 @@ class CaptureBody(BaseModel):
 def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
     assert_agent(db, user, body.agent_id)
+    from .branch_lifecycle import active_branch
+    from .db import Agent, Outlet
     try:
         data = base64.b64decode(body.image_base64, validate=True)
         image_type = inspect_image(data)
@@ -718,6 +720,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
 
     if existing:
         return replay(existing)
+    active_branch(db, db.get(Outlet, db.get(Agent, body.agent_id).outlet_id).branch_id)
     if not source:
         raise HTTPException(422, "Enter the source transaction reference")
     queued = db.scalar(
@@ -726,6 +729,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     if queued >= 20:
         raise HTTPException(429, "OCR queue is busy. Keep the image and retry shortly.")
     row = KycCapture(
+        branch_id=db.get(Outlet, db.get(Agent, body.agent_id).outlet_id).branch_id,
         agent_id=body.agent_id,
         creator_id=user.id,
         operation_id=body.operation_id,

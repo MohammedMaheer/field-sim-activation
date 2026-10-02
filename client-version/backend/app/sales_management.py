@@ -69,8 +69,9 @@ def create_staff(body: StaffCreate, request: Request, user=Depends(principal), d
         raise HTTPException(409, "This sign-in email already exists")
     if body.role == "Sales Manager" and not body.branch_id:
         raise HTTPException(422, "Assign a branch to the Sales Manager")
-    if body.branch_id and not db.get(Branch, body.branch_id):
-        raise HTTPException(422, "Choose a valid branch")
+    if body.branch_id:
+        from .branch_lifecycle import active_branch
+        active_branch(db, body.branch_id)
     role = db.scalar(select(Role).where(Role.name == body.role))
     if not role:
         raise HTTPException(409, "Run the current migration before adding staff")
@@ -100,8 +101,9 @@ def assign_staff(staff_id: str, body: StaffAssignment, request: Request, user=De
         raise HTTPException(404, "Sales staff account not found")
     if body.role == "Sales Manager" and not body.branch_id:
         raise HTTPException(422, "Assign a branch to the Sales Manager")
-    if body.branch_id and not db.get(Branch, body.branch_id):
-        raise HTTPException(422, "Choose a valid branch")
+    if body.branch_id:
+        from .branch_lifecycle import active_branch
+        active_branch(db, body.branch_id)
     old = {"role": db.get(Role, person.role_id).name, "branch_id": person.branch_id}
     new = {"role": body.role, "branch_id": body.branch_id or None}
     if old == new:
@@ -386,6 +388,8 @@ def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=
         raise HTTPException(403, "Sales Managers have reporting access")
     assert_agent(db, user, body.agent_id)
     agent, outlet = assignment(db, body.agent_id)
+    from .branch_lifecycle import active_branch
+    active_branch(db, outlet.branch_id)
     values = body.model_dump()
     reference = values.pop("request_id").strip() or None
     if reference and db.scalar(select(SalesRecord.id).where(SalesRecord.request_id == reference)):

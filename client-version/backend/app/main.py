@@ -27,6 +27,7 @@ from .proposal import router as proposal_router
 from .organization import router as organization_router
 from .administration import router as administration_router
 from .inventory_bulk import router as inventory_bulk_router
+from .branch_lifecycle import router as branch_lifecycle_router
 from .sim_scanning import router as sim_scanning_router
 from .transactions import router as transaction_router
 from .sales_management import router as sales_management_router
@@ -81,6 +82,7 @@ app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
 app.include_router(notifications_router)
 app.include_router(capture_router)
 app.include_router(inventory_bulk_router)
+app.include_router(branch_lifecycle_router)
 app.include_router(sim_scanning_router)
 app.include_router(proposal_router)
 app.include_router(organization_router)
@@ -271,7 +273,7 @@ def records(resource, db, user, branch_id=""):
     outlet_ids = {a.outlet_id for a in agents}
     if resource == "branches":
         branches = {db.get(Outlet, a.outlet_id).branch_id for a in agents}
-        if db.get(Role, user.role_id).name == "Administrator":
+        if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer"}:
             branches = set(db.scalars(select(Branch.id)))
         if branch_id:
             branches.intersection_update({branch_id})
@@ -409,6 +411,13 @@ def records(resource, db, user, branch_id=""):
         require(db, user, "audit.read")
     model = models[resource]
     query = select(model).where(model.agent_id.in_(ids)).order_by(model.created_at.desc())
+    if resource == "inventory" and "inventory.write" in permissions(db, user):
+        from .field_assets import visible_branches
+        stock_branches = visible_branches(db, user)
+        if branch_id:
+            stock_branches = [b for b in stock_branches if b == branch_id]
+        outlet_ids = set(db.scalars(select(Outlet.id).where(Outlet.branch_id.in_(stock_branches))))
+        query = select(Sim).where(Sim.outlet_id.in_(outlet_ids)).order_by(Sim.created_at.desc())
     if resource == "audit" and db.get(Role, user.role_id).name in {
         "Administrator",
         "Operations Manager",
@@ -830,6 +839,8 @@ class SimEditBody(BaseModel):
     iccid: str = Field(min_length=3, max_length=60)
     serial: str = Field(min_length=3, max_length=60)
     sim_type: Literal["Physical", "eSIM"]
+    business_category: str | None = None
+    expected_category: str | None = None
     expected_iccid: str
     expected_serial: str
     expected_type: str
@@ -847,24 +858,32 @@ def edit_sim(sim_id: str, body: SimEditBody, request: Request,
         raise HTTPException(404, "SIM not found")
     if sim.agent_id:
         assert_agent(db, user, sim.agent_id)
-    elif sim.outlet_id not in {a.outlet_id for a in db.scalars(
-            select(Agent).where(Agent.id.in_(visible_agents(db, user))))}:
-        raise HTTPException(404, "SIM not found")
+    else:
+        from .field_assets import visible_branches
+        if db.get(Outlet, sim.outlet_id).branch_id not in visible_branches(db, user):
+            raise HTTPException(404, "SIM not found")
     if sim.status in {"ACTIVATED", "RESERVED"}:
         raise HTTPException(409, "Allocated SIM details cannot be changed")
     if (sim.iccid, sim.serial, sim.sim_type) != (
             body.expected_iccid, body.expected_serial, body.expected_type):
         raise HTTPException(409, "SIM details changed. Reload before editing.")
+    from .stock_categories import validate_category
+    if body.business_category is not None:
+        validate_category(body.business_category)
+    if body.expected_category is not None and sim.business_category != body.expected_category:
+        raise HTTPException(409, "SIM category changed. Reload before editing.")
     iccid, serial = body.iccid.strip(), body.serial.strip()
     if len(iccid) < 3 or len(serial) < 3:
         raise HTTPException(422, "Enter valid SIM identifiers")
     if db.scalar(select(Sim.id).where(Sim.id != sim.id,
             or_(Sim.iccid == iccid, Sim.serial == serial))):
         raise HTTPException(409, "SIM identifier already exists")
-    old = {"iccid": sim.iccid, "serial": sim.serial, "sim_type": sim.sim_type}
+    old = {"iccid": sim.iccid, "serial": sim.serial, "sim_type": sim.sim_type, "business_category": sim.business_category}
     sim.iccid, sim.serial, sim.sim_type = iccid, serial, body.sim_type
+    if body.business_category is not None:
+        sim.business_category = body.business_category
     audit(db, user, "SIM Details Updated", sim.id, sim.agent_id, old,
-          {"iccid": iccid, "serial": serial, "sim_type": sim.sim_type}, body.reason, request)
+          {"iccid": iccid, "serial": serial, "sim_type": sim.sim_type, "business_category": sim.business_category}, body.reason, request)
     try:
         db.commit()
     except IntegrityError:
@@ -884,21 +903,26 @@ def move(
         raise HTTPException(404, "SIM not found")
     if sim.agent_id:
         assert_agent(db, user, sim.agent_id)
-    elif sim.outlet_id not in {
-        a.outlet_id for a in db.scalars(select(Agent).where(Agent.id.in_(visible_agents(db, user))))
-    }:
-        raise HTTPException(404, "SIM not found")
+    else:
+        from .field_assets import visible_branches
+        if db.get(Outlet, sim.outlet_id).branch_id not in visible_branches(db, user):
+            raise HTTPException(404, "SIM not found")
     if "inventory.write" not in permissions(db, user):
         require(db, user, "inventory.self")
         if not sim.agent_id:
             raise HTTPException(404, "SIM not assigned to this agent")
         if body.status not in {"RETURNED", "DAMAGED"} or body.agent_id not in {None, sim.agent_id}:
             raise HTTPException(403, "Only return or damage reporting is permitted")
+    if body.status in {"AVAILABLE", "ASSIGNED TO AGENT", "ASSIGNED TO TEAM"}:
+        from .branch_lifecycle import active_branch
+        active_branch(db, db.get(Outlet, sim.outlet_id).branch_id)
     may_write_off = "inventory.write" in permissions(db, user) and body.status == "RETIRED"
     if sim.status in {"ACTIVATED", "RESERVED", "RETIRED"} or sim.status in {"BLOCKED", "DAMAGED"} and not may_write_off:
         raise HTTPException(409, "This SIM cannot be moved from its current state")
     if body.agent_id:
         assert_agent(db, user, body.agent_id)
+        from .branch_lifecycle import active_branch
+        active_branch(db, db.get(Outlet, db.get(Agent, body.agent_id).outlet_id).branch_id)
     assigned_agent = None
     if body.agent_id or sim.agent_id:
         assigned_agent = db.scalar(
@@ -1316,6 +1340,9 @@ def save_agent_management(
         raise HTTPException(409, "Assignment changed. Reopen management before saving.")
     outlet = db.get(Outlet, body.outlet_id)
     leader = db.get(User, body.leader_id) if body.leader_id else db.scalar(select(User).join(Role).where(Role.name == "Team Leader", User.branch_id == outlet.branch_id)) if outlet else None
+    if outlet and outlet.id != agent.outlet_id:
+        from .branch_lifecycle import active_branch
+        active_branch(db, outlet.branch_id)
     new_assignment = {"target": body.target, "outlet_id": body.outlet_id, "leader_id": leader.id if leader else None}
     if not outlet or (leader and db.get(Role, leader.role_id).name != "Team Leader"):
         raise HTTPException(422, "Select a valid branch")

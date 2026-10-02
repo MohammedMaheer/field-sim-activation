@@ -1956,6 +1956,7 @@ class _StockState extends ConsumerState<StockScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Text('${s['sim_type']} · ${s['business_category'] ?? 'Not recorded'}', style: const TextStyle(fontSize: 12, color: muted)),
                               StatusPill(s['status']),
                               if (s['activation_stage'] != null &&
                                   s['activation_stage'] != 'NOT_STARTED')

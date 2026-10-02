@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from .db import Branch, Movement, Outlet, Role, Sim, get_db
 from .security import principal
 from .services import audit
+from .stock_categories import validate_category
 
 router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
 
@@ -27,8 +28,8 @@ def template(user=Depends(principal), db=Depends(get_db)):
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "SIM stock"
-    sheet.append(["ICCID", "SIM Serial", "SIM Type"])
-    for col, width in {"A": 28, "B": 25, "C": 20}.items():
+    sheet.append(["ICCID", "SIM Serial", "SIM Type", "Business Category"])
+    for col, width in {"A": 28, "B": 25, "C": 20, "D": 25}.items():
         sheet.column_dimensions[col].width = width
     data = BytesIO()
     workbook.save(data)
@@ -49,6 +50,8 @@ def import_stock(body: ImportBody, request: Request, user=Depends(principal), db
     branch = db.get(Branch, body.branch_id)
     if not branch:
         raise HTTPException(422, "Select a valid branch")
+    from .branch_lifecycle import active_branch
+    active_branch(db, branch.id)
     if len(body.reason.strip()) < 5:
         raise HTTPException(422, "Enter a meaningful stock reason")
     outlet = db.scalar(select(Outlet).where(Outlet.branch_id == branch.id).order_by(Outlet.created_at))
@@ -68,6 +71,8 @@ def import_stock(body: ImportBody, request: Request, user=Depends(principal), db
         header = next(rows, None)
         if not header or [str(v or "").strip().casefold() for v in header[:3]] != ["iccid", "sim serial", "sim type"]:
             raise ValueError()
+        if len(header) > 3 and str(header[3] or "").strip().casefold() != "business category":
+            raise ValueError()
         entries = []
         for index, row in enumerate(rows, 2):
             if index > 10000:
@@ -79,7 +84,9 @@ def import_stock(body: ImportBody, request: Request, user=Depends(principal), db
             iccid, serial, sim_type = [v.strip() for v in row[:3]]
             if not (3 <= len(iccid) <= 60 and 3 <= len(serial) <= 60 and sim_type in {"Physical", "eSIM"}):
                 raise HTTPException(422, f"Row {index}: check ICCID, serial and SIM type")
-            entries.append((iccid, serial, sim_type))
+            category = str(row[3] or "Not recorded").strip() if len(row) > 3 else "Not recorded"
+            validate_category(category)
+            entries.append((iccid, serial, sim_type, category))
         book.close()
     except HTTPException:
         raise
@@ -95,14 +102,14 @@ def import_stock(body: ImportBody, request: Request, user=Depends(principal), db
         raise HTTPException(409, "A SIM identifier already exists")
     try:
         created = []
-        for iccid, serial, sim_type in entries:
-            sim = Sim(iccid=iccid, serial=serial, sim_type=sim_type, status="AVAILABLE", outlet_id=outlet.id)
+        for iccid, serial, sim_type, category in entries:
+            sim = Sim(iccid=iccid, serial=serial, sim_type=sim_type, business_category=category, status="AVAILABLE", outlet_id=outlet.id)
             db.add(sim)
             db.flush()
             db.add(Movement(sim_id=sim.id, user_id=user.id, old_status="WAREHOUSE", new_status="AVAILABLE",
                             reason=body.reason.strip()))
             audit(db, user, "SIM Imported", sim.id, new={"iccid": iccid, "serial": serial,
-                  "sim_type": sim_type, "branch": branch.name}, reason=body.reason.strip(), request=request)
+                  "sim_type": sim_type, "business_category": category, "branch": branch.name}, reason=body.reason.strip(), request=request)
             created.append(sim.id)
         db.commit()
     except IntegrityError:
