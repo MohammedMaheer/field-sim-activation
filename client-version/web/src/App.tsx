@@ -1445,7 +1445,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
                 onChange={(e) => setAgent(e.target.value)}
               >
                 <option value="">No change</option>
-                {agents.map((a) => (
+                {agents.filter(a => a.employment_status !== "EXITED").map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name} · {a.employee_id}
                   </option>

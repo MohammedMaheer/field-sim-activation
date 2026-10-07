@@ -10,7 +10,7 @@ from .db import Base, Agent, Branch, Customer, FieldTask, Incentive, Movement, O
 from .stock_categories import validate_category
 from .organization import administrator
 from .proposal import valid_amount, valid_period
-from .security import principal
+from .security import active_agent, principal
 from .services import audit, raw
 
 router = APIRouter(prefix="/api/administration", tags=["Administration"])
@@ -133,6 +133,12 @@ def validated(db, kind, values, row=None):
         agents = db.scalars(select(Agent).where(Agent.leader_id == row.id)).all()
         if any(db.get(Outlet, a.outlet_id).branch_id != merged["branch_id"] for a in agents):
             raise HTTPException(409, "Reassign this team's agents before changing its branch")
+        if merged["branch_id"] != row.branch_id:
+            from .branch_lifecycle import active_branch
+            active_branch(db, merged["branch_id"])
+            if db.scalar(select(User.id).join(Role).where(Role.name == "Team Leader",
+                    User.branch_id == merged["branch_id"], User.id != row.id)):
+                raise HTTPException(409, "This branch already has a team leader. Use branch leader assignment to replace it.")
     if kind == "outlets" and row and merged["branch_id"] != row.branch_id:
         if db.scalar(select(Agent.id).where(Agent.outlet_id == row.id)) or db.scalar(select(Sim.id).where(Sim.outlet_id == row.id)):
             raise HTTPException(409, "Reassign agents and stock before changing the outlet branch")
@@ -144,8 +150,10 @@ def validated(db, kind, values, row=None):
         validate_category(merged.get("business_category", "Not recorded"))
         if merged["sim_type"] not in {"Physical", "eSIM"}:
             raise HTTPException(422, "Select a SIM type")
-        if merged.get("agent_id") and db.get(Agent, merged["agent_id"]).outlet_id != merged["outlet_id"]:
-            raise HTTPException(422, "Select an agent assigned to this outlet")
+        if merged.get("agent_id"):
+            agent = active_agent(db, merged["agent_id"])
+            if agent.outlet_id != merged["outlet_id"]:
+                raise HTTPException(422, "Select an agent assigned to this outlet")
         if min(len(merged["iccid"]), len(merged["serial"])) < 3:
             raise HTTPException(422, "Enter valid SIM identifiers")
     if kind == "tasks":

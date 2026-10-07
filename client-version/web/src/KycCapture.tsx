@@ -250,7 +250,7 @@ export default function KycCapture() {
                     <strong>{r.source_reference}</strong>
                     <small>
                       {agents.data?.find((a: Row) => a.id === r.agent_id)
-                        ?.name || r.agent_id}
+                        ?.name || (agents.isPending ? "Loading agent…" : "Not recorded")}
                     </small>
                     <small>
                       {r.document_kind === "PAYMENT_CONFIRMATION"

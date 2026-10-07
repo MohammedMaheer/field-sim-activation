@@ -8,6 +8,7 @@ from cryptography.fernet import Fernet
 from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from .db import User, Role, Permission, Session, Agent, Outlet, now, get_db
 from .role_policy import ROLE_PERMISSIONS
 
@@ -116,6 +117,31 @@ def visible_agents(db, user):
 def assert_agent(db, user, agent_id):
     if agent_id not in visible_agents(db, user):
         raise HTTPException(404, "Record not found")
+
+
+def lifecycle_row_for_update(db, model, record_id):
+    # Refresh cached assignments and fail promptly rather than wait in an inverted
+    # stock/agent/branch lock cycle. Rollback releases any stock locks held already.
+    try:
+        return db.scalar(select(model).where(model.id == record_id)
+                         .with_for_update(nowait=True).execution_options(populate_existing=True))
+    except OperationalError as error:
+        if getattr(error.orig, "sqlstate", None) != "55P03" and getattr(error.orig, "pgcode", None) != "55P03":
+            raise
+        db.rollback()
+        raise HTTPException(409, "This assignment is being updated. Refresh and try again.") from None
+
+
+def agent_for_update(db, agent_id):
+    return lifecycle_row_for_update(db, Agent, agent_id)
+
+
+def active_agent(db, agent_id):
+    # Serialize new assignments with exit/transfer so closed accounts cannot acquire stock.
+    agent = agent_for_update(db, agent_id)
+    if not agent or agent.employment_status != "ACTIVE":
+        raise HTTPException(422, "Choose an active agent for this stock assignment")
+    return agent
 
 
 def user_view(db, user):

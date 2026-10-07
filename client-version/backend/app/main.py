@@ -267,25 +267,35 @@ def records(resource, db, user, branch_id=""):
     agents = db.scalars(
         select(Agent).where(Agent.id.in_(ids)).order_by(Agent.employee_id, Agent.id)
     ).all()
+    outlet_branches = dict(db.execute(select(Outlet.id, Outlet.branch_id).where(
+        Outlet.id.in_({a.outlet_id for a in agents}))).all()) if branch_id or resource == "branches" else {}
     if branch_id:
-        agents = [a for a in agents if db.get(Outlet, a.outlet_id).branch_id == branch_id]
+        agents = [a for a in agents if outlet_branches[a.outlet_id] == branch_id]
         ids = [a.id for a in agents]
     outlet_ids = {a.outlet_id for a in agents}
     if resource == "branches":
-        branches = {db.get(Outlet, a.outlet_id).branch_id for a in agents}
+        agent_branches = {a.id: outlet_branches[a.outlet_id] for a in agents}
+        branches = set(agent_branches.values())
         if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer"}:
             branches = set(db.scalars(select(Branch.id)))
         if branch_id:
             branches.intersection_update({branch_id})
         visible_orders = db.scalars(select(Order).where(Order.agent_id.in_(ids))).all()
         today = business_date()
+        totals = defaultdict(lambda: {"agents": 0, "target": 0, "today": 0, "activations": 0})
+        for agent in agents:
+            bucket = totals[agent_branches[agent.id]]
+            bucket["agents"] += 1
+            bucket["target"] += agent.target
+        for order in visible_orders:
+            if order.status == "ACTIVATED":
+                bucket = totals[agent_branches[order.agent_id]]
+                bucket["activations"] += 1
+                bucket["today"] += business_date(order.created_at) == today
         return [
             {
                 **raw(b),
-                "agents": sum(db.get(Outlet, a.outlet_id).branch_id == b.id for a in agents),
-                "target": sum(a.target for a in agents if db.get(Outlet, a.outlet_id).branch_id == b.id),
-                "today": sum(o.status == "ACTIVATED" and business_date(o.created_at) == today and db.get(Outlet, db.get(Agent, o.agent_id).outlet_id).branch_id == b.id for o in visible_orders),
-                "activations": sum(o.status == "ACTIVATED" and db.get(Outlet, db.get(Agent, o.agent_id).outlet_id).branch_id == b.id for o in visible_orders),
+                **totals[b.id],
             }
             for b in db.scalars(select(Branch).where(Branch.id.in_(branches)).order_by(Branch.name))
         ]
@@ -925,9 +935,12 @@ def move(
         active_branch(db, db.get(Outlet, db.get(Agent, body.agent_id).outlet_id).branch_id)
     assigned_agent = None
     if body.agent_id or sim.agent_id:
-        assigned_agent = db.scalar(
-            select(Agent).where(Agent.id == (body.agent_id or sim.agent_id)).with_for_update()
-        )
+        if body.agent_id and (body.agent_id != sim.agent_id or body.status in {"AVAILABLE", "ASSIGNED TO AGENT", "ASSIGNED TO TEAM"}):
+            from .security import active_agent
+            assigned_agent = active_agent(db, body.agent_id)
+        else:
+            assigned_agent = agent_for_update(db, body.agent_id or sim.agent_id)
+        assert_agent(db, user, assigned_agent.id)
     old = {"status": sim.status, "agent_id": sim.agent_id}
     if sim.status == body.status and (not body.agent_id or body.agent_id == sim.agent_id):
         raise HTTPException(409, "No inventory change requested")

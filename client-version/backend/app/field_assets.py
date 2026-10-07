@@ -14,7 +14,7 @@ from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
 
 from .db import Audit, Agent, Branch, FieldAsset, FieldAssetMovement, FieldAssetRequest, Movement, Outlet, Role, Session, Sim, SimProgress, StockThreshold, User, get_db, now
-from .security import assert_agent, permissions, principal, visible_agents
+from .security import active_agent, agent_for_update, assert_agent, permissions, principal, visible_agents
 from .services import audit
 
 router = APIRouter(prefix="/api/field-assets", tags=["Field assets"])
@@ -157,7 +157,7 @@ def move_asset(asset_id: str, body: AssetChange, request: Request, user=Depends(
         active_branch(db, body.branch_id)
     agent_id = body.agent_id.strip() or None
     if agent_id:
-        agent = db.get(Agent, agent_id)
+        agent = active_agent(db, agent_id) if agent_id != row.agent_id or body.status == "ASSIGNED" else db.get(Agent, agent_id)
         outlet = db.get(Outlet, agent.outlet_id) if agent else None
         if not outlet or outlet.branch_id != body.branch_id:
             raise HTTPException(422, "Agent must belong to the selected branch")
@@ -196,7 +196,7 @@ class BulkIssue(BusinessInput):
 def issue_bulk(asset_id: str, body: BulkIssue, request: Request, user=Depends(principal), db=Depends(get_db)):
     may_manage(db, user)
     row = db.scalar(select(FieldAsset).where(FieldAsset.id == asset_id).with_for_update())
-    agent = db.get(Agent, body.agent_id)
+    agent = active_agent(db, body.agent_id)
     outlet = db.get(Outlet, agent.outlet_id) if agent else None
     if not row:
         raise HTTPException(404, "Asset not found")
@@ -341,7 +341,7 @@ class AgentTransfer(BusinessInput):
 def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=Depends(principal), db=Depends(get_db)):
     if role(db, user) not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only administrators and backend staff can transfer agents")
-    agent = db.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
+    agent = agent_for_update(db, agent_id)
     outlet = db.scalar(select(Outlet).where(Outlet.branch_id == body.branch_id).order_by(Outlet.created_at).limit(1))
     if not agent or not outlet:
         raise HTTPException(404, "Agent or destination branch not found")
@@ -354,7 +354,9 @@ def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=De
     if any(sim.status not in {"AVAILABLE", "ASSIGNED TO AGENT"} or db.scalar(select(SimProgress.id).where(SimProgress.sim_id == sim.id,
                   SimProgress.stage.not_in(["ACTIVATED", "CANCELLED", "REJECTED"]))) for sim in sims):
         raise HTTPException(409, "Resolve active or damaged SIM stock before transferring this agent")
-    items = db.scalars(select(FieldAsset).where(FieldAsset.agent_id == agent.id).with_for_update()).all()
+    # Accounted-for stock remains with its original branch and assignee as history.
+    items = db.scalars(select(FieldAsset).where(FieldAsset.agent_id == agent.id,
+        FieldAsset.status.not_in(["CONSUMED", "RETURNED", "RETIRED"])).with_for_update()).all()
     if any(item.status != "ASSIGNED" for item in items):
         raise HTTPException(409, "Return or write off damaged/lost equipment before transferring this agent")
     leader = db.scalar(select(User).join(Role).where(Role.name == "Team Leader", User.branch_id == body.branch_id))
@@ -396,7 +398,7 @@ class AgentExit(BusinessInput):
 def exit_agent(agent_id: str, body: AgentExit, request: Request, user=Depends(principal), db=Depends(get_db)):
     if role(db, user) != "Administrator":
         raise HTTPException(403, "Only administrators can close agent access")
-    agent = db.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
+    agent = agent_for_update(db, agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
     if not return_checklist(agent_id=agent_id, user=user, db=db)["clear"]:

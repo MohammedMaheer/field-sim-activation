@@ -69,6 +69,8 @@ export default function ReceiptReview({
   const payment = capture.document_kind === "PAYMENT_CONFIRMATION";
   const orderMode = capture.intake?.capture_mode === "SCREENSHOT_ORDER";
   const evidenceLabel = payment ? "Payment confirmation" : "Historical activation receipt";
+  const evidenceImage = evidence === "identity" ? capture.intake?.document_image : evidence === "order" ? capture.intake?.order_image : "";
+  const canDownloadOriginal = evidence === "payment" ? !!image && !imageError : !!evidenceImage;
   const customerId = String(capture.intake?.document_number || "");
   const paidAmount = (capture.rows || [])
     .flatMap((row: Row) => row.fields || [])
@@ -95,6 +97,21 @@ export default function ReceiptReview({
   const canExcel =
     !!capture.rows?.length &&
     ["VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"].includes(capture.status);
+  async function downloadOriginal() {
+    if (evidence === "payment") {
+      await download(`/kyc-captures/${capture.id}/original`, `confirmation-${capture.id}.${capture.image_type === "image/jpeg" ? "jpg" : "png"}`);
+      return;
+    }
+    if (!evidenceImage) return;
+    const mime = String(evidenceImage).startsWith("iVBOR") ? "image/png" : "image/jpeg";
+    const bytes = Uint8Array.from(atob(evidenceImage), (character) => character.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], {type: mime}));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${evidence === "identity" ? "customer-details" : "order-details"}-${capture.id}.${mime === "image/png" ? "png" : "jpg"}`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   async function decide(outcome: string) {
     await perform(async () => {
       await post(`/kyc-captures/${capture.id}/review`, {
@@ -120,7 +137,7 @@ export default function ReceiptReview({
           <h2>{capture.source_reference}</h2>
           <p>
             <strong>{agent?.name || "Assigned agent"}</strong> ·{" "}
-            {agent?.employee_id || capture.agent_id}
+            {agent?.employee_id || "Not recorded"}
             {agent?.branch ? ` · ${agent.branch}` : ""}
           </p>
           <small>
@@ -209,15 +226,8 @@ export default function ReceiptReview({
           </div>
           <div className="review-pane-footer">
             <button
-              disabled={busy || !image}
-              onClick={() =>
-                perform(() =>
-                  download(
-                    `/kyc-captures/${capture.id}/original`,
-                    `confirmation-${capture.id}.${capture.image_type === "image/jpeg" ? "jpg" : "png"}`,
-                  ),
-                )
-              }
+              disabled={busy || !canDownloadOriginal}
+              onClick={() => perform(downloadOriginal)}
             >
               <Download size={16} />
               Download original
@@ -330,7 +340,7 @@ export default function ReceiptReview({
                   disabled={busy || !image || !!imageError}
                   onChange={(e) => setChecked(e.target.checked)}
                 />
-                I checked the image against the customer, SIM and captured details.
+                {orderMode ? "I checked the images against the customer, order and captured details." : "I checked the image against the customer, SIM and captured details."}
               </label>
             </div>
             <div>
@@ -374,7 +384,7 @@ export default function ReceiptReview({
           <div>
             <h3>
               {capture.status === "VERIFIED"
-                ? payment ? "Payment verified" : "Historical receipt verified"
+                ? orderMode ? "Backend confirmation complete" : payment ? "Payment verified" : "Historical receipt verified"
                 : capture.status === "REJECTED"
                   ? "Returned for correction"
                   : own

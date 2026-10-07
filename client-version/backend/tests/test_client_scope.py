@@ -2341,7 +2341,6 @@ def test_call_officer_workspace_notice_opens_own_workspace(client, account):
 
 
 def test_sim_business_categories_import_edit_and_report(client):
-    from app.db import Sim, Outlet
     from uuid import uuid4
     login(client)
     branch = client.get('/api/resources/branches').json()[0]
@@ -2350,7 +2349,8 @@ def test_sim_business_categories_import_edit_and_report(client):
     token = str(uuid4())[:8]
     for index, category in enumerate(['Wasel / Prepaid', 'Postpaid', 'Home Wireless', 'Visitor']):
         book.active.append([f'CATEGORY-{token}-{index}', f'SERIAL-{token}-{index}', 'Physical', category])
-    content = io.BytesIO(); book.save(content)
+    content = io.BytesIO()
+    book.save(content)
     payload = {'branch_id': branch['id'], 'content_base64': base64.b64encode(content.getvalue()).decode(), 'reason':'New business category stock'}
     assert client.post('/api/inventory/bulk', json=payload).status_code == 201
     rows = [s for s in client.get('/api/resources/inventory').json() if s['iccid'].startswith(f'CATEGORY-{token}')]
@@ -2362,7 +2362,8 @@ def test_sim_business_categories_import_edit_and_report(client):
     assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 200
     body['business_category']='invalid'
     assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 422
-    body['business_category']='Postpaid'; body['expected_category']='stale'
+    body['business_category']='Postpaid'
+    body['expected_category']='stale'
     assert client.patch('/api/inventory/'+sim['id'],json=body).status_code == 409
     summary = client.get('/api/field-assets/report/summary').json()
     assert any(row['category']=='SIM:PHYSICAL:Visitor' and row['available'] for row in summary)
@@ -2411,7 +2412,7 @@ def test_branch_relocation_destination_and_cancellation(client):
 
 
 def test_branch_checklist_tracks_evidence_snapshot_after_agent_moves(client):
-    from app.db import Branch, KycCapture, Sim
+    from app.db import KycCapture
     from uuid import uuid4
     login(client)
     agent=client.get('/api/resources/agents').json()[0]
@@ -2420,13 +2421,175 @@ def test_branch_checklist_tracks_evidence_snapshot_after_agent_moves(client):
         row=KycCapture(branch_id=old_branch, agent_id=agent['id'],creator_id=db.get(Agent,agent['id']).user_id,
                        operation_id=str(uuid4()),source_reference='Historical branch evidence',image_hash='0'*64,
                        image_type='image/png',image_encrypted='synthetic-not-an-image',status='SUBMITTED')
-        db.add(row); db.commit(); capture_id=row.id
+        db.add(row)
+        db.commit()
+        capture_id=row.id
     endpoint='/api/branch-lifecycle/'+old_branch
     check=client.get(endpoint).json()
     assert check['active_agents']==[] and check['pending_evidence']==1 and not check['ready']
     assert client.post(endpoint,json={'action':'START_CLOSURE','reason':'Close original branch'}).status_code==200
     assert client.post(endpoint,json={'action':'COMPLETE','reason':'Evidence still pending'}).status_code==409
     with DB() as db:
-        db.get(KycCapture,capture_id).status='REJECTED'; db.commit()
+        db.get(KycCapture,capture_id).status='REJECTED'
+        db.commit()
     assert client.post(endpoint,json={'action':'COMPLETE','reason':'Independent review complete'}).status_code==200
     assert client.request('DELETE','/api/administration/branches/'+old_branch,json={'values':{},'reason':'Do not delete history'}).status_code==409
+
+
+def test_agent_transfer_preserves_consumed_stock_history(client):
+    from app.db import FieldAsset, FieldAssetMovement
+    from uuid import uuid4
+    login(client)
+    token = str(uuid4())[:8]
+    source = client.post('/api/organization/branches', json={'name': 'Consumed origin ' + token}).json()['id']
+    target = client.post('/api/organization/branches', json={'name': 'Consumed destination ' + token}).json()['id']
+    leader = client.post('/api/organization/teams', json={'name': 'Destination Leader', 'branch_id': target,
+        'email': f'consumed-leader-{token}@relay.demo', 'password': 'test-client-password'})
+    assert leader.status_code == 201, leader.text
+    agent = client.post('/api/organization/agents', json={'name': 'Consumption history agent', 'branch_id': source,
+        'email': f'consumed-agent-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'CONSUMED-' + token}).json()['id']
+    stock = client.post('/api/field-assets', json={'category': 'UNIFORM', 'label': 'Issued uniform', 'quantity': 1, 'branch_id': source}).json()['id']
+    endpoint = '/api/field-assets/' + stock
+    assert client.patch(endpoint, json={'branch_id': source, 'agent_id': agent, 'status': 'ASSIGNED', 'reason': 'Uniform issued to employee'}).status_code == 200
+    assert client.patch(endpoint, json={'branch_id': source, 'agent_id': agent, 'status': 'CONSUMED', 'reason': 'Uniform consumed and accounted for'}).status_code == 200
+    assert client.get('/api/field-assets/report/checklist?agent_id=' + agent).json()['clear']
+    with DB() as db:
+        history = list(db.scalars(select(FieldAssetMovement.id).where(FieldAssetMovement.asset_id == stock)))
+    moved = client.post('/api/field-assets/agents/' + agent + '/transfer', json={'branch_id': target, 'stock_action': 'TRANSFER', 'reason': 'Transfer after stock accounted for'})
+    assert moved.status_code == 200, moved.text
+    with DB() as db:
+        item = db.get(FieldAsset, stock)
+        assert (item.branch_id, item.agent_id, item.status) == (source, agent, 'CONSUMED')
+        assert list(db.scalars(select(FieldAssetMovement.id).where(FieldAssetMovement.asset_id == stock))) == history
+
+
+def test_exited_agents_cannot_receive_new_stock(client):
+    from app.db import FieldAsset, Sim
+    from uuid import uuid4
+    login(client)
+    token = str(uuid4())[:8]
+    branch = client.post('/api/organization/branches', json={'name': 'Exited stock ' + token}).json()['id']
+    agent = client.post('/api/organization/agents', json={'name': 'Closed stock account', 'branch_id': branch,
+        'email': f'exited-stock-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'EXITED-' + token}).json()['id']
+    outlet = next(row['id'] for row in client.get('/api/resources/outlets').json() if row['branch_id'] == branch)
+    assert client.post('/api/field-assets/agents/' + agent + '/exit', json={'reason': 'Employee access closed'}).status_code == 200
+    assets = [client.post('/api/field-assets', json={'category': 'UNIFORM', 'label': 'Available stock', 'quantity': 2, 'branch_id': branch}).json()['id'] for _ in range(2)]
+    sim_values = {'iccid': 'EXIT-MOVE-' + token, 'serial': 'EXIT-SERIAL-' + token, 'sim_type': 'Physical', 'outlet_id': outlet}
+    sim = client.post('/api/administration/inventory', json={'values': sim_values, 'reason': 'Stock received centrally'}).json()['id']
+    responses = [
+        client.patch('/api/field-assets/' + assets[0], json={'branch_id': branch, 'agent_id': agent, 'status': 'ASSIGNED', 'reason': 'Cannot issue to closed employee'}),
+        client.post('/api/field-assets/' + assets[1] + '/issue', json={'agent_id': agent, 'quantity': 1, 'reason': 'Cannot issue to closed employee'}),
+        client.post('/api/administration/inventory', json={'values': {**sim_values, 'iccid': 'EXIT-ADD-' + token, 'serial': 'EXIT-ADD-SERIAL-' + token, 'agent_id': agent}, 'reason': 'Cannot assign to closed employee'}),
+        client.post('/api/inventory/' + sim + '/move', json={'agent_id': agent, 'status': 'ASSIGNED TO AGENT', 'reason': 'Cannot assign to closed employee'}),
+    ]
+    assert [response.status_code for response in responses] == [422] * 4, [response.text for response in responses]
+    with DB() as db:
+        assert db.get(FieldAsset, assets[0]).agent_id is None
+        assert db.get(FieldAsset, assets[1]).quantity == 2
+        assert db.get(Sim, sim).agent_id is None
+        assert not db.scalar(select(Sim.id).where(Sim.iccid == 'EXIT-ADD-' + token))
+        # Older outstanding assignments must still be returnable after access closes.
+        item = db.get(FieldAsset, assets[0])
+        item.agent_id, item.status = agent, 'ASSIGNED'
+        db.get(Sim, sim).agent_id = agent
+        db.commit()
+    returned_asset = client.patch('/api/field-assets/' + assets[0], json={'branch_id': branch, 'status': 'RETURNED', 'reason': 'Account for legacy employee stock'})
+    assert returned_asset.status_code == 200 and returned_asset.json()['agent_id'] is None
+    returned_sim = client.post('/api/inventory/' + sim + '/move', json={'status': 'RETURNED', 'reason': 'Account for legacy employee SIM'})
+    assert returned_sim.status_code == 200 and returned_sim.json()['agent_id'] is None
+
+
+@pytest.mark.parametrize('destination_state', ['CLOSING', 'HAS_LEADER'])
+def test_team_leader_editor_cannot_bypass_branch_assignment_rules(client, destination_state):
+    from app.db import User
+    from uuid import uuid4
+    login(client)
+    token = str(uuid4())[:8]
+    branches = [client.post('/api/organization/branches', json={'name': 'Leader guard ' + token + '-' + str(index)}).json()['id'] for index in range(2)]
+    leader = client.post('/api/organization/teams', json={'name': 'Source leader', 'branch_id': branches[0],
+        'email': f'leader-rule-source-{token}@relay.demo', 'password': 'test-client-password'}).json()['id']
+    if destination_state == 'CLOSING':
+        assert client.post('/api/branch-lifecycle/' + branches[1], json={'action': 'START_CLOSURE', 'reason': 'Close destination branch'}).status_code == 200
+    else:
+        assert client.post('/api/organization/teams', json={'name': 'Existing destination leader', 'branch_id': branches[1],
+            'email': f'leader-rule-destination-{token}@relay.demo', 'password': 'test-client-password'}).status_code == 201
+    response = client.patch('/api/administration/teams/' + leader, json={'values': {'branch_id': branches[1]},
+        'expected': {'branch_id': branches[0]}, 'reason': 'Cannot bypass branch assignment rules'})
+    assert response.status_code == 409, response.text
+    with DB() as db:
+        assert db.get(User, leader).branch_id == branches[0]
+
+
+def test_single_target_write_rejects_exited_agents_and_preserves_history(client):
+    from uuid import uuid4
+    login(client)
+    token = str(uuid4())[:8]
+    branch = client.post('/api/organization/branches', json={'name': 'Target history ' + token}).json()['id']
+    agent = client.post('/api/organization/agents', json={'name': 'Historic target agent', 'branch_id': branch,
+        'email': f'target-exit-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'TARGET-' + token}).json()['id']
+    original = {'agent_id': agent, 'period': '2030-03', 'order_type': 'ALL', 'daily_target': 2, 'monthly_target': 50}
+    assert client.put('/api/sales-management/targets', json=original).status_code == 200
+    assert client.post('/api/field-assets/agents/' + agent + '/exit', json={'reason': 'Close employee account'}).status_code == 200
+    responses = [client.put('/api/sales-management/targets', json=body) for body in [
+        {**original, 'period': '2030-04'}, {**original, 'daily_target': 9, 'monthly_target': 100},
+    ]]
+    assert [response.status_code for response in responses] == [422, 422], [response.text for response in responses]
+    history = [row for row in client.get('/api/sales-management/targets').json() if row['agent_id'] == agent]
+    assert len(history) == 1 and history[0]['period'] == '2030-03'
+    assert history[0]['daily_target'] == 2 and history[0]['monthly_target'] == 50
+
+
+def test_branch_statistics_reconcile_without_per_order_outlet_queries():
+    from app.db import Outlet, User, business_date
+    from app.main import records
+    from sqlalchemy import event
+    with DB() as db:
+        user = db.scalar(select(User).where(User.email == 'admin@relay.demo'))
+        expected = {}
+        for agent, branch in db.execute(select(Agent, Outlet.branch_id).join(Outlet, Agent.outlet_id == Outlet.id)):
+            bucket = expected.setdefault(branch, {'agents': 0, 'target': 0, 'today': 0, 'activations': 0})
+            bucket['agents'] += 1
+            bucket['target'] += agent.target
+        for order, branch in db.execute(select(Order, Outlet.branch_id).join(Agent, Order.agent_id == Agent.id).join(Outlet, Agent.outlet_id == Outlet.id)):
+            if order.status == 'ACTIVATED':
+                expected[branch]['activations'] += 1
+                expected[branch]['today'] += business_date(order.created_at) == business_date()
+        statements = []
+        def capture(connection, cursor, statement, parameters, context, executemany):
+            statements.append(statement.lower())
+        event.listen(engine, 'before_cursor_execute', capture)
+        try:
+            rows = records('branches', db, user)
+        finally:
+            event.remove(engine, 'before_cursor_execute', capture)
+        for row in rows:
+            assert {key: row[key] for key in ('agents', 'target', 'today', 'activations')} == expected.get(row['id'], {'agents': 0, 'target': 0, 'today': 0, 'activations': 0})
+        assert sum('from outlets' in statement for statement in statements) <= 1
+
+
+def test_lifecycle_locks_refresh_cached_agent_and_branch(client):
+    from app.db import Branch
+    from app.security import active_agent
+    from app.branch_lifecycle import active_branch
+    from fastapi import HTTPException
+    from uuid import uuid4
+    login(client)
+    token = str(uuid4())[:8]
+    branch = client.post('/api/organization/branches', json={'name': 'Cached lifecycle ' + token}).json()['id']
+    agent = client.post('/api/organization/agents', json={'name': 'Cached lifecycle agent', 'branch_id': branch,
+        'email': f'cached-lifecycle-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'CACHE-' + token}).json()['id']
+    with DB() as cached, DB() as changed:
+        previous_agent = cached.get(Agent, agent)
+        previous_branch = cached.get(Branch, branch)
+        assert previous_agent.employment_status == 'ACTIVE' and previous_branch.lifecycle_status == 'ACTIVE'
+        changed.get(Agent, agent).employment_status = 'EXITED'
+        changed.get(Branch, branch).lifecycle_status = 'CLOSING'
+        changed.commit()
+        with pytest.raises(HTTPException) as inactive:
+            active_agent(cached, agent)
+        assert inactive.value.status_code == 422
+        assert previous_agent.employment_status == 'EXITED'
+        with pytest.raises(HTTPException) as closing:
+            active_branch(cached, branch)
+        assert closing.value.status_code == 409
+        assert previous_branch.lifecycle_status == 'CLOSING'

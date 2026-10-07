@@ -592,7 +592,7 @@ button.primary:hover:not(:disabled) {
 .review-inbox-list > button:hover {
   background: #f7f2fd;
 }
-.review-inbox-list span {
+.review-inbox-list > button > span {
   display: grid;
   gap: 6px;
 }

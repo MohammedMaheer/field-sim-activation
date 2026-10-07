@@ -5,7 +5,7 @@ from pydantic import Field
 from sqlalchemy import select, or_
 from .db import Agent, Branch, FieldAssetRequest, KycCapture, Outlet, SalesRecord, get_db
 from .organization import administrator
-from .security import principal
+from .security import lifecycle_row_for_update, principal
 from .services import audit
 from .validation import BusinessInput
 
@@ -13,7 +13,7 @@ router = APIRouter(prefix="/api/branch-lifecycle", tags=["Branch lifecycle"])
 
 
 def active_branch(db, branch_id):
-    branch = db.scalar(select(Branch).where(Branch.id == branch_id).with_for_update())
+    branch = lifecycle_row_for_update(db, Branch, branch_id)
     if not branch:
         raise HTTPException(422, "Select a valid branch")
     if branch.lifecycle_status != "ACTIVE":

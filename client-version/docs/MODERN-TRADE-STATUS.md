@@ -54,3 +54,7 @@ Regular client database backups were not scheduled at the start of this re-audit
 ## 2 October stock and branch follow-up
 
 SIM business categories and explicit branch closure/relocation are now implemented and released at schema 015 / Android build 59. Category add/edit, legacy-compatible Excel imports, balances/thresholds/reports and signed-in phone inventory share the same data. Branch departure completion requires stock accounting, agent transfer/exit and resolution of pending work; historical records remain. See REQUIREMENTS-AUDIT-2026-10-02.md for new test evidence and the outstanding client-rule decisions. Existing confirmed-CLOSED stock deduction remains unchanged pending the approved configurable trigger/return policy.
+
+## 7 October recheck
+
+The latest recheck corrected closed-agent stock/target assignment, concurrent transfer safeguards, leader branch-edit guards, historical equipment handling, call notification links and compact evidence/form layouts. These fixes are published at schema 015 / Android build 60, with 136 backend tests passing in both the workspace and exact released image, 64 distinct isolated browser/API workflows across the main run and necessary shared-flow rerun, and 37 fresh hosted checks. See [RECHECK-AUDIT-2026-10-07.md](RECHECK-AUDIT-2026-10-07.md) for precise counts, backup/restore evidence, remaining business-rule decisions and the locked-phone physical-test limit. Commission/formula configuration remains on hold; no complete-coverage claim is made.

@@ -1,6 +1,6 @@
 import {test,expect} from '@playwright/test';
 import {mobileSignIn} from './mobile-session';
-import {writeFile} from 'node:fs/promises';
+import {readFile,writeFile} from 'node:fs/promises';
 
 test('shared phone capture reaches backend review and read-only branch leader update',async({page,browser,request})=>{
  test.setTimeout(240000);
@@ -35,15 +35,30 @@ test('shared phone capture reaches backend review and read-only branch leader up
  const adminContext=await browser.newContext();const admin=await adminContext.newPage();
  await admin.goto('/');await admin.locator('input[type=email]').fill('admin@relay.demo');await admin.locator('input[type=password]').fill(process.env.DEMO_PASSWORD!);await admin.getByRole('button',{name:'Sign in to workspace'}).click();
  await expect(admin.locator('input[type=password]')).toBeHidden();await admin.goto('/kyc-capture');
+ // Grid items blockify inline-flex; assert the visible single-line badge instead.
+ await expect.poll(()=>admin.locator('.review-inbox-list .badge').first().evaluate(el=>el.getBoundingClientRect().height)).toBeLessThan(30);
  await admin.getByRole('button',{name:new RegExp(created.source_reference)}).first().click();
  await expect(admin.getByRole('heading',{name:'Payment details',exact:true})).toBeVisible({timeout:15000});
  await admin.getByRole('button',{name:'Order details',exact:true}).click();
  await expect(admin.locator('img[alt*="Order"]')).toBeVisible();
  await admin.screenshot({path:'../output/qa/shared-backend-order-comparison.png'});
+ const orderDownloadEvent=admin.waitForEvent('download');
+ await admin.getByRole('button',{name:'Download original',exact:true}).click();
+ const orderDownload=await orderDownloadEvent;
+ expect(orderDownload.suggestedFilename()).toBe(`order-details-${created.id}.jpg`);
+ expect((await readFile((await orderDownload.path())!)).toString('base64')).toBe(capture.intake.order_image);
+ await admin.getByRole('button',{name:'Customer details',exact:true}).click();
+ const customerDownloadEvent=admin.waitForEvent('download');
+ await admin.getByRole('button',{name:'Download original',exact:true}).click();
+ const customerDownload=await customerDownloadEvent;
+ expect(customerDownload.suggestedFilename()).toMatch(new RegExp(`^customer-details-${created.id}\\.(jpg|png)$`));
+ expect((await readFile((await customerDownload.path())!)).toString('base64')).toBe(capture.intake.document_image);
  await admin.getByRole('button',{name:'Payment confirmation',exact:true}).first().click();
  await admin.getByRole('checkbox',{name:/I checked/}).check();await admin.getByRole('textbox',{name:'Review note'}).fill('Customer, order and agent payment record compared with uploaded screens.');
  await admin.getByRole('button',{name:'Verify submission',exact:true}).click();
  await expect(admin.getByText(/Transaction confirmed by backend/)).toBeVisible();
+ await expect(admin.getByRole('heading',{name:'Backend confirmation complete',exact:true})).toBeVisible();
+ await expect(admin.getByRole('heading',{name:'Payment verified',exact:true})).toHaveCount(0);
  const leaderContext=await browser.newContext();const leader=await leaderContext.newPage();await mobileSignIn(leader,(process.env.RELAY_TEST_LEADER_ACCOUNT || 'leader2')+'@relay.demo');
  await expect(leader.getByRole('group',{name:new RegExp('Transaction confirmed by backend.*'+created.source_reference)}).first()).toBeVisible({timeout:30000});
  await leader.screenshot({path:'../output/qa/shared-leader-confirmation.png'});

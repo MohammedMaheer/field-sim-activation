@@ -87,7 +87,7 @@ export default function Administration() {
             name: branch.name,
           })).filter((branch: Row) => branch.id)
         : key === "agent_id"
-          ? agents.data
+          ? kind === "inventory" ? agents.data?.filter(agent => agent.employment_status !== "EXITED") : agents.data
           : null;
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();

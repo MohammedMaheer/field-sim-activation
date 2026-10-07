@@ -44,30 +44,29 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
     if (agentId == null) return;
     String category = 'GRABBA_DEVICE';
     String urgency = 'NORMAL';
-    final quantity = TextEditingController(text: '1');
-    final reason = TextEditingController();
+    String quantity = '1';
+    String reason = '';
     final form = GlobalKey<FormState>();
     final confirmed = await showModalBottomSheet<bool>(context: context, isScrollControlled: true,
       showDragHandle: true, builder: (context) => Padding(padding: EdgeInsets.fromLTRB(20,8,20,MediaQuery.viewInsetsOf(context).bottom+20),
-        child: Form(key: form, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        child: SingleChildScrollView(child: Form(key: form, child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Text('Request stock', style: Theme.of(context).textTheme.titleLarge),
           DropdownButtonFormField<String>(initialValue: category, decoration: const InputDecoration(labelText:'Asset type'),
             items: const [DropdownMenuItem(value:'GRABBA_DEVICE',child:Text('Grabba device')),DropdownMenuItem(value:'ROUTER',child:Text('Router')),DropdownMenuItem(value:'STAMP',child:Text('Stamp')),DropdownMenuItem(value:'ID_CARD',child:Text('Staff ID card')),DropdownMenuItem(value:'UNIFORM',child:Text('Uniform')),DropdownMenuItem(value:'OTHER',child:Text('Other'))],
             onChanged: (value) => category = value ?? category),
-          TextFormField(controller:quantity, keyboardType:TextInputType.number, decoration:const InputDecoration(labelText:'Quantity'),validator:(v)=> (int.tryParse(v??'')??0)<1?'Enter a quantity':null),
+          TextFormField(initialValue:quantity, onChanged:(value)=>quantity=value, keyboardType:TextInputType.number, decoration:const InputDecoration(labelText:'Quantity'),validator:(v)=> (int.tryParse(v??'')??0)<1?'Enter a quantity':null),
           DropdownButtonFormField<String>(initialValue: urgency, decoration: const InputDecoration(labelText:'Urgency'),
             items: const [DropdownMenuItem(value:'NORMAL',child:Text('Normal')),DropdownMenuItem(value:'URGENT',child:Text('Urgent'))],
             onChanged: (value) => urgency = value ?? 'NORMAL'),
-          TextFormField(controller:reason, decoration:const InputDecoration(labelText:'Reason'),validator:(v)=>(v??'').trim().length<5?'Enter a reason':null),
+          TextFormField(initialValue:reason, onChanged:(value)=>reason=value, decoration:const InputDecoration(labelText:'Reason'),validator:(v)=>(v??'').trim().length<5?'Enter a reason':null),
           const SizedBox(height:16), FilledButton(onPressed:(){if(form.currentState!.validate())Navigator.pop(context,true);},child:const Text('Submit request')),
-        ]))));
-    if (confirmed != true || !mounted) {quantity.dispose(); reason.dispose(); return;}
+        ])))));
+    if (confirmed != true || !mounted) return;
     try {
-      await ref.read(serviceProvider).dio.post('/field-assets/requests',data:{'agent_id':agentId,'category':category,'quantity':int.parse(quantity.text),'urgency':urgency,'reason':reason.text.trim()});
+      await ref.read(serviceProvider).dio.post('/field-assets/requests',data:{'agent_id':agentId,'category':category,'quantity':int.parse(quantity),'urgency':urgency,'reason':reason.trim()});
       await load();
       if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Stock request sent')));
     } catch (_) { if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Could not send request'))); }
-    quantity.dispose(); reason.dispose();
   }
   @override
   Widget build(BuildContext context) => Scaffold(

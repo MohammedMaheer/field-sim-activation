@@ -22,7 +22,7 @@ from .db import (
     Agent, Branch, CallAttempt, NoSaleFeedback, Outlet, Role, SalesCallTask, SalesRecord,
     SalesTarget, Session, User, Customer, Sim, SimProgress, Movement, KycCapture, get_db, now,
 )
-from .security import assert_agent, cipher, password_hash, permissions, principal
+from .security import agent_for_update, assert_agent, cipher, password_hash, permissions, principal
 from .services import audit
 
 router = APIRouter(prefix="/api/sales-management", tags=["Sales management"])
@@ -521,15 +521,18 @@ def targets(period: str = "", user=Depends(principal), db=Depends(get_db)):
 @router.put("/targets")
 def save_target(body: TargetWrite, request: Request, user=Depends(principal), db=Depends(get_db)):
     role = db.get(Role, user.role_id).name
-    if role == "Team Leader":
-        agent = db.get(Agent, body.agent_id)
-        if not agent or agent.leader_id != user.id:
-            raise HTTPException(404, "Agent not in your team")
-    elif role not in {"Administrator", "Operations Manager"}:
+    if role not in {"Administrator", "Operations Manager", "Team Leader"}:
         raise HTTPException(403, "Only management or the assigned team leader can set targets")
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", body.period):
         raise HTTPException(422, "Period must use YYYY-MM")
     assert_agent(db, user, body.agent_id)
+    agent = agent_for_update(db, body.agent_id)
+    # A transfer may have completed since the earlier scope check.
+    assert_agent(db, user, body.agent_id)
+    if role == "Team Leader" and (not agent or agent.leader_id != user.id):
+        raise HTTPException(404, "Agent not in your team")
+    if not agent or agent.employment_status != "ACTIVE":
+        raise HTTPException(422, "Choose an active agent when setting targets")
     row = db.scalar(select(SalesTarget).where(SalesTarget.agent_id == body.agent_id,
         SalesTarget.period == body.period, SalesTarget.order_type == body.order_type).with_for_update())
     if not row:
@@ -823,8 +826,11 @@ def target_file(body: StatusFile, request: Request, user=Depends(principal), db=
             if key in seen:
                 raise ValueError("duplicate agent, month and product")
             seen.add(key)
-            agent = db.scalar(select(Agent).where(Agent.employee_id == employee, Agent.id.in_(allowed), Agent.employment_status == "ACTIVE"))
-            if not agent:
+            agent_query = select(Agent).where(Agent.employee_id == employee, Agent.id.in_(allowed), Agent.employment_status == "ACTIVE")
+            agent = db.scalar(agent_query)
+            if agent and body.apply:
+                agent = agent_for_update(db, agent.id)
+            if not agent or agent.employment_status != "ACTIVE" or agent.id not in visible_agents(db, user):
                 raise ValueError("agent is unavailable or outside your access")
             if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period) or product not in ("ALL", *ORDER_TYPES):
                 raise ValueError("invalid month or product")

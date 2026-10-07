@@ -4,6 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 
+bool canRecordCall(Json task, Json? user) {
+  if (!['PENDING', 'FAILED'].contains(task['status'])) return false;
+  final permissions = (user?['permissions'] as List? ?? []).cast<String>();
+  final required = task['stage'] == 'TELE_VERIFICATION'
+      ? 'call.tele.write' : 'call.welcome.write';
+  return permissions.contains(required) ||
+      (['Administrator', 'Operations Manager', 'Compliance Officer'].contains(user?['role']) &&
+          permissions.contains('compliance.write'));
+}
+
 class CallWorkScreen extends ConsumerStatefulWidget {
   const CallWorkScreen({super.key, this.selectedId});
   final String? selectedId;
@@ -20,7 +30,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   Timer? poll;
   bool fetching = false;
   @override
-  void initState() { super.initState(); load().then((_) {if(mounted && widget.selectedId != null) {final matches=tasks.where((row)=>row['id']==widget.selectedId);if(matches.isNotEmpty) record(matches.first);}}); poll = Timer.periodic(const Duration(seconds: 15), (_) => load(silent: true)); }
+  void initState() { super.initState(); load().then((_) {if(mounted && widget.selectedId != null) {final matches=tasks.where((row)=>row['id']==widget.selectedId);if(matches.isNotEmpty) {if(canRecordCall(matches.first, ref.read(serviceProvider).user)) {record(matches.first);} else {setState(() => filter = 'All');}}}}); poll = Timer.periodic(const Duration(seconds: 15), (_) => load(silent: true)); }
 
   @override
   void dispose() { poll?.cancel(); super.dispose(); }
@@ -47,8 +57,9 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   }
 
   Future<void> record(Json task) async {
+    if (!canRecordCall(task, ref.read(serviceProvider).user)) return;
     String outcome = '';
-    final remark = TextEditingController();
+    String remark = '';
     final form = GlobalKey<FormState>();
     final submitted = await showModalBottomSheet<bool>(
       context: context, isScrollControlled: true, showDragHandle: true,
@@ -64,7 +75,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
             DropdownButtonFormField<String>(decoration: const InputDecoration(labelText: 'Outcome'),
               items: const ['PASSED', 'REACHED', 'NO_ANSWER', 'RETRY', 'FAILED'].map((value) => DropdownMenuItem(value: value, child: Text(value.replaceAll('_', ' ')))).toList(),
               onChanged: (value) => outcome = value ?? '', validator: (value) => value == null ? 'Choose an outcome' : null),
-            TextFormField(controller: remark, decoration: const InputDecoration(labelText: 'Call remark'),
+            TextFormField(initialValue: remark, onChanged: (value) => remark = value, decoration: const InputDecoration(labelText: 'Call remark'),
               maxLines: 3, validator: (value) => (value ?? '').trim().length < 3 ? 'Enter a remark' : null),
             const SizedBox(height: 18),
             FilledButton(onPressed: () { if (form.currentState!.validate()) Navigator.pop(context, true); }, child: const Text('Save outcome')),
@@ -73,17 +84,16 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
         ))),
       ),
     );
-    if (submitted != true || !mounted) { remark.dispose(); return; }
+    if (submitted != true || !mounted) return;
     try {
       await ref.read(serviceProvider).dio.post('/sales-management/sales/${task['sale_id']}/calls', data: {
-        'stage': task['stage'], 'outcome': outcome, 'remark': remark.text.trim(),
+        'stage': task['stage'], 'outcome': outcome, 'remark': remark.trim(),
       });
       await load();
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Outcome saved')));
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not save outcome. Try again.')));
     }
-    remark.dispose();
   }
 
   @override
@@ -92,6 +102,10 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
       (filter == 'Ready' && ['PENDING', 'FAILED'].contains(task['status'])) ||
       (filter == 'Waiting' && task['status'] == 'BLOCKED') ||
       (filter == 'Done' && ['COMPLETED', 'SKIPPED', 'CANCELLED'].contains(task['status']))).toList();
+    if (widget.selectedId != null) {
+      final selected = visible.indexWhere((task) => task['id'] == widget.selectedId);
+      if (selected > 0) visible.insert(0, visible.removeAt(selected));
+    }
     return Scaffold(
       appBar: AppBar(title: const Text('Call work queue'), actions: [const NotificationBell(),
         IconButton(onPressed: load, tooltip: 'Refresh', icon: const Icon(Icons.refresh)),
@@ -122,9 +136,9 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
                 SelectableText('Phone: ${task['msisdn'] ?? task['alternate_number'] ?? 'Not recorded'}'),
                 Text('Last outcome: ${task['last_outcome'] ?? 'Not started'}', style: const TextStyle(color: Color(0xFF626C82))),
                 const SizedBox(height: 8),
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Wrap(alignment: WrapAlignment.spaceBetween, spacing: 8, runSpacing: 8, children: [
                   Chip(label: Text('${task['status']}'.toLowerCase())),
-                  if (['PENDING','FAILED'].contains(task['status'])) FilledButton.tonalIcon(
+                  if (canRecordCall(task, ref.watch(serviceProvider).user)) FilledButton.tonalIcon(
                     style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
                     onPressed: () => record(task), icon: const Icon(Icons.call, size: 17), label: const Text('Record call')),
                 ]),
