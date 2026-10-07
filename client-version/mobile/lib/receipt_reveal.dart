@@ -129,14 +129,11 @@ class _ReceiptRevealState extends State<ReceiptReveal>
           builder: (context, child) {
             final progress = Curves.easeInOut.transform(_controller.value);
             return ClipRect(
+              key: const ValueKey('invoice-feed'),
               child: Align(
                 alignment: Alignment.topCenter,
                 heightFactor: progress,
-                child: FractionalTranslation(
-                  key: const ValueKey('invoice-feed'),
-                  translation: Offset(0, progress - 1),
-                  child: child,
-                ),
+                child: child,
               ),
             );
           },

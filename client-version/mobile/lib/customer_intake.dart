@@ -538,21 +538,31 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
 
   Future<void> load() async {
     final service = ref.read(serviceProvider);
+    data = {...widget.initial};
+    data['capture_mode'] = 'SCREENSHOT_ORDER';
+    data.putIfAbsent('transaction_id', () => const Uuid().v4());
+    step = (data['step'] as int? ?? 0).clamp(0, 1);
     try {
       final result = await service.dio.get('/kyc-captures/draft');
-      data = {...widget.initial};
-      data['capture_mode'] = 'SCREENSHOT_ORDER';
-      data.putIfAbsent('transaction_id', () => const Uuid().v4());
       version = result.data['version'];
-      step = (data['step'] as int? ?? 0).clamp(0, 1);
-      plans = await service.list('plans');
     } catch (e) {
       final cached = await service.store.get(cacheKey);
-      data = {...widget.initial};
-      data['capture_mode'] = 'SCREENSHOT_ORDER';
-      data.putIfAbsent('transaction_id', () => const Uuid().v4());
       version = cached?['version'] ?? 0;
       error = 'Saved details loaded. Check connection.';
+    }
+    try {
+      plans = await service.list('plans');
+    } catch (_) {
+      error ??= 'Saved details loaded. Check connection.';
+    }
+    // Saved drafts serialize uncaptured images as empty strings.
+    for (final key in [
+      'document_image',
+      'order_image',
+      'selfie_image',
+      'payment_image',
+    ]) {
+      if (!hasImage(key)) data.remove(key);
     }
     if ((data['document_check'] ?? '').toString().isEmpty) {
       // Older saved photos must be read again before they count as a capture.
@@ -572,6 +582,8 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     'data': data,
     'version': version,
   });
+  bool hasImage(String key) => (data[key] ?? '').toString().trim().isNotEmpty;
+
   void set(String k, dynamic v) {
     setState(() {
       data[k] = v;
@@ -961,6 +973,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
+      leading: const WorkspaceBackButton(),
       title: const Text('New transaction'),
       actions: [
         TextButton(
@@ -1066,7 +1079,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             ),
             const SizedBox(height: 8),
             if (!ref.read(serviceProvider).isPreview &&
-                data['document_image'] == null &&
+                !hasImage('document_image') &&
                 !reading &&
                 !scannerPaused)
               Padding(
@@ -1082,7 +1095,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               )
             else
               ScanSurface(
-                image: data['document_image'],
+                image: hasImage('document_image')
+                    ? data['document_image']
+                    : null,
                 reading: reading,
                 readingLabel: captureActivity,
                 illustration: false,
@@ -1182,7 +1197,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 onPressed: busy ? null : () => photo('selfie_image', false),
                 icon: const Icon(Icons.face),
                 label: Text(
-                  data['selfie_image'] == null
+                  !hasImage('selfie_image')
                       ? 'Selfie · optional'
                       : 'Selfie saved',
                 ),
@@ -1195,7 +1210,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             ),
             const SizedBox(height: 8),
             if (!ref.read(serviceProvider).isPreview &&
-                data['order_image'] == null &&
+                !hasImage('order_image') &&
                 !reading &&
                 !scannerPaused)
               Padding(
@@ -1211,7 +1226,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               )
             else
               ScanSurface(
-                image: data['order_image'],
+                image: hasImage('order_image') ? data['order_image'] : null,
                 reading: reading,
                 readingLabel: captureActivity,
                 illustration: false,

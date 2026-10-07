@@ -614,17 +614,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                               false)) {
                         return;
                       }
-                      if (!mounted) return;
-                      setState(() {
-                        capture = null;
-                        intake = {};
-                        intakeReady = false;
-                        source.clear();
-                        bytes = null;
-                        operation = const Uuid().v4();
-                        rows = [];
-                        dirty = false;
-                      });
+                      if (!context.mounted) return;
+                      context.push('/screenshot-capture');
                     },
               child: const Text('New'),
             ),

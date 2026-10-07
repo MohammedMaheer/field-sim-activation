@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'services.dart';
+import 'experience.dart';
 
 String savedDraftsKey(RelayService service) =>
     'saved-capture-drafts-${service.user?['id']}';
@@ -102,80 +103,87 @@ class _SavedDraftsState extends ConsumerState<SavedDraftsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Drafts'),
-      leading: IconButton(
-        icon: const Icon(Icons.arrow_back),
-        onPressed: () => context.go('/'),
-      ),
-      actions: [
-        IconButton(
-          tooltip: 'New transaction',
-          icon: const Icon(Icons.add),
-          onPressed: () => context.go('/screenshot-capture'),
-        ),
-      ],
-    ),
-    body: error != null
-        ? Center(
-            child: TextButton(onPressed: load, child: Text(error!)),
-          )
-        : drafts == null
-        ? const Center(child: CircularProgressIndicator())
-        : drafts!.isEmpty
-        ? const Center(child: Text('No saved drafts'))
-        : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: drafts!.length,
-            itemBuilder: (context, i) {
-              final row = drafts![i],
-                  data = Map<String, dynamic>.from(row['data']);
-              return Card(
-                child: ListTile(
-                  leading: const Icon(
-                    Icons.edit_document,
-                    color: Color(0xff8036c2),
-                  ),
-                  title: Text(
-                    (data['name'] ?? '').toString().isEmpty
-                        ? 'New customer'
-                        : data['name'],
-                  ),
-                  subtitle: Text('Step ${(data['step'] ?? 0) + 1} of 3'),
-                  onTap: () => context.go('/screenshot-capture', extra: data),
-                  trailing: IconButton(
-                    tooltip: 'Discard draft',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () async {
-                      final confirmed = await showDialog<bool>(
-                        context: context,
-                        builder: (c) => AlertDialog(
-                          title: const Text('Discard draft?'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(c, false),
-                              child: const Text('Keep'),
-                            ),
-                            FilledButton(
-                              onPressed: () => Navigator.pop(c, true),
-                              child: const Text('Discard'),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirmed != true) return;
-                      try {
-                        await discardSavedDraft(ref.read(serviceProvider), row);
-                        await load();
-                      } catch (e) {
-                        if (mounted) setState(() => error = friendlyError(e));
-                      }
-                    },
-                  ),
-                ),
-              );
-            },
+  Widget build(BuildContext context) => PopScope(
+    canPop: context.canPop(),
+    onPopInvokedWithResult: (didPop, result) {
+      if (!didPop) context.go('/');
+    },
+    child: Scaffold(
+      appBar: AppBar(
+        title: const Text('Drafts'),
+        leading: const WorkspaceBackButton(),
+        actions: [
+          IconButton(
+            tooltip: 'New transaction',
+            icon: const Icon(Icons.add),
+            onPressed: () => context.push('/screenshot-capture'),
           ),
+        ],
+      ),
+      body: error != null
+          ? Center(
+              child: TextButton(onPressed: load, child: Text(error!)),
+            )
+          : drafts == null
+          ? const Center(child: CircularProgressIndicator())
+          : drafts!.isEmpty
+          ? const Center(child: Text('No saved drafts'))
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: drafts!.length,
+              itemBuilder: (context, i) {
+                final row = drafts![i],
+                    data = Map<String, dynamic>.from(row['data']);
+                return Card(
+                  child: ListTile(
+                    leading: const Icon(
+                      Icons.edit_document,
+                      color: Color(0xff8036c2),
+                    ),
+                    title: Text(
+                      (data['name'] ?? '').toString().isEmpty
+                          ? 'New customer'
+                          : data['name'],
+                    ),
+                    subtitle: Text('Step ${(data['step'] ?? 0) + 1} of 3'),
+                    onTap: () =>
+                        context.push('/screenshot-capture', extra: data),
+                    trailing: IconButton(
+                      tooltip: 'Discard draft',
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () async {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (c) => AlertDialog(
+                            title: const Text('Discard draft?'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(c, false),
+                                child: const Text('Keep'),
+                              ),
+                              FilledButton(
+                                onPressed: () => Navigator.pop(c, true),
+                                child: const Text('Discard'),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed != true) return;
+                        try {
+                          await discardSavedDraft(
+                            ref.read(serviceProvider),
+                            row,
+                          );
+                          await load();
+                        } catch (e) {
+                          if (mounted) setState(() => error = friendlyError(e));
+                        }
+                      },
+                    ),
+                  ),
+                );
+              },
+            ),
+    ),
   );
 }
