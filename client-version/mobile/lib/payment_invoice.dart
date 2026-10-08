@@ -66,7 +66,11 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
           field('Review', status),
           field(
             'Activation',
-            orderMode ? (row['status'] == 'VERIFIED' ? 'Confirmed by backend' : 'Recorded by agent') : row['activation']?['status'] ?? 'Awaiting backend team',
+            orderMode
+                ? (row['status'] == 'VERIFIED'
+                      ? 'Confirmed by backend'
+                      : 'Recorded by agent')
+                : row['activation']?['status'] ?? 'Awaiting backend team',
           ),
         ],
       },
@@ -109,7 +113,10 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
             field('Order type', intake['order_type']),
             field('Account number', intake['account_number']),
             field('Router serial', intake['router_serial']),
-            field('Advance transaction number', intake['advance_transaction_number']),
+            field(
+              'Advance transaction number',
+              intake['advance_transaction_number'],
+            ),
             field('SR number', intake['sr_number']),
             field('Alternate contact number', intake['alternate_number']),
           ],
@@ -170,10 +177,13 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
             'Selfie',
             (intake['selfie_image'] ?? '').isNotEmpty ? 'Captured' : null,
           ),
-          if (intake['capture_mode'] != 'SCREENSHOT_ORDER') field(
-            'Customer signature',
-            (intake['signature'] as List? ?? []).isNotEmpty ? 'Captured' : null,
-          ),
+          if (intake['capture_mode'] != 'SCREENSHOT_ORDER')
+            field(
+              'Customer signature',
+              (intake['signature'] as List? ?? []).isNotEmpty
+                  ? 'Captured'
+                  : null,
+            ),
           field('Payment confirmation', 'Uploaded'),
           field('Verified by', row['review']?['reviewer']),
           field('Activation reference', row['activation']?['reference']),
@@ -198,6 +208,22 @@ class PaymentInvoiceSections extends StatefulWidget {
 
 class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
   bool expanded = false;
+
+  String displayValue(Map field) {
+    final value = field['value'] as String;
+    if ([
+      'Request ID',
+      'Invoice number',
+      'Payment reference',
+      'SIM serial',
+    ].contains(field['label'])) {
+      return value.replaceAllMapped(
+        RegExp(r'[-_/]'),
+        (match) => '${match[0]}\u200b',
+      );
+    }
+    return value;
+  }
 
   Widget section(Map section) => Container(
     margin: const EdgeInsets.only(top: 7),
@@ -240,9 +266,10 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  flex: 5,
+                  flex: 6,
                   child: Text(
-                    field['value'],
+                    displayValue(field),
+                    semanticsLabel: field['value'],
                     textAlign: TextAlign.right,
                     style: TextStyle(
                       fontSize: 12,
@@ -307,6 +334,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
       children: [
         for (final item in main) section(item),
         if (extra.isNotEmpty) ...[
+          const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: () => setState(() => expanded = !expanded),
             icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),

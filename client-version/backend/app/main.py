@@ -30,7 +30,7 @@ from .inventory_bulk import router as inventory_bulk_router
 from .branch_lifecycle import router as branch_lifecycle_router
 from .sim_scanning import router as sim_scanning_router
 from .transactions import router as transaction_router
-from .sales_management import router as sales_management_router
+from .sales_management import router as sales_management_router, scoped as scoped_sales
 from .field_assets import router as field_assets_router
 from .client_scope import configure as configure_client_scope
 
@@ -99,6 +99,20 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "X-Device-ID"],
 )
 limits = defaultdict(deque)
+MOBILE_DEMO_DEVICE = "Mobile web demo"
+MOBILE_DEMO_ACCOUNTS = {
+    "agent1@relay.demo": "Field Agent",
+    "agent2@relay.demo": "Field Agent",
+    "leader@relay.demo": "Team Leader",
+    "leader2@relay.demo": "Team Leader",
+    "admin@relay.demo": "Administrator",
+    "ops@relay.demo": "Operations Manager",
+    "compliance@relay.demo": "Compliance Officer",
+    "inventory@relay.demo": "Inventory Manager",
+    "salesmanager@relay.demo": "Sales Manager",
+    "tele@relay.demo": "Tele Verification Officer",
+    "welcome@relay.demo": "Welcome Call Officer",
+}
 
 
 @app.middleware("http")
@@ -112,7 +126,7 @@ async def safeguards(request: Request, call_next):
     key = (
         request.client.host if request.client else "",
         "login"
-        if request.url.path == "/api/auth/login"
+        if request.url.path in {"/api/auth/login", "/api/auth/mobile-demo/login"}
         else "session"
         if request.url.path.startswith("/api/auth")
         else "api",
@@ -144,6 +158,53 @@ class Refresh(BaseModel):
     refresh_token: str | None = Field(default=None, max_length=200)
 
 
+class MobileDemoLogin(BaseModel):
+    email: str = Field(min_length=1, max_length=180)
+
+
+def mobile_demo_password():
+    password = os.getenv("DEMO_PASSWORD", "")
+    if (
+        os.getenv("MOBILE_DEMO_LOGIN_ENABLED", "false").lower() != "true"
+        or not password.strip()
+        or len(password.encode()) > 72
+    ):
+        raise HTTPException(404, "Account selection is unavailable")
+    return password
+
+
+def account_can_sign_in(db, user):
+    agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
+    return (not agent or agent.employment_status == "ACTIVE") and bool(permissions(db, user))
+
+
+def complete_login(db, user, response, request, device, *, native=False, cookie=True):
+    agent_account = db.scalar(select(Agent).where(Agent.user_id == user.id))
+    if agent_account and agent_account.employment_status != "ACTIVE":
+        raise HTTPException(403, "This agent account is inactive. Contact your administrator.")
+    if not permissions(db, user):
+        raise HTTPException(403, "This account has no authorized workspace role")
+    access, refresh = issue(db, user, device)
+    audit(db, user, "Signed In", user.id, request=request)
+    db.commit()
+    if cookie:
+        response.set_cookie(
+            "relay_refresh",
+            refresh,
+            httponly=True,
+            secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+            or os.getenv("APP_ENV") == "production",
+            samesite="strict",
+            max_age=604800,
+            path="/api/auth",
+        )
+    return {
+        "access_token": access,
+        "user": user_view(db, user),
+        **({"refresh_token": refresh} if native else {}),
+    }
+
+
 @app.get("/api/health")
 def health(db=Depends(get_db)):
     db.execute(select(1))
@@ -159,29 +220,43 @@ def login(body: Login, response: Response, request: Request, db=Depends(get_db))
         or not bcrypt.checkpw(body.password.encode(), user.password_hash.encode())
     ):
         raise HTTPException(401, "Incorrect email or password")
-    agent_account = db.scalar(select(Agent).where(Agent.user_id == user.id))
-    if agent_account and agent_account.employment_status != "ACTIVE":
-        raise HTTPException(403, "This agent account is inactive. Contact your administrator.")
-    if not permissions(db, user):
-        raise HTTPException(403, "This account has no authorized workspace role")
-    access, refresh = issue(db, user, body.device)
-    audit(db, user, "Signed In", user.id, request=request)
-    db.commit()
-    response.set_cookie(
-        "relay_refresh",
-        refresh,
-        httponly=True,
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
-        or os.getenv("APP_ENV") == "production",
-        samesite="strict",
-        max_age=604800,
-        path="/api/auth",
+    return complete_login(db, user, response, request, body.device, native=body.native)
+
+
+@app.get("/api/auth/mobile-demo/accounts")
+def mobile_demo_accounts(db=Depends(get_db)):
+    mobile_demo_password()
+    rows = []
+    for user, role in db.execute(
+        select(User, Role).join(Role, Role.id == User.role_id)
+        .where(User.email.in_(MOBILE_DEMO_ACCOUNTS))
+    ):
+        if MOBILE_DEMO_ACCOUNTS[user.email] != role.name or not account_can_sign_in(db, user):
+            continue
+        branch = db.get(Branch, user.branch_id) if user.branch_id else None
+        rows.append({"email": user.email, "name": user.name, "role": role.name,
+                     "branch": branch.name if branch else ""})
+    return sorted(rows, key=lambda row: (row["role"], row["name"]))
+
+
+@app.post("/api/auth/mobile-demo/login")
+def mobile_demo_login(body: MobileDemoLogin, response: Response, request: Request, db=Depends(get_db)):
+    password = mobile_demo_password()
+    email = body.email.lower().strip()
+    expected_role = MOBILE_DEMO_ACCOUNTS.get(email)
+    user = db.scalar(select(User).where(User.email == email)) if expected_role else None
+    role = db.get(Role, user.role_id) if user else None
+    if (
+        not user
+        or not role
+        or role.name != expected_role
+        or not account_can_sign_in(db, user)
+        or not bcrypt.checkpw(password.encode(), user.password_hash.encode())
+    ):
+        raise HTTPException(401, "This account is unavailable")
+    return complete_login(
+        db, user, response, request, MOBILE_DEMO_DEVICE, native=True, cookie=False
     )
-    return {
-        "access_token": access,
-        "user": user_view(db, user),
-        **({"refresh_token": refresh} if body.native else {}),
-    }
 
 
 @app.post("/api/auth/refresh")
@@ -201,16 +276,19 @@ def refresh(body: Refresh, request: Request, response: Response, db=Depends(get_
     replacement = secrets.token_urlsafe(48)
     session.refresh_hash = digest(replacement)
     db.commit()
-    response.set_cookie(
-        "relay_refresh",
-        replacement,
-        httponly=True,
-        secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
-        or os.getenv("APP_ENV") == "production",
-        samesite="strict",
-        max_age=604800,
-        path="/api/auth",
-    )
+    # The phone-framed demo uses its own token storage; its session must never
+    # overwrite a web portal refresh cookie in the same browser.
+    if session.device != MOBILE_DEMO_DEVICE:
+        response.set_cookie(
+            "relay_refresh",
+            replacement,
+            httponly=True,
+            secure=os.getenv("COOKIE_SECURE", "false").lower() == "true"
+            or os.getenv("APP_ENV") == "production",
+            samesite="strict",
+            max_age=604800,
+            path="/api/auth",
+        )
     return {
         "access_token": tokens(user, session),
         "user": user_view(db, user),
@@ -223,10 +301,12 @@ def logout(request: Request, response: Response, user=Depends(principal), db=Dep
     token = jwt.decode(
         request.headers["authorization"].split()[1], SECRET, algorithms=["HS256"], audience="relay"
     )
-    db.get(Session, token["sid"]).revoked = True
+    session = db.get(Session, token["sid"])
+    session.revoked = True
     audit(db, user, "Signed Out", user.id, request=request)
     db.commit()
-    response.delete_cookie("relay_refresh", path="/api/auth")
+    if session.device != MOBILE_DEMO_DEVICE:
+        response.delete_cookie("relay_refresh", path="/api/auth")
     return {"ok": True}
 
 
@@ -278,11 +358,21 @@ def records(resource, db, user, branch_id=""):
         branches = set(agent_branches.values())
         if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer"}:
             branches = set(db.scalars(select(Branch.id)))
+        completed_query = scoped_sales(db, user, SalesRecord).where(SalesRecord.status == "CLOSED")
+        if branch_id:
+            completed_query = completed_query.where(SalesRecord.branch_id == branch_id)
+        completed_sales = db.execute(completed_query.with_only_columns(SalesRecord.branch_id, SalesRecord.created_at)).all()
+        # Current sales retain the branch and supervision saved at submission.
+        # Keep legacy activations separate instead of relabelling that count.
+        branches.update(sale_branch for sale_branch, _ in completed_sales)
         if branch_id:
             branches.intersection_update({branch_id})
         visible_orders = db.scalars(select(Order).where(Order.agent_id.in_(ids))).all()
         today = business_date()
-        totals = defaultdict(lambda: {"agents": 0, "target": 0, "today": 0, "activations": 0})
+        totals = defaultdict(lambda: {"agents": 0, "target": 0, "today": 0, "activations": 0, "closed_sales": 0, "closed_today": 0})
+        for sale_branch, recorded_at in completed_sales:
+            totals[sale_branch]["closed_sales"] += 1
+            totals[sale_branch]["closed_today"] += business_date(recorded_at) == today
         for agent in agents:
             bucket = totals[agent_branches[agent.id]]
             bucket["agents"] += 1

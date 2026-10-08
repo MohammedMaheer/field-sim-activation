@@ -1048,9 +1048,9 @@ const configs: Record<
     columns: [
       { key: "name", label: "Branch" },
       { key: "agents", label: "Agents" },
-      { key: "today", label: "Sales today" },
+      { key: "closed_today", label: "Sales today" },
       { key: "target", label: "Target" },
-      { key: "activations", label: "Completed sales" },
+      { key: "closed_sales", label: "Completed sales" },
     ],
   },
   orders: {
@@ -1260,8 +1260,8 @@ function BranchDrawer({ branch, onClose }: { branch: Row; onClose: () => void })
           branch: branch.name,
           agents: branch.agents,
           daily_target: branch.target,
-          sales_today: branch.today,
-          completed_sales: branch.activations,
+          sales_today: branch.closed_today,
+          completed_sales: branch.closed_sales,
         }}
       />
       {isPending ? (

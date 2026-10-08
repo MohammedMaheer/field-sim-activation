@@ -24,15 +24,51 @@ void main() async {
   );
 }
 
-// The phone demo signs in normally and uses the same role-scoped backend.
-// Only its capture shortcuts use synthetic images; no credentials are embedded.
+// The phone demo selects explicitly enabled sample accounts on the server.
+// Sessions and capture shortcuts still use the shared role-scoped API.
 class SharedPreviewService extends RelayService {
   String? sampleReference;
-  SharedPreviewService() {
-    dio.options.baseUrl = Uri.base.resolve('/api').toString();
+  SharedPreviewService({String? baseUrl}) {
+    dio.options.baseUrl = baseUrl ?? Uri.base.resolve('/api').toString();
   }
   @override
   bool get isPreview => true;
+  @override
+  bool get hasAccountPicker => true;
+  @override
+  String get refreshStorageKey => 'relay_mobile_demo_refresh_v1';
+  @override
+  Future<void> initialize() async {
+    // Old preview sessions used native login and could replace portal cookies.
+    // Discard that browser token locally; never refresh or revoke it remotely.
+    await store.secure.delete(key: 'relay_refresh');
+    await super.initialize();
+  }
+
+  @override
+  Future<List<Json>> signInAccounts() async {
+    final response = await dio.get('/auth/mobile-demo/accounts');
+    return (response.data as List)
+        .map((value) => Map<String, dynamic>.from(value))
+        .toList();
+  }
+
+  @override
+  Future<void> login(String email, String password) async {
+    final response = await dio.post(
+      '/auth/mobile-demo/login',
+      data: {'email': email},
+    );
+    access = response.data['access_token'];
+    user = Map<String, dynamic>.from(response.data['user']);
+    await store.secure.write(
+      key: refreshStorageKey,
+      value: response.data['refresh_token'],
+    );
+    await sync();
+    notifyListeners();
+  }
+
   @override
   Future<Uint8List> previewIdentity() async =>
       (await rootBundle.load('assets/demo/identity.png')).buffer.asUint8List();

@@ -24,6 +24,8 @@ class KycCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
+  static const connectionWarning =
+      'Cannot reach the backend. Your saved screenshot remains on this device.';
   late final RelayService capturedService;
   final source = TextEditingController();
   final formKey = GlobalKey();
@@ -149,14 +151,14 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             }
           }
           loading = false;
+          if (error == connectionWarning) error = null;
         });
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           loading = false;
-          error =
-              'Cannot reach the backend. Your saved screenshot remains on this device.';
+          error = connectionWarning;
         });
       }
     }
@@ -402,6 +404,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                   dirty = true;
                 }),
               ),
+              const SizedBox(height: 12),
               TextFormField(
                 initialValue: field['value'],
                 readOnly: !editable,
@@ -486,9 +489,12 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         ),
       );
     }
-    final canWrite = (ref.watch(serviceProvider).user?['permissions'] as List? ?? []).contains('ekyc.write');
+    final canWrite =
+        (ref.watch(serviceProvider).user?['permissions'] as List? ?? [])
+            .contains('ekyc.write');
     final editable =
-        canWrite && capture != null &&
+        canWrite &&
+        capture != null &&
         ['EXTRACTED', 'VALIDATED', 'REJECTED'].contains(capture!['status']);
     if (!loading && capture == null && !intakeReady) {
       return CustomerIntakeScreen(
@@ -833,7 +839,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 6),
                     const Text(
                       'PNG or JPEG · up to 4 MB',
                       style: TextStyle(fontSize: 13, color: Color(0xFF596675)),
@@ -909,8 +915,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         ),
                       ],
                     ),
+                    const SizedBox(height: 12),
                     if (bytes != null) ...[
-                      gap(),
                       Image.memory(
                         bytes!,
                         height: 180,

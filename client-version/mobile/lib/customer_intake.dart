@@ -833,9 +833,20 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 'expiry_date',
                 'document_image',
               ]
-            : ['order_image', 'order_reference', 'plan_id', 'msisdn', 'order_type', if (data['order_type'] == 'HW') 'router_serial'];
+            : [
+                'order_image',
+                'order_reference',
+                'plan_id',
+                'msisdn',
+                'order_type',
+                if (data['order_type'] == 'HW') 'router_serial',
+              ];
         final missingFields = required
-            .where((k) => (data[k] ?? '').toString().trim().isEmpty || (k == 'order_type' && data[k] == 'UNSPECIFIED'))
+            .where(
+              (k) =>
+                  (data[k] ?? '').toString().trim().isEmpty ||
+                  (k == 'order_type' && data[k] == 'UNSPECIFIED'),
+            )
             .toSet();
         if (missingFields.isNotEmpty) {
           await showMissing(missingFields);
@@ -932,27 +943,32 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     TextInputType? keyboardType,
   }) => Padding(
     key: fieldAnchors.putIfAbsent(key, GlobalKey.new),
-    padding: const EdgeInsets.only(bottom: 7),
+    padding: const EdgeInsets.only(bottom: 12),
     child: TextFormField(
       key: ValueKey('$key-$revision-${date ? data[key] : ''}'),
       focusNode: fieldFocus.putIfAbsent(key, FocusNode.new),
       initialValue: data[key] ?? '',
       readOnly: date || locked,
       keyboardType: keyboardType,
-      style: date ? const TextStyle(fontSize: 14) : null,
+      style: const TextStyle(fontSize: 14, height: 1.25),
+      maxLines: locked && ['package_name', 'order_reference'].contains(key)
+          ? null
+          : key == 'name'
+          ? 2
+          : 1,
       decoration: InputDecoration(
         labelText: label,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 13,
-          vertical: 13,
+          vertical: 12,
         ),
         errorText: missing.contains(key) ? 'Required' : null,
         suffixIcon: date ? const Icon(Icons.calendar_month, size: 18) : null,
         suffixIconConstraints: date
             ? const BoxConstraints(minWidth: 32, minHeight: 40)
             : null,
-        labelStyle: date ? const TextStyle(fontSize: 13) : null,
+        labelStyle: const TextStyle(fontSize: 13),
       ),
       onTap: !date
           ? null
@@ -974,7 +990,14 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       leading: const WorkspaceBackButton(),
-      title: const Text('New transaction'),
+      leadingWidth: MediaQuery.sizeOf(context).width < 340 ? 48 : null,
+      titleSpacing: MediaQuery.sizeOf(context).width < 340 ? 8 : null,
+      title: Text(
+        'New transaction',
+        style: TextStyle(
+          fontSize: MediaQuery.sizeOf(context).width < 340 ? 18 : null,
+        ),
+      ),
       actions: [
         TextButton(
           onPressed: busy ? null : widget.onHistory,
@@ -1040,10 +1063,14 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
             children: [
               for (int i = 0; i < 3; i++)
                 Expanded(
+                  flex: [11, 15, 10][i],
                   child: AnimatedContainer(
                     duration: motionDuration(context),
-                    margin: const EdgeInsets.all(3),
-                    padding: const EdgeInsets.symmetric(vertical: 9),
+                    margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 11,
+                    ),
                     decoration: BoxDecoration(
                       gradient: i == step ? RelayPalette.hero : null,
                       color: i == step
@@ -1055,14 +1082,18 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                             ][i],
                       borderRadius: BorderRadius.circular(10),
                     ),
-                    child: Text(
-                      '${i + 1}. ${['Customer', 'Order & plan', 'Payment'][i]}',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: i == step
-                            ? Colors.white
-                            : const Color(0xff583186),
-                        fontWeight: FontWeight.bold,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '${i + 1}. ${['Customer', 'Order & plan', 'Payment'][i]}',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: i == step
+                              ? Colors.white
+                              : const Color(0xff583186),
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
@@ -1151,7 +1182,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             ...[
               Text(
                 'Document · ${data['document_type'] == 'Passport' ? 'Passport' : 'Emirates ID'}',
@@ -1174,6 +1205,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                         ],
                       )
                     : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: field(
@@ -1273,18 +1305,64 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               ],
             ),
             ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               DropdownButtonFormField<String>(
-                key: ValueKey('order-type-${data['order_type'] ?? ''}-$revision'),
-                initialValue: const ['NEW', 'MNP', 'P2P', 'HW', 'ELIFE', 'WASEL', 'VISITOR'].contains(data['order_type']) ? data['order_type'] : null,
+                key: ValueKey(
+                  'order-type-${data['order_type'] ?? ''}-$revision',
+                ),
+                initialValue:
+                    const [
+                      'NEW',
+                      'MNP',
+                      'P2P',
+                      'HW',
+                      'ELIFE',
+                      'WASEL',
+                      'VISITOR',
+                    ].contains(data['order_type'])
+                    ? data['order_type']
+                    : null,
                 isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Order type', isDense: true),
-                items: [for (final entry in const {'NEW':'New postpaid', 'MNP':'Number transfer', 'P2P':'Prepaid to postpaid', 'HW':'Home wireless', 'ELIFE':'eLife', 'WASEL':'Wasel / prepaid', 'VISITOR':'Visitor'}.entries) DropdownMenuItem(value: entry.key, child: Text(entry.value))],
-                onChanged: busy ? null : (value) => setState(() {data['order_type'] = value; missing.remove('order_type');}),
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.25,
+                  color: Color(0xff25283d),
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Order type',
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 12,
+                  ),
+                  labelStyle: TextStyle(fontSize: 13),
+                ),
+                items: [
+                  for (final entry in const {
+                    'NEW': 'New postpaid',
+                    'MNP': 'Number transfer',
+                    'P2P': 'Prepaid to postpaid',
+                    'HW': 'Home wireless',
+                    'ELIFE': 'eLife',
+                    'WASEL': 'Wasel / prepaid',
+                    'VISITOR': 'Visitor',
+                  }.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                ],
+                onChanged: busy
+                    ? null
+                    : (value) => setState(() {
+                        data['order_type'] = value;
+                        missing.remove('order_type');
+                      }),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               field('package_name', 'Package name', locked: true),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: field('order_reference', 'Request ID', locked: true),
@@ -1296,6 +1374,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 ],
               ),
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Expanded(
                     child: field(
@@ -1320,9 +1399,19 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                     ? data['plan_id']
                     : null,
                 isExpanded: true,
+                style: const TextStyle(
+                  fontSize: 14,
+                  height: 1.25,
+                  color: Color(0xff25283d),
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Subscriber plan',
                   isDense: true,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 13,
+                    vertical: 12,
+                  ),
+                  labelStyle: TextStyle(fontSize: 13),
                 ),
                 items: [
                   for (final p in plans)
@@ -1344,15 +1433,40 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   });
                 },
               ),
-              if (data['order_type'] == 'HW') field('router_serial', 'Router serial'),
+              const SizedBox(height: 12),
+              if (data['order_type'] == 'HW')
+                field('router_serial', 'Router serial'),
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
-                title: const Text('Additional sale details', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                title: const Text(
+                  'Additional sale details',
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                ),
                 children: [
-                  Row(children: [Expanded(child: field('account_number', 'Account number')), const SizedBox(width: 8), Expanded(child: field('sim_identifier', 'SIM serial'))]),
-                  if (data['order_type'] != 'HW') field('router_serial', 'Router serial'),
-                  Row(children: [Expanded(child: field('sr_number', 'SR number')), const SizedBox(width: 8), Expanded(child: field('alternate_number', 'Alternate number'))]),
-                  field('advance_transaction_number', 'Advance transaction number'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: field('account_number', 'Account number'),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(child: field('sim_identifier', 'SIM serial')),
+                    ],
+                  ),
+                  if (data['order_type'] != 'HW')
+                    field('router_serial', 'Router serial'),
+                  Row(
+                    children: [
+                      Expanded(child: field('sr_number', 'SR number')),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: field('alternate_number', 'Alternate number'),
+                      ),
+                    ],
+                  ),
+                  field(
+                    'advance_transaction_number',
+                    'Advance transaction number',
+                  ),
                 ],
               ),
             ],

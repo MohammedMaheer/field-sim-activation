@@ -2260,7 +2260,8 @@ def test_unrecognized_role_fails_closed_even_with_old_read_grant(client):
 def test_every_private_endpoint_has_authentication_dependency():
     from fastapi.routing import APIRoute
     from app.security import principal
-    public = {"/api/health", "/api/auth/login", "/api/auth/refresh", "/api/public/plans"}
+    public = {"/api/health", "/api/auth/login", "/api/auth/refresh", "/api/public/plans",
+              "/api/auth/mobile-demo/accounts", "/api/auth/mobile-demo/login"}
     def authenticated(dependency):
         return dependency.call is principal or any(authenticated(child) for child in dependency.dependencies)
     routes = [route for route in app.routes if isinstance(route, APIRoute)]
@@ -2593,3 +2594,210 @@ def test_lifecycle_locks_refresh_cached_agent_and_branch(client):
             active_branch(cached, branch)
         assert closing.value.status_code == 409
         assert previous_branch.lifecycle_status == 'CLOSING'
+
+
+@pytest.fixture
+def mobile_demo_enabled(monkeypatch):
+    monkeypatch.setenv("MOBILE_DEMO_LOGIN_ENABLED", "true")
+    monkeypatch.setenv("DEMO_PASSWORD", "test-client-password")
+
+
+@pytest.mark.parametrize("flag,password", [
+    (None, "test-client-password"), ("false", "test-client-password"),
+    ("true", None), ("true", "  "), ("true", "x" * 73),
+])
+def test_mobile_demo_requires_explicit_flag_and_valid_server_secret(client, monkeypatch, flag, password):
+    from app.db import Session
+    for key, value in [("MOBILE_DEMO_LOGIN_ENABLED", flag), ("DEMO_PASSWORD", password)]:
+        if value is None:
+            monkeypatch.delenv(key, raising=False)
+        else:
+            monkeypatch.setenv(key, value)
+    with DB() as db:
+        before = len(db.scalars(select(Session)).all())
+    assert client.get("/api/auth/mobile-demo/accounts").status_code == 404
+    assert client.post("/api/auth/mobile-demo/login", json={"email": "agent1@relay.demo"}).status_code == 404
+    with DB() as db:
+        assert len(db.scalars(select(Session)).all()) == before
+    # Existing account passwords remain valid even when selection is disabled.
+    assert login(client, "agent1")["user"]["role"] == "Field Agent"
+
+
+def test_mobile_demo_account_picker_is_curated_and_has_no_credentials(client, mobile_demo_enabled):
+    from app.db import Branch, User
+    response = client.get("/api/auth/mobile-demo/accounts")
+    assert response.status_code == 200
+    rows = response.json()
+    addresses = {row["email"] for row in rows}
+    assert {"agent1@relay.demo", "leader2@relay.demo", "admin@relay.demo", "compliance@relay.demo"} <= addresses
+    assert "agent3@relay.demo" not in addresses and "cluster@relay.demo" not in addresses
+    assert len(addresses) <= 11
+    assert "test-client-password" not in response.text and "password_hash" not in response.text
+    for row in rows:
+        assert set(row) == {"email", "name", "role", "branch"}
+        with DB() as db:
+            user = db.scalar(select(User).where(User.email == row["email"]))
+            branch = db.get(Branch, user.branch_id) if user.branch_id else None
+            assert row["name"] == user.name
+            assert row["branch"] == (branch.name if branch else "")
+    assert "set-cookie" not in response.headers
+
+
+@pytest.mark.parametrize("email", ["agent3@relay.demo", "cluster@relay.demo", "unknown@relay.demo", "admin@example.com"])
+def test_mobile_demo_rejects_arbitrary_accounts(client, mobile_demo_enabled, email):
+    assert client.post("/api/auth/mobile-demo/login", json={"email": email}).status_code == 401
+
+
+@pytest.mark.parametrize("account,role", [
+    ("agent1", "Field Agent"), ("agent2", "Field Agent"),
+    ("leader", "Team Leader"), ("leader2", "Team Leader"),
+    ("admin", "Administrator"), ("ops", "Operations Manager"),
+    ("compliance", "Compliance Officer"), ("inventory", "Inventory Manager"),
+    ("salesmanager", "Sales Manager"), ("tele", "Tele Verification Officer"),
+    ("welcome", "Welcome Call Officer"),
+])
+def test_mobile_demo_session_uses_existing_role_permissions(client, mobile_demo_enabled, account, role):
+    from app.db import Session
+    from app.security import digest
+    response = client.post("/api/auth/mobile-demo/login", json={"email": account + "@relay.demo"})
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert data["access_token"] and data["refresh_token"]
+    assert data["user"]["email"] == account + "@relay.demo" and data["user"]["role"] == role
+    assert "test-client-password" not in response.text and "set-cookie" not in response.headers
+    client.headers["Authorization"] = "Bearer " + data["access_token"]
+    assert client.get("/api/auth/me").json() == data["user"]
+    assert client.get("/api/organization").status_code == (200 if account in {"admin", "ops"} else 403)
+    with DB() as db:
+        session = db.scalar(select(Session).where(Session.refresh_hash == digest(data["refresh_token"])))
+        assert session.device == "Mobile web demo"
+    if role == "Field Agent":
+        members = client.get("/api/resources/agents").json()
+        assert [member["id"] for member in members] == [data["user"]["agent_id"]]
+
+
+def test_mobile_demo_rechecks_expected_role_and_active_employment(client, mobile_demo_enabled):
+    from app.db import User, Role
+    with DB() as db:
+        admin = db.scalar(select(User).where(User.email == "admin@relay.demo"))
+        previous_role = admin.role_id
+        admin.role_id = db.scalar(select(Role.id).where(Role.name == "Field Agent"))
+        agent = db.scalar(select(Agent).join(User, Agent.user_id == User.id).where(User.email == "agent1@relay.demo"))
+        previous_status = agent.employment_status
+        agent.employment_status = "EXITED"
+        db.commit()
+        admin_id, agent_id = admin.id, agent.id
+    try:
+        rows = client.get("/api/auth/mobile-demo/accounts").json()
+        assert not any(row["email"] in {"admin@relay.demo", "agent1@relay.demo"} for row in rows)
+        for account in ["admin", "agent1"]:
+            assert client.post("/api/auth/mobile-demo/login", json={"email": account + "@relay.demo"}).status_code == 401
+    finally:
+        with DB() as db:
+            db.get(User, admin_id).role_id = previous_role
+            db.get(Agent, agent_id).employment_status = previous_status
+            db.commit()
+
+
+def test_mobile_demo_requires_matching_server_password(client, mobile_demo_enabled, monkeypatch):
+    monkeypatch.setenv("DEMO_PASSWORD", "different-server-password")
+    response = client.post("/api/auth/mobile-demo/login", json={"email": "agent1@relay.demo"})
+    assert response.status_code == 401 and "set-cookie" not in response.headers
+    assert "different-server-password" not in response.text
+
+
+def test_mobile_demo_login_refresh_logout_leave_web_portal_cookie_unchanged(client, mobile_demo_enabled):
+    web = client.post("/api/auth/login", json={"email": "admin@relay.demo", "password": "test-client-password"})
+    assert web.status_code == 200 and "refresh_token" not in web.json()
+    portal_cookie = client.cookies.get("relay_refresh")
+    assert portal_cookie and "set-cookie" in web.headers
+    demo = client.post("/api/auth/mobile-demo/login", json={"email": "agent1@relay.demo"})
+    assert demo.status_code == 200 and "set-cookie" not in demo.headers
+    assert client.cookies.get("relay_refresh") == portal_cookie
+    refreshed = client.post("/api/auth/refresh", json={"refresh_token": demo.json()["refresh_token"]})
+    assert refreshed.status_code == 200 and "set-cookie" not in refreshed.headers
+    assert refreshed.json()["refresh_token"] != demo.json()["refresh_token"]
+    assert client.cookies.get("relay_refresh") == portal_cookie
+    demo_access = refreshed.json()["access_token"]
+    signed_out = client.post("/api/auth/logout", headers={"Authorization": "Bearer " + demo_access})
+    assert signed_out.status_code == 200 and "set-cookie" not in signed_out.headers
+    assert client.cookies.get("relay_refresh") == portal_cookie
+    assert client.get("/api/auth/me", headers={"Authorization": "Bearer " + demo_access}).status_code == 401
+    assert client.post("/api/auth/refresh", json={"refresh_token": refreshed.json()["refresh_token"]}).status_code == 401
+    # The independent admin session still refreshes normally from its cookie.
+    portal = client.post("/api/auth/refresh", json={})
+    assert portal.status_code == 200 and portal.json()["user"]["role"] == "Administrator"
+    assert "set-cookie" in portal.headers and "refresh_token" not in portal.json()
+
+
+def test_mobile_demo_preserves_cross_origin_guard(client, mobile_demo_enabled):
+    response = client.post("/api/auth/mobile-demo/login", json={"email": "agent1@relay.demo"},
+                           headers={"Origin": "https://unrelated.example"})
+    assert response.status_code == 403 and "set-cookie" not in response.headers
+
+
+def test_mobile_demo_shares_existing_login_rate_limit(client, mobile_demo_enabled):
+    for _ in range(30):
+        assert client.post("/api/auth/mobile-demo/login", json={"email": "unknown@relay.demo"}).status_code == 401
+    limited = client.post("/api/auth/mobile-demo/login", json={"email": "agent1@relay.demo"})
+    assert limited.status_code == 429 and limited.headers["Retry-After"] == "60"
+    assert client.post("/api/auth/login", json={"email": "agent1@relay.demo", "password": "test-client-password"}).status_code == 429
+
+
+def test_branch_completed_sales_keep_scopes_and_saved_branch_after_transfer(client):
+    from app.db import SalesRecord, Outlet, User
+    from uuid import uuid4
+
+    def counts(account):
+        login(client, account)
+        response = client.get('/api/resources/branches')
+        assert response.status_code == 200
+        return {row['id']: (row['closed_sales'], row['closed_today']) for row in response.json()}
+
+    with DB() as db:
+        agent = db.scalar(select(Agent).join(User, User.id == Agent.user_id).where(User.email == 'agent1@relay.demo'))
+        old_outlet = agent.outlet_id
+        old_branch = db.get(Outlet, old_outlet).branch_id
+        other = next(a for a in db.scalars(select(Agent))
+                     if db.get(Outlet, a.outlet_id).branch_id != old_branch)
+        other_branch = db.get(Outlet, other.outlet_id).branch_id
+        old_leader = agent.leader_id
+        leader_account = db.get(User, old_leader).email.split('@')[0]
+        agent_id, other_id, other_outlet = agent.id, other.id, other.outlet_id
+    before_admin, before_agent, before_leader = counts('admin'), counts('agent1'), counts(leader_account)
+    identifiers = []
+    try:
+        with DB() as db:
+            for who, branch, outlet, leader, status in [
+                (agent_id, old_branch, old_outlet, old_leader, 'CLOSED'),
+                (agent_id, old_branch, old_outlet, old_leader, 'IN_PROGRESS'),
+                (other_id, other_branch, other_outlet, db.get(Agent, other_id).leader_id, 'CLOSED'),
+            ]:
+                sale = SalesRecord(id=str(uuid4()), agent_id=who, branch_id=branch,
+                                   outlet_id=outlet, leader_id=leader, order_type='NEW',
+                                   customer_name='Branch metric fixture', status=status)
+                db.add(sale)
+                identifiers.append(sale.id)
+            db.get(Agent, agent_id).outlet_id = other_outlet
+            db.commit()
+        after_admin = counts('admin')
+        assert after_admin[old_branch] == tuple(value + 1 for value in before_admin[old_branch])
+        assert after_admin[other_branch] == tuple(value + 1 for value in before_admin[other_branch])
+        after_agent = counts('agent1')
+        assert after_agent[old_branch] == tuple(value + 1 for value in before_agent.get(old_branch, (0, 0)))
+        assert after_agent.get(other_branch, (0, 0)) == before_agent.get(other_branch, (0, 0))
+        filtered = client.get('/api/resources/branches', params={'branch_id': old_branch}).json()
+        assert len(filtered) == 1 and filtered[0]['closed_sales'] == after_agent[old_branch][0]
+        assert filtered[0]['closed_today'] == after_agent[old_branch][1]
+        assert 'activations' in filtered[0]
+        after_leader = counts(leader_account)
+        assert after_leader[old_branch] == tuple(value + 1 for value in before_leader.get(old_branch, (0, 0)))
+        assert after_leader.get(other_branch, (0, 0)) == before_leader.get(other_branch, (0, 0))
+    finally:
+        with DB() as db:
+            db.get(Agent, agent_id).outlet_id = old_outlet
+            for identifier in identifiers:
+                sale = db.get(SalesRecord, identifier)
+                if sale:
+                    db.delete(sale)
+            db.commit()

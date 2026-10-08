@@ -271,6 +271,45 @@ class _LoginState extends ConsumerState<LoginScreen> {
       password = TextEditingController();
   bool busy = false;
   String? error;
+  List<Json>? accounts;
+  String? selectedAccount;
+  @override
+  void initState() {
+    super.initState();
+    if (ref.read(serviceProvider).hasAccountPicker) loadAccounts();
+  }
+
+  Future<void> loadAccounts() async {
+    setState(() {
+      error = null;
+      accounts = null;
+      selectedAccount = null;
+    });
+    try {
+      final values = await ref.read(serviceProvider).signInAccounts();
+      if (!mounted) return;
+      setState(() {
+        accounts = values;
+        selectedAccount = values.any((row) => row['email'] == email.text)
+            ? email.text
+            : values.firstOrNull?['email'];
+        if (values.isEmpty) error = 'No accounts available.';
+      });
+    } catch (e) {
+      if (mounted) setState(() => error = friendlyError(e));
+    }
+  }
+
+  String accountLabel(Json account) {
+    final role = switch (account['role']) {
+      'Field Agent' => 'Agent',
+      'Team Leader' => 'Branch leader',
+      'Tele Verification Officer' => 'Tele verification',
+      'Welcome Call Officer' => 'Welcome calls',
+      _ => account['role'],
+    };
+    return '$role · ${account['name']}';
+  }
   @override
   void dispose() {
     email.dispose();
@@ -320,17 +359,92 @@ class _LoginState extends ConsumerState<LoginScreen> {
                   style: TextStyle(color: muted),
                 ),
                 const SizedBox(height: 32),
-                TextField(
-                  controller: email,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(labelText: 'Work email'),
-                ),
-                const SizedBox(height: 18),
-                TextField(
-                  controller: password,
-                  obscureText: true,
-                  decoration: const InputDecoration(labelText: 'Password'),
-                ),
+                if (ref.read(serviceProvider).hasAccountPicker) ...[
+                  if (accounts != null && accounts!.isNotEmpty)
+                    DropdownButtonFormField<String>(
+                      initialValue: selectedAccount,
+                      isExpanded: true,
+                      itemHeight: 64,
+                      menuMaxHeight: 360,
+                      decoration: const InputDecoration(
+                        labelText: 'Account',
+                        prefixIcon: Icon(Icons.person_outline),
+                      ),
+                      selectedItemBuilder: (_) => accounts!.map((account) {
+                        return Text(
+                          accountLabel(account),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14),
+                        );
+                      }).toList(),
+                      items: accounts!.map((account) {
+                        return DropdownMenuItem<String>(
+                          value: account['email'],
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                accountLabel(account),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                account['email'],
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                      onChanged: busy
+                          ? null
+                          : (value) => setState(() {
+                              selectedAccount = value;
+                              error = null;
+                            }),
+                    )
+                  else if (error == null)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 18),
+                      child: LinearProgressIndicator(),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: loadAccounts,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Try again'),
+                    ),
+                  if (selectedAccount != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      selectedAccount!,
+                      style: const TextStyle(fontSize: 13, color: muted),
+                    ),
+                  ],
+                ] else ...[
+                  TextField(
+                    controller: email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(labelText: 'Work email'),
+                  ),
+                  const SizedBox(height: 18),
+                  TextField(
+                    controller: password,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Password'),
+                  ),
+                ],
                 const SizedBox(height: 22),
                 if (error != null)
                   Padding(
@@ -341,14 +455,23 @@ class _LoginState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 FilledButton(
-                  onPressed: busy
+                  onPressed: busy ||
+                          (ref.read(serviceProvider).hasAccountPicker &&
+                              selectedAccount == null)
                       ? null
                       : () async {
-                          setState(() => busy = true);
+                          setState(() {
+                            busy = true;
+                            error = null;
+                          });
                           try {
+                            final demo = ref.read(serviceProvider).hasAccountPicker;
                             await ref
                                 .read(serviceProvider)
-                                .login(email.text.trim(), password.text);
+                                .login(
+                                  demo ? selectedAccount! : email.text.trim(),
+                                  demo ? '' : password.text,
+                                );
                           } catch (e) {
                             if (mounted) {
                               setState(() => error = friendlyError(e));

@@ -121,6 +121,9 @@ class OfflineStore {
 
 class RelayService extends ChangeNotifier {
   bool get isPreview => false;
+  bool get hasAccountPicker => false;
+  String get refreshStorageKey => 'relay_refresh';
+  Future<List<Json>> signInAccounts() async => [];
   Future<Uint8List?> previewReceipt({String? reference}) async => null;
   Future<Uint8List?> previewIdentity() async => null;
   Future<Uint8List?> previewOrder() async => null;
@@ -205,7 +208,7 @@ class RelayService extends ChangeNotifier {
     access = r.data['access_token'];
     user = Map<String, dynamic>.from(r.data['user']);
     await store.secure.write(
-      key: 'relay_refresh',
+      key: refreshStorageKey,
       value: r.data['refresh_token'],
     );
     await sync();
@@ -215,13 +218,13 @@ class RelayService extends ChangeNotifier {
   Future<void> refresh() =>
       refreshing ??= _refresh().whenComplete(() => refreshing = null);
   Future<void> _refresh() async {
-    final token = await store.secure.read(key: 'relay_refresh');
+    final token = await store.secure.read(key: refreshStorageKey);
     if (token == null) throw StateError('Sign in required');
     final r = await dio.post('/auth/refresh', data: {'refresh_token': token});
     access = r.data['access_token'];
     user = Map<String, dynamic>.from(r.data['user']);
     await store.secure.write(
-      key: 'relay_refresh',
+      key: refreshStorageKey,
       value: r.data['refresh_token'],
     );
   }
@@ -232,7 +235,7 @@ class RelayService extends ChangeNotifier {
     } on DioException {
       // Local sign-out must remain available if the network or session expires.
     }
-    await store.secure.delete(key: 'relay_refresh');
+    await store.secure.delete(key: refreshStorageKey);
     await store.clear();
     access = null;
     user = null;
@@ -300,7 +303,10 @@ class RelayService extends ChangeNotifier {
     notifyListeners();
     try {
       await dio.get('/health');
-      if (['Tele Verification Officer', 'Welcome Call Officer'].contains(user?['role'])) {
+      if ([
+        'Tele Verification Officer',
+        'Welcome Call Officer',
+      ].contains(user?['role'])) {
         await dio.get('/sales-management/call-tasks');
         await dio.get('/notifications');
         online = true;

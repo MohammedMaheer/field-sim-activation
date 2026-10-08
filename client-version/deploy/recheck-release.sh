@@ -5,6 +5,7 @@ cd /opt/relay-client
 test "$(pwd -P)" = /opt/relay-client
 archive="${1:?Expected recheck release archive}"
 case "$archive" in /opt/relay-client/backups/recheck-release-*.tar.gz) test -s "$archive";; *) exit 2;; esac
+case "${ENABLE_MOBILE_DEMO_LOGIN:-false}" in true|false) ;; *) exit 2;; esac
 dc() { docker compose --env-file .env -f deploy/compose.yaml --project-directory . "$@"; }
 revision() { dc exec -T api python -m alembic current | tr -d '\r' | sed -nE 's/^([0-9]{3}).*/\1/p' | tail -n 1; }
 test "$(revision)" = 015
@@ -14,12 +15,12 @@ stage="$(mktemp -d /opt/relay-client/backups/recheck-stage.XXXXXX)"
 qa_db="relay_recheck_restore_$(date -u +%Y%m%d%H%M%S)"
 mkdir -m 700 "$backup"
 tar -xzf "$archive" -C "$stage"
-for file in backend/app/main.py backend/app/security.py backend/app/administration.py backend/app/field_assets.py backend/app/sales_management.py backend/app/branch_lifecycle.py web/dist/index.html web/dist/mobile-demo/index.html web/dist/mobile-demo/main.dart.js downloads/relay-client-scope.apk; do test -s "$stage/$file"; done
+for file in backend/app/main.py backend/app/client_scope.py backend/app/security.py backend/app/administration.py backend/app/field_assets.py backend/app/sales_management.py backend/app/branch_lifecycle.py web/dist/index.html web/dist/mobile-demo/index.html web/dist/mobile-demo/main.dart.js downloads/relay-client-scope.apk; do test -s "$stage/$file"; done
 grep -q 'Interactive phone' "$stage/web/dist/mobile-demo/index.html"
 grep -q 'flutter-host' "$stage/web/dist/mobile-demo/flutter_bootstrap.js"
 ! grep -q '{{flutter_js}}' "$stage/web/dist/mobile-demo/flutter_bootstrap.js"
 docker image tag relay-client-api:latest "relay-client-api:pre-recheck-$stamp"
-tar -czf "$backup/files.tar.gz" backend/app web/dist downloads/relay-client-scope.apk
+tar -czf "$backup/files.tar.gz" backend/app web/dist downloads/relay-client-scope.apk .env
 changed=0
 stopped=0
 rollback() {
@@ -39,7 +40,16 @@ rollback() {
 }
 trap rollback ERR
 changed=1
-for file in main.py security.py administration.py field_assets.py sales_management.py branch_lifecycle.py; do install -m 644 "$stage/backend/app/$file" "backend/app/$file"; done
+for file in main.py client_scope.py security.py administration.py field_assets.py sales_management.py branch_lifecycle.py; do install -m 644 "$stage/backend/app/$file" "backend/app/$file"; done
+
+# The public sample-account picker is an explicit evaluation-host opt-in.
+# Preserve all other settings and restore this file too if rollback is needed.
+if [ "${ENABLE_MOBILE_DEMO_LOGIN:-false}" = true ]; then
+  env_next="$(mktemp /opt/relay-client/.env-next.XXXXXX)"
+  awk 'BEGIN { found=0 } /^MOBILE_DEMO_LOGIN_ENABLED=/ { print "MOBILE_DEMO_LOGIN_ENABLED=true"; found=1; next } { print } END { if (!found) print "MOBILE_DEMO_LOGIN_ENABLED=true" }' .env > "$env_next"
+  chmod 600 "$env_next"
+  mv "$env_next" .env
+fi
 dc build api
 dc stop api
 stopped=1

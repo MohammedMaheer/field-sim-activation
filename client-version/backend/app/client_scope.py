@@ -21,6 +21,8 @@ REPORTS = {"daily", "monthly", "agent", "team", "ekyc", "branch", "inventory", "
 PATHS = {
     "/api/health",
     "/api/auth/login",
+    "/api/auth/mobile-demo/accounts",
+    "/api/auth/mobile-demo/login",
     "/api/auth/refresh",
     "/api/auth/logout",
     "/api/auth/me",
