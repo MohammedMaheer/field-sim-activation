@@ -9,7 +9,7 @@ class KycJourneyGuide extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final step = captureStage(status);
-    const titles = ['Customer', 'Order & plan', 'Payment'];
+    const titles = ['Customer', 'Order & plan', 'Submit sale'];
     return Card(
       clipBehavior: Clip.antiAlias,
       child: Container(

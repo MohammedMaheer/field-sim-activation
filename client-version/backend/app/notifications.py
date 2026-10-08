@@ -71,6 +71,20 @@ def feed(db, user):
         if role in {"Team Leader", "Branch Manager", "Sales Manager"}:
             result = [r for r in result if not r["id"].startswith("capture:")]
 
+    # SR findings stay visible even while a sale is activated or awaiting review.
+    if "Transactions" in allowed_categories:
+        from .sr_verification import SrNotice
+        from .sales_management import permitted
+        from .db import SalesRecord
+        for notice in db.scalars(select(SrNotice).where(SrNotice.user_id == user.id)
+                                 .order_by(SrNotice.created_at.desc()).limit(150)):
+            sale = db.get(SalesRecord, notice.sale_id)
+            if not sale or not permitted(db, user, sale):
+                continue
+            title = {"MATCHED": "SR verified", "MISMATCH": "SR mismatch", "PENDING_SR_VERIFICATION": "Pending SR verification"}[notice.status]
+            add(f"sr:{notice.id}", "Transactions", title, notice.reason,
+                notice.created_at, f"/sales?selected={sale.id}", f"/sales-management?selected={sale.id}", notice.status != "MATCHED")
+
     if granted & {"compliance.write", "call.tele.read", "call.welcome.read"}:
         from .sales_management import call_tasks
         for row in call_tasks(user, db):

@@ -210,6 +210,82 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
     }
   }
 
+  Future<void> deferTele(Json task) async {
+    final reason = TextEditingController();
+    final form = GlobalKey<FormState>();
+    final proceed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            18,
+            0,
+            18,
+            MediaQuery.viewInsetsOf(context).bottom + 18,
+          ),
+          child: SingleChildScrollView(
+            child: Form(
+              key: form,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Text(
+                    'Postpone tele-verification',
+                    style: RelayTypography.section,
+                  ),
+                  const SizedBox(height: 14),
+                  TextFormField(
+                    controller: reason,
+                    decoration: const InputDecoration(
+                      labelText: 'Technical reason',
+                    ),
+                    minLines: 2,
+                    maxLines: 3,
+                    maxLength: 300,
+                    validator: (value) => (value ?? '').trim().length < 5
+                        ? 'Enter a technical reason'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: () {
+                      if (form.currentState!.validate()) {
+                        Navigator.pop(context, true);
+                      }
+                    },
+                    child: const Text('Postpone to next day'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    final text = reason.text.trim();
+    reason.dispose();
+    if (proceed != true || !mounted) return;
+    try {
+      await ref
+          .read(serviceProvider)
+          .dio
+          .post(
+            '/sales-management/sales/${task['sale_id']}/calls/defer-tele',
+            data: {'reason': text},
+          );
+      await load();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(friendlyError(e))));
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
@@ -389,6 +465,22 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
                               'Last outcome: ${task['last_outcome'] ?? 'Not started'}',
                               style: RelayTypography.caption,
                             ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Due ${task['due_date'] ?? 'Not recorded'}${task['overdue'] == true ? ' · Overdue' : ''}${task['deferred'] == true ? ' · Postponed' : ''}',
+                              style: RelayTypography.caption.copyWith(
+                                color: task['overdue'] == true
+                                    ? const Color(0xffb42b46)
+                                    : const Color(0xff596675),
+                              ),
+                            ),
+                            if ((task['sequence_warning'] ?? '')
+                                .toString()
+                                .isNotEmpty)
+                              Text(
+                                '${task['sequence_warning']}',
+                                style: RelayTypography.caption,
+                              ),
                             const SizedBox(height: 12),
                             Wrap(
                               alignment: WrapAlignment.spaceBetween,
@@ -412,6 +504,16 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
                                     onPressed: () => record(task),
                                     icon: const Icon(Icons.call, size: 17),
                                     label: const Text('Record call'),
+                                  ),
+                                if (task['stage'] == 'TELE_VERIFICATION' &&
+                                    task['deferred'] != true &&
+                                    canRecordCall(
+                                      task,
+                                      ref.watch(serviceProvider).user,
+                                    ))
+                                  TextButton(
+                                    onPressed: () => deferTele(task),
+                                    child: const Text('Postpone to next day'),
                                   ),
                               ],
                             ),

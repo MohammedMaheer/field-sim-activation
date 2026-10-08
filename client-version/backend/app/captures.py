@@ -55,7 +55,7 @@ def access(db, user, write=False):
     allowed = {"activation.write", "ekyc.write"}
     if not write:
         allowed.add("compliance.write")
-    reporting_reader = not write and db.get(Role, user.role_id).name in {"Team Leader", "Branch Manager"}
+    reporting_reader = not write and db.get(Role, user.role_id).name in {"Team Leader", "Branch Manager", "Sales Manager"}
     if not reporting_reader and not permissions(db, user) & allowed:
         raise HTTPException(403, "Your role cannot access transaction captures")
 
@@ -91,8 +91,21 @@ def view(row, detail=True):
     result["activation"] = content.get("activation")
     if detail:
         result.update(content)
-        if result["document_kind"] == "PAYMENT_CONFIRMATION":
+        if result["document_kind"] in {"PAYMENT_CONFIRMATION", "SALE_SCREENSHOTS"}:
             result["invoice"] = invoice(row, content)
+    if (content.get("intake") or {}).get("capture_mode") == "SCREENSHOT_SALE":
+        from sqlalchemy.orm import object_session
+        from .sr_verification import sale_state
+        db = object_session(row)
+        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id)) if db else None
+        result["sr_verification"] = sale_state(db, sale) if sale else {"status": "PENDING_SR_VERIFICATION", "reason": "Daily SR report not checked"}
+        result["payment_record_status"] = "RECORDED" if (content.get("intake") or {}).get("payment_image") else "NOT_RECORDED"
+        if detail:
+            result["invoice"]["sr_verification"] = result["sr_verification"]
+            result["invoice"]["payment_record_status"] = result["payment_record_status"]
+            result["invoice"]["sale_status"] = sale.status if sale else "IN_PROGRESS"
+            if sale and sale.status == "CANCELLED":
+                result["invoice"]["heading"] = "Sale cancelled"
     return result
 
 
@@ -134,7 +147,7 @@ def record(db, row, user, action, request=None, data=None):
 
 
 class Intake(BaseModel):
-    capture_mode: Literal["LEGACY", "SCREENSHOT_ORDER"] = "LEGACY"
+    capture_mode: Literal["LEGACY", "SCREENSHOT_ORDER", "SCREENSHOT_SALE"] = "LEGACY"
     transaction_id: str = Field(default="", max_length=80)
     saved_draft_id: str = Field(default="", max_length=36)
     document_type: Literal["National ID", "Passport"] = "National ID"
@@ -158,6 +171,7 @@ class Intake(BaseModel):
     order_type: Literal["UNSPECIFIED", "NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"] = "UNSPECIFIED"
     account_number: str = Field(default="", max_length=120)
     router_serial: str = Field(default="", max_length=100)
+    router_fulfilment: Literal["", "DELIVERY", "ON_SPOT", "WITHOUT_ROUTER"] = ""
     advance_transaction_number: str = Field(default="", max_length=120)
     sr_number: str = Field(default="", max_length=120)
     alternate_number: str = Field(default="", max_length=40)
@@ -231,16 +245,20 @@ class Intake(BaseModel):
             self.plan_id,
             self.msisdn,
         ]
-        if self.capture_mode == "SCREENSHOT_ORDER":
+        if self.capture_mode in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}:
             required.extend([self.order_image, self.order_reference])
-            if self.order_type == "HW" and not self.router_serial.strip():
-                raise HTTPException(422, "Router serial is required for home wireless sales")
+            if self.order_type == "HW":
+                fulfilment = self.router_fulfilment or ("ON_SPOT" if self.capture_mode != "SCREENSHOT_SALE" else "")
+                if not fulfilment:
+                    raise HTTPException(422, "Choose Delivery, On spot or Without router")
+                if fulfilment == "ON_SPOT" and not self.router_serial.strip():
+                    raise HTTPException(422, "Router serial is required for an on-spot router")
         else:
             required.append(self.sim_identifier)
         if not all(v.strip() for v in required) or (
             self.capture_mode == "LEGACY" and sum(len(s) for s in self.signature) < 8
         ):
-            raise HTTPException(422, "Complete customer details and order before payment")
+            raise HTTPException(422, "Complete customer details and order before submitting")
         if (
             date.fromisoformat(self.expiry_date) < date.today()
             or date.fromisoformat(self.birth_date) >= date.today()
@@ -298,7 +316,7 @@ ORDER_KEYS = ("order_reference", "msisdn")
 
 
 def check_order_evidence(intake, user):
-    if intake.capture_mode != "SCREENSHOT_ORDER":
+    if intake.capture_mode not in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}:
         return
     try:
         proof = json.loads(cipher.decrypt(intake.order_check.encode()))
@@ -693,6 +711,85 @@ class CaptureBody(BaseModel):
     intake: Intake | None = None
 
 
+class SaleSubmission(BaseModel):
+    agent_id: str
+    operation_id: str = Field(min_length=16, max_length=80)
+    source_reference: str = Field(default="", max_length=120)
+    intake: Intake
+
+
+@router.post("/sale-submissions", status_code=201)
+def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal), db=Depends(get_db)):
+    """Store customer/order evidence and submit; a payment receipt is optional."""
+    access(db, user, True)
+    assert_agent(db, user, body.agent_id)
+    if body.intake.capture_mode != "SCREENSHOT_SALE":
+        raise HTTPException(422, "Use the current sale capture workflow")
+    body.intake.complete()
+    check_document_evidence(body.intake, user)
+    check_order_evidence(body.intake, user)
+    if body.intake.order_type == "UNSPECIFIED":
+        raise HTTPException(422, "Choose the order type before submitting")
+    plan = db.get(Plan, body.intake.plan_id)
+    if not plan or not plan.active:
+        raise HTTPException(422, "Select an available plan")
+    from .branch_lifecycle import active_branch
+    from .security import active_agent
+    from .db import Outlet
+    agent = active_agent(db, body.agent_id)
+    branch = db.get(Outlet, agent.outlet_id).branch_id
+    active_branch(db, branch)
+    content_intake = body.intake.model_dump(mode="json")
+    # The request fingerprint remains tied to supplied values, not mutable catalog labels.
+    fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
+    source = body.source_reference.strip() or body.intake.order_reference.strip()
+    existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
+    if existing:
+        if existing.creator_id != user.id or existing.agent_id != body.agent_id or payload(existing).get("submission_hash") != fingerprint:
+            raise HTTPException(409, "This submission identifier was already used for another sale")
+        return view(existing)
+    content_intake["plan_name"] = plan.name
+    content_intake["transaction_id"] = content_intake["transaction_id"] or body.operation_id
+    data = base64.b64decode(body.intake.order_image, validate=True)
+    row = KycCapture(branch_id=branch, agent_id=agent.id, creator_id=user.id,
+                     operation_id=body.operation_id, source_reference=source,
+                     image_hash=hashlib.sha256(data).hexdigest(), image_type=inspect_image(data),
+                     image_encrypted=cipher.encrypt(data).decode(), status="SUBMITTED", version=0)
+    fields = [{"label": label, "value": value} for label, value in [
+        ("Request ID", body.intake.order_reference), ("SR number", body.intake.sr_number),
+        ("Product", body.intake.product_name), ("Package", body.intake.package_name),
+        ("Phone number", body.intake.msisdn), ("Monthly charge", body.intake.monthly_cost),
+        ("Prepayment on order", body.intake.prepayment),
+    ] if value]
+    content = {"document_kind": "SALE_SCREENSHOTS", "intake": content_intake,
+               "submission_hash": fingerprint, "rows": [{"fields": fields}], "lines": [], "history": [],
+               "plan_snapshot": {"name": plan.name, "monthly_cost": float(plan.monthly_cost), "promotion": plan.promotion}}
+    db.add(row)
+    try:
+        db.flush()
+        store(row, content)
+        from .sales_management import register_capture_sale
+        register_capture_sale(db, row)
+        saved_id = body.intake.saved_draft_id
+        if saved_id:
+            saved = db.get(SavedCaptureDraft, saved_id)
+            if saved and saved.creator_id == user.id:
+                db.delete(saved)
+        draft = db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id == user.id).with_for_update())
+        if draft and payload(draft).get("transaction_id") == body.intake.transaction_id:
+            store(draft, {})
+            draft.version += 1
+        record(db, row, user, "Sale submitted for independent backend review", request, content)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
+        if existing and existing.creator_id == user.id and payload(existing).get("submission_hash") == fingerprint:
+            return view(existing)
+        raise HTTPException(409, "The request ID or submission is already recorded") from None
+    return view(row)
+
+
 @router.post("", status_code=201)
 def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
@@ -723,13 +820,18 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
 
     def replay(row):
+        saved_intake = payload(row).get("intake")
+        if saved_intake is not None:
+            # Offline uploads made before router fulfilment was introduced keep
+            # their original operation identity when retried by the new client.
+            saved_intake = {"router_fulfilment": "", **saved_intake}
         if (
             row.creator_id != user.id
             or row.image_hash != digest
             or row.agent_id != body.agent_id
             or row.source_reference != source
             or payload(row).get("document_kind", "ACTIVATION_RECEIPT") != body.document_kind
-            or payload(row).get("intake")
+            or saved_intake
             != (body.intake.model_dump(mode="json") if body.intake else None)
         ):
             raise HTTPException(409, "This upload identifier was already used for another capture")
@@ -931,7 +1033,7 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
             ):
                 value = "**** " + value[-4:]
             entries.append((label, value))
-    payment = data.get("document_kind") == "PAYMENT_CONFIRMATION"
+    payment = data.get("document_kind") in {"PAYMENT_CONFIRMATION", "SALE_SCREENSHOTS"}
     if payment:
         projected = invoice(row, data)
         status = projected["heading"] + " — " + projected["status"]
@@ -944,7 +1046,7 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
     styles = getSampleStyleSheet()
     story = [
         Paragraph(
-            "RELAY | PAYMENT INVOICE" if payment else "RELAY | ACTIVATION RECEIPT", styles["Title"]
+            "RELAY | SALE RECORD" if data.get("document_kind") == "SALE_SCREENSHOTS" else "RELAY | PAYMENT INVOICE" if payment else "RELAY | ACTIVATION RECEIPT", styles["Title"]
         ),
         Paragraph(escape(status), styles["Heading2"]),
         Spacer(1, 16),
@@ -1106,6 +1208,14 @@ def review(
         raise HTTPException(409, "Only submitted captures can be reviewed")
     if row.creator_id == user.id:
         raise HTTPException(403, "Another authorized reviewer must verify this capture")
+    from .db import SalesRecord
+    sale = db.scalar(
+        select(SalesRecord).where(SalesRecord.capture_id == row.id).with_for_update()
+    )
+    if body.outcome == "VERIFIED" and sale is not None and sale.status == "CANCELLED":
+        raise HTTPException(
+            409, "This sale is cancelled. Resolve its sale status before verifying the evidence."
+        )
     data = payload(row)
     stored_intake = data.get("intake")
     if stored_intake is not None and not isinstance(stored_intake, dict):
@@ -1128,8 +1238,6 @@ def review(
     }
     data.pop("leader_confirmation", None)
     if body.outcome == "VERIFIED":
-        from .db import SalesRecord
-        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id))
         agent = db.get(Agent, row.agent_id)
         leader_id = sale.leader_id if sale else agent.leader_id if agent else None
         if leader_id:
@@ -1148,11 +1256,9 @@ def review(
             "READY_FOR_ACTIVATION" if body.outcome == "VERIFIED" else "CORRECTION_REQUIRED"
         )
     row.status, row.reviewer_id = body.outcome, user.id
-    if (data.get("intake") or {}).get("capture_mode") == "SCREENSHOT_ORDER":
-        from .db import SalesRecord
+    if (data.get("intake") or {}).get("capture_mode") in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}:
         from .sales_management import change_sale_status
-        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id).with_for_update())
-        if sale:
+        if sale is not None and sale.status != "CANCELLED":
             change_sale_status(db, sale, "CLOSED" if body.outcome == "VERIFIED" else "IN_PROGRESS", user, request)
     record(db, row, user, "KYC Backend " + body.outcome, request, data)
     db.commit()

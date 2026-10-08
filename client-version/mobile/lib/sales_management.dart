@@ -1,3 +1,4 @@
+import 'sr_verification.dart';
 import 'notifications.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -5,9 +6,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 import 'typography.dart';
 
-// Reporting periods match the API and web panel, regardless of device timezone.
-String salesReportingPeriod(DateTime instant) =>
-    instant.toUtc().toIso8601String().substring(0, 7);
+// Reporting periods use the same Dubai business time as the API and web panel.
+String salesReportingPeriod(DateTime instant) => instant
+    .toUtc()
+    .add(const Duration(hours: 4))
+    .toIso8601String()
+    .substring(0, 7);
 
 class SalesManagementScreen extends ConsumerStatefulWidget {
   const SalesManagementScreen({super.key, this.selectedId});
@@ -62,7 +66,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
       final service = ref.read(serviceProvider);
       final period = salesReportingPeriod(DateTime.now());
       final results = await Future.wait([
-        service.dio.get('/sales-management/sales'),
+        service.dio.get('/sales-management/sales?period=$period'),
         service.dio.get('/sales-management/feedback'),
         service.dio.get('/sales-management/performance?period=$period'),
         service.dio.get('/sales-management/targets?period=$period'),
@@ -254,6 +258,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                   'account_number': 'Account number',
                   'msisdn': 'Phone number',
                   'sim_serial': 'SIM serial',
+                  'router_fulfilment': 'Router fulfilment',
                   'router_serial': 'Router serial',
                   'advance_transaction_number': 'Advance transaction number',
                   'sr_number': 'SR number',
@@ -265,6 +270,16 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                         ? 'Not recorded'
                         : '${detail[entry.key]}',
                   ),
+                _detailField(
+                  'SR verification',
+                  srVerificationLabel(detail['sr_verification']?['status']),
+                ),
+                _detailField(
+                  'Payment receipt',
+                  detail['payment_record_status'] == 'RECORDED'
+                      ? 'Recorded'
+                      : 'Not recorded',
+                ),
                 const SizedBox(height: 12),
                 for (final call in detail['calls'] as List)
                   Padding(
@@ -587,6 +602,23 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                   ),
                 ),
                 Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 6,
+                    children: [
+                      Text(
+                        'Current run rate: ${performance['crr'] == null ? '—' : (performance['crr'] as num).toStringAsFixed(2)}',
+                        style: RelayTypography.caption,
+                      ),
+                      Text(
+                        'Daily required rate: ${performance['drr'] == null ? '—' : (performance['drr'] as num).toStringAsFixed(2)}',
+                        style: RelayTypography.caption,
+                      ),
+                    ],
+                  ),
+                ),
+                Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 14),
                   child: compact
                       ? Wrap(
@@ -729,6 +761,19 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                                     Text(
                                       '${row['request_id']} · ${row['status']}',
                                       style: RelayTypography.caption,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      srVerificationLabel(
+                                        row['sr_verification']?['status'],
+                                      ),
+                                      style: RelayTypography.caption.copyWith(
+                                        color:
+                                            row['sr_verification']?['status'] ==
+                                                'MISMATCH'
+                                            ? const Color(0xffad2449)
+                                            : const Color(0xff795509),
+                                      ),
                                     ),
                                   ],
                                 ),

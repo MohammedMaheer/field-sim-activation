@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Invoice content assertions use a PDF reader; the API runtime does not need it.
+pypdf>=6,<7

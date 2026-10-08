@@ -1,3 +1,5 @@
+import { businessPeriod } from "./businessTime";
+import CommissionCalculations from "./CommissionCalculations";
 import { useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -23,7 +25,7 @@ import {
 
 type Props = { user: Row; notify: (message: string) => void };
 const today = () => new Date().toISOString().slice(0, 10);
-const month = () => new Date().toISOString().slice(0, 7);
+const month = () => businessPeriod();
 
 export function FieldTasks({ user, notify }: Props) {
   const [selectedId, setSelectedId] = useState("");
@@ -377,10 +379,6 @@ export function Incentives({ user, notify }: Props) {
         <div>
           <div className="eyebrow">SALES PERFORMANCE</div>
           <h1>Incentives</h1>
-          <p>
-            Record incentives manually or import an Excel file. Every entry is
-            traceable.
-          </p>
         </div>
         {user.permissions.includes("report.read") && (
           <button
@@ -395,26 +393,6 @@ export function Incentives({ user, notify }: Props) {
           </button>
         )}
       </div>
-      <div className="proposal-summary">
-        <div>
-          <b>AED {total.toFixed(2)}</b>
-          <span>Recorded in {period}</span>
-        </div>
-        <div>
-          <b>{data.length}</b>
-          <span>Entries</span>
-        </div>
-        <div>
-          <b>{new Set(data.map((x) => x.agent_id)).size}</b>
-          <span>Agents</span>
-        </div>
-      </div>
-      <RecordOverview rows={data.map((row:Row) => ({...row,name:row.agent || agents.find(agent => agent.id === row.agent_id)?.name || "Not recorded"}))} field="amount" numeric title="Incentives by agent (AED)" />
-      {message && (
-        <p role="alert" className="ekyc-feedback">
-          {message}
-        </p>
-      )}
       <div className="proposal-toolbar">
         <label>
           Month
@@ -424,113 +402,169 @@ export function Incentives({ user, notify }: Props) {
             onChange={(e) => setPeriod(e.target.value)}
           />
         </label>
-        <button onClick={() => refetch()}>
-          <RefreshCw size={16} /> Refresh
-        </button>
       </div>
-      {canWrite && (
-        <div className="proposal-columns">
-          <Panel
-            title="Manual entry"
-            subtitle="Your team’s recorded incentives in AED."
-          >
-            <form
-              className="proposal-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                run(async () => {
-                  await post("/incentives", {
-                    agent_id: agentId,
-                    period,
-                    amount,
-                    note,
-                  });
-                  setAmount("");
-                  setNote("");
-                }, "Incentive recorded");
-              }}
-            >
-              <label>
-                Agent
-                <select
-                  required
-                  value={agentId}
-                  onChange={(e) => setAgentId(e.target.value)}
-                >
-                  <option value="">Select an agent</option>
-                  {agents.map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} · {a.employee_id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Amount (AED)
-                <input
-                  type="number"
-                  min="0.01"
-                  max="100000"
-                  step="0.01"
-                  required
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                />
-              </label>
-              <label className="wide">
-                Reason / note
-                <input
-                  maxLength={300}
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                />
-              </label>
-              <button className="primary" disabled={busy}>
-                <Plus size={16} /> Save entry
-              </button>
-            </form>
-          </Panel>
-          <Panel
-            title="Excel upload"
-            subtitle="Upload a CSV or XLSX sheet with up to 500 rows."
-          >
-            <div className="proposal-upload">
-              <FileUp size={24} />
-              <b>Import incentive records</b>
-              <span>Columns: employee_id, period, amount, note</span>
-              <input
-                aria-label="Upload incentive CSV or Excel"
-                type="file"
-                accept=".csv,.xlsx"
-                disabled={busy}
-                onChange={(e) => {
-                  importFile(e.target.files?.[0]).catch((x) =>
-                    setMessage(x.message),
-                  );
-                  e.target.value = "";
-                }}
-              />
-            </div>
-          </Panel>
+      {[
+        "Administrator",
+        "Operations Manager",
+        "Sales Manager",
+        "Team Leader",
+        "Field Agent",
+      ].includes(user.role) && <CommissionCalculations period={period} />}
+      <details className="incentive-recorded-history">
+        <summary>Recorded incentive entries · AED {total.toFixed(2)}</summary>
+        <div className="proposal-summary">
+          <div>
+            <b>AED {total.toFixed(2)}</b>
+            <span>Recorded in {period}</span>
+          </div>
+          <div>
+            <b>{data.length}</b>
+            <span>Entries</span>
+          </div>
+          <div>
+            <b>{new Set(data.map((x) => x.agent_id)).size}</b>
+            <span>Agents</span>
+          </div>
         </div>
-      )}
-      <Panel
-        title="Incentive history"
-        subtitle={`${data.length} entries for ${period}`}
-      >
-        <DataTable
-          rows={data}
-          onRow={setSelected}
-          columns={[
-            { key: "employee_id", label: "Employee ID" },
-            { key: "agent", label: "Agent" },
-            { key: "period", label: "Period" },
-            { key: "amount", label: "Amount (AED)" },
-            { key: "source", label: "Source", render: (row) => row.source === "DEMO" ? "Recorded" : row.source },
-            { key: "note", label: "Note" },
-          ]}
+        <RecordOverview
+          rows={data.map((row: Row) => ({
+            ...row,
+            name:
+              row.agent ||
+              agents.find((agent) => agent.id === row.agent_id)?.name ||
+              "Not recorded",
+          }))}
+          field="amount"
+          numeric
+          title="Incentives by agent (AED)"
         />
-      </Panel>
+        {message && (
+          <p role="alert" className="ekyc-feedback">
+            {message}
+          </p>
+        )}
+        <div className="proposal-toolbar">
+          <label>
+            Month
+            <input
+              type="month"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+            />
+          </label>
+          <button onClick={() => refetch()}>
+            <RefreshCw size={16} /> Refresh
+          </button>
+        </div>
+        {canWrite && (
+          <div className="proposal-columns">
+            <Panel
+              title="Manual entry"
+              subtitle="Your team’s recorded incentives in AED."
+            >
+              <form
+                className="proposal-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  run(async () => {
+                    await post("/incentives", {
+                      agent_id: agentId,
+                      period,
+                      amount,
+                      note,
+                    });
+                    setAmount("");
+                    setNote("");
+                  }, "Incentive recorded");
+                }}
+              >
+                <label>
+                  Agent
+                  <select
+                    required
+                    value={agentId}
+                    onChange={(e) => setAgentId(e.target.value)}
+                  >
+                    <option value="">Select an agent</option>
+                    {agents.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.name} · {a.employee_id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Amount (AED)
+                  <input
+                    type="number"
+                    min="0.01"
+                    max="100000"
+                    step="0.01"
+                    required
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                  />
+                </label>
+                <label className="wide">
+                  Reason / note
+                  <input
+                    maxLength={300}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                  />
+                </label>
+                <button className="primary" disabled={busy}>
+                  <Plus size={16} /> Save entry
+                </button>
+              </form>
+            </Panel>
+            <Panel
+              title="Excel upload"
+              subtitle="Upload a CSV or XLSX sheet with up to 500 rows."
+            >
+              <div className="proposal-upload">
+                <FileUp size={24} />
+                <b>Import incentive records</b>
+                <span>Columns: employee_id, period, amount, note</span>
+                <input
+                  aria-label="Upload incentive CSV or Excel"
+                  type="file"
+                  accept=".csv,.xlsx"
+                  disabled={busy}
+                  onChange={(e) => {
+                    importFile(e.target.files?.[0]).catch((x) =>
+                      setMessage(x.message),
+                    );
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+            </Panel>
+          </div>
+        )}
+        <Panel
+          title="Incentive history"
+          subtitle={`${data.length} entries for ${period}`}
+        >
+          <DataTable
+            rows={data}
+            onRow={setSelected}
+            columns={[
+              { key: "employee_id", label: "Employee ID" },
+              { key: "agent", label: "Agent" },
+              { key: "period", label: "Period" },
+              { key: "amount", label: "Amount (AED)" },
+              {
+                key: "source",
+                label: "Source",
+                render: (row) =>
+                  row.source === "DEMO" ? "Recorded" : row.source,
+              },
+              { key: "note", label: "Note" },
+            ]}
+          />
+        </Panel>
+      </details>
       {selected && (
         <Drawer title="Incentive details" onClose={() => setSelected(null)}>
           <DetailList

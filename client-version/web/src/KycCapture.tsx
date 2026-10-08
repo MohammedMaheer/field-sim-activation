@@ -26,12 +26,23 @@ export default function KycCapture() {
     ["activation.write", "ekyc.write"].includes(p),
   );
   const canReview = user.permissions.includes("compliance.write");
-  const activity = useQuery<Row[]>({queryKey:["kyc-captures","overview"],queryFn:() => api("/kyc-captures?limit=100"),enabled:canReview,refetchInterval:8000});
+  const activity = useQuery<Row[]>({
+    queryKey: ["kyc-captures", "overview"],
+    queryFn: () => api("/kyc-captures?limit=100"),
+    enabled: canReview,
+    refetchInterval: 8000,
+  });
   const [intake, setIntake] = useState<Row>({});
   const [intakeReady, setIntakeReady] = useState(false);
-  const [draftsOpen,setDraftsOpen] = useState(false);
-  const drafts = useQuery({queryKey:['saved-capture-drafts'],queryFn:() => api('/kyc-captures/saved-drafts'),enabled:draftsOpen});
-  const [selected, setSelected] = useState(() => new URLSearchParams(window.location.search).get("capture") || ""),
+  const [draftsOpen, setDraftsOpen] = useState(false);
+  const drafts = useQuery({
+    queryKey: ["saved-capture-drafts"],
+    queryFn: () => api("/kyc-captures/saved-drafts"),
+    enabled: draftsOpen,
+  });
+  const [selected, setSelected] = useState(
+      () => new URLSearchParams(window.location.search).get("capture") || "",
+    ),
     [agent, setAgent] = useState(""),
     [source, setSource] = useState(""),
     [file, setFile] = useState<File | null>(null);
@@ -52,7 +63,13 @@ export default function KycCapture() {
   const [historyPage, setHistoryPage] = useState(0);
   const [showSamples, setShowSamples] = useState(false);
   const list = useQuery({
-    queryKey: ["kyc-captures", historySearch, historyStatus, historyPage, showSamples],
+    queryKey: [
+      "kyc-captures",
+      historySearch,
+      historyStatus,
+      historyPage,
+      showSamples,
+    ],
     queryFn: () =>
       api(
         `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${["READY", "COMPLETED"].includes(historyStatus) ? "" : historyStatus}&stage=${["READY", "COMPLETED"].includes(historyStatus) ? historyStatus : ""}&include_samples=${showSamples}`,
@@ -102,23 +119,27 @@ export default function KycCapture() {
   }
   async function upload(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
     await run(async () => {
-      if (file.size > 4000000)
+      if (file && file.size > 4000000)
         throw new Error("Choose a PNG or JPEG screenshot up to 4 MB.");
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = () => reject(new Error("Could not read this image"));
-        reader.readAsDataURL(file);
-      });
-      const result = await post("/kyc-captures", {
+      const base64 = file
+        ? await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result).split(",")[1]);
+            reader.onerror = () =>
+              reject(new Error("Could not read this image"));
+            reader.readAsDataURL(file);
+          })
+        : undefined;
+      const result = await post("/kyc-captures/sale-submissions", {
         agent_id: agent || user.agent_id || agents.data?.[0]?.id,
         operation_id: operation,
-        source_reference: source,
-        document_kind: "PAYMENT_CONFIRMATION",
-        image_base64: base64,
-        intake,
+        source_reference: source || intake.order_reference || "",
+        intake: {
+          ...intake,
+          capture_mode: "SCREENSHOT_SALE",
+          ...(base64 ? { payment_image: base64 } : {}),
+        },
       });
       setDirty(false);
       setSelected(result.id);
@@ -126,6 +147,9 @@ export default function KycCapture() {
       setFile(null);
       setSource("");
       setOperation(crypto.randomUUID());
+      await client.invalidateQueries({ queryKey: ["sales-management"] });
+      await client.invalidateQueries({ queryKey: ["notifications"] });
+      await client.invalidateQueries({ queryKey: ["dashboard"] });
     });
   }
   const selectCapture = (id: string) => {
@@ -149,7 +173,13 @@ export default function KycCapture() {
       <div className={`page-header ${reviewMode ? "review-page-header" : ""}`}>
         <div>
           <div className="eyebrow">TRANSACTIONS</div>
-          <h1>{canReview ? "Backend verification" : canWrite ? "New transaction" : "Transaction history"}</h1>
+          <h1>
+            {canReview
+              ? "Backend verification"
+              : canWrite
+                ? "New transaction"
+                : "Transaction history"}
+          </h1>
         </div>
         <button
           onClick={() =>
@@ -168,7 +198,16 @@ export default function KycCapture() {
         <span />
         <div>
           <button onClick={() => setHistoryOpen(true)}>Capture history</button>
-          {canWrite && <button onClick={() => {setDraftsOpen(true);drafts.refetch();}}>Drafts</button>}
+          {canWrite && (
+            <button
+              onClick={() => {
+                setDraftsOpen(true);
+                drafts.refetch();
+              }}
+            >
+              Drafts
+            </button>
+          )}
           {canWrite && (
             <button
               className="primary"
@@ -196,17 +235,67 @@ export default function KycCapture() {
           )}
         </div>
       </div>
-      {draftsOpen && <Drawer title="Drafts" onClose={() => setDraftsOpen(false)}>
-        {drafts.isLoading ? <p>Loading drafts…</p> : drafts.isError ? <p role="alert">Could not load drafts</p> : (drafts.data || []).length === 0 ? <p>No saved drafts</p> : (drafts.data || []).map((d:Row) => <div key={d.id} className="draft-card"><button onClick={() => {setIntake(d.data);setIntakeReady(false);setSelected('');setShowUpload(true);setDraftsOpen(false);}}><b>{d.data.name || 'New customer'}</b><small>Step {(d.data.step || 0)+1} of 3</small></button><button onClick={async () => {if(!window.confirm('Discard this draft?'))return;try{await api(`/kyc-captures/saved-drafts/${d.id}`,{method:'DELETE'});drafts.refetch();}catch(e:any){setError(e.message);}}}>Discard</button></div>)}
-      </Drawer>}
-      {(canReview || !canWrite) && !selected && !showUpload && activity.data && (
-        <RecordOverview rows={activity.data || []} title="Latest verification records" />
+      {draftsOpen && (
+        <Drawer title="Drafts" onClose={() => setDraftsOpen(false)}>
+          {drafts.isLoading ? (
+            <p>Loading drafts…</p>
+          ) : drafts.isError ? (
+            <p role="alert">Could not load drafts</p>
+          ) : (drafts.data || []).length === 0 ? (
+            <p>No saved drafts</p>
+          ) : (
+            (drafts.data || []).map((d: Row) => (
+              <div key={d.id} className="draft-card">
+                <button
+                  onClick={() => {
+                    setIntake(d.data);
+                    setIntakeReady(false);
+                    setSelected("");
+                    setShowUpload(true);
+                    setDraftsOpen(false);
+                  }}
+                >
+                  <b>{d.data.name || "New customer"}</b>
+                  <small>Step {(d.data.step || 0) + 1} of 3</small>
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm("Discard this draft?")) return;
+                    try {
+                      await api(`/kyc-captures/saved-drafts/${d.id}`, {
+                        method: "DELETE",
+                      });
+                      drafts.refetch();
+                    } catch (e: any) {
+                      setError(e.message);
+                    }
+                  }}
+                >
+                  Discard
+                </button>
+              </div>
+            ))
+          )}
+        </Drawer>
       )}
+      {(canReview || !canWrite) &&
+        !selected &&
+        !showUpload &&
+        activity.data && (
+          <RecordOverview
+            rows={activity.data || []}
+            title="Latest verification records"
+          />
+        )}
       {(canReview || !canWrite) && !selected && !showUpload && (
         <section className="review-inbox">
           <div className="review-inbox-header">
             <div>
-              <h2>{canReview ? "Submissions for verification" : "Transaction history"}</h2>
+              <h2>
+                {canReview
+                  ? "Submissions for verification"
+                  : "Transaction history"}
+              </h2>
             </div>
             <label>
               Status
@@ -236,7 +325,17 @@ export default function KycCapture() {
                 placeholder="Transaction reference"
               />
             </label>
-            <label className="review-sample-toggle"><input type="checkbox" checked={showSamples} onChange={(event) => { setShowSamples(event.target.checked); setHistoryPage(0); }} /> Include earlier records</label>
+            <label className="review-sample-toggle">
+              <input
+                type="checkbox"
+                checked={showSamples}
+                onChange={(event) => {
+                  setShowSamples(event.target.checked);
+                  setHistoryPage(0);
+                }}
+              />{" "}
+              Include earlier records
+            </label>
           </div>
           {list.isPending ? (
             <Loading />
@@ -250,12 +349,15 @@ export default function KycCapture() {
                     <strong>{r.source_reference}</strong>
                     <small>
                       {agents.data?.find((a: Row) => a.id === r.agent_id)
-                        ?.name || (agents.isPending ? "Loading agent…" : "Not recorded")}
+                        ?.name ||
+                        (agents.isPending ? "Loading agent…" : "Not recorded")}
                     </small>
                     <small>
-                      {r.document_kind === "PAYMENT_CONFIRMATION"
-                        ? "Payment confirmation"
-                        : "Historical receipt"}
+                      {r.intake?.capture_mode === "SCREENSHOT_SALE"
+                        ? "Sale submission"
+                        : r.document_kind === "PAYMENT_CONFIRMATION"
+                          ? "Payment confirmation"
+                          : "Historical receipt"}
                     </small>
                   </span>
                   <span>
@@ -312,22 +414,45 @@ export default function KycCapture() {
             {canWrite && showUpload && !intakeReady && (
               <CustomerIntake
                 value={intake}
-                onChange={v => {setIntake(v);if(v.agent_id)setAgent(v.agent_id);}}
+                onChange={(v) => {
+                  setIntake(v);
+                  if (v.agent_id) setAgent(v.agent_id);
+                }}
                 onReady={() => setIntakeReady(true)}
-                onSaved={() => {setIntake({});setIntakeReady(false);setShowUpload(false);setDraftsOpen(true);drafts.refetch();}}
+                onSaved={() => {
+                  setIntake({});
+                  setIntakeReady(false);
+                  setShowUpload(false);
+                  setDraftsOpen(true);
+                  drafts.refetch();
+                }}
               />
             )}
             {canWrite && intakeReady && (
               <div hidden={!showUpload}>
-                <Panel
-                  title="Capture a transaction"
-                  subtitle="PNG or JPEG · up to 4 MB and 6 megapixels"
-                >
+                <Panel title="Review & submit sale">
                   <form
                     id="capture-form"
                     className="capture-upload"
                     onSubmit={upload}
                   >
+                    <dl
+                      className="sale-submission-summary"
+                      aria-label="Sale summary"
+                    >
+                      {[
+                        ["Customer", intake.name],
+                        ["Plan", intake.plan_name || intake.package_name],
+                        ["Request ID", intake.order_reference],
+                        ["SR number", intake.sr_number || "Not recorded"],
+                        ["Phone number", intake.msisdn],
+                      ].map(([label, value]) => (
+                        <div key={label}>
+                          <dt>{label}</dt>
+                          <dd>{value || "Not recorded"}</dd>
+                        </div>
+                      ))}
+                    </dl>
                     <label>
                       Assigned agent
                       <select
@@ -345,11 +470,11 @@ export default function KycCapture() {
                       </select>
                     </label>
                     <label>
-                      Request ID (optional)
+                      Reference
                       <input
                         maxLength={120}
                         placeholder="Order request ID"
-                        value={source}
+                        value={source || intake.order_reference || ""}
                         onChange={(e) => {
                           setSource(e.target.value);
                           setOperation(crypto.randomUUID());
@@ -358,10 +483,7 @@ export default function KycCapture() {
                     </label>
                     <div className="capture-picker">
                       <ImageIcon size={28} />
-                      <b>{file?.name || "Choose payment confirmation"}</b>
-                      <span>
-                        Your confirmation will be available for review.
-                      </span>
+                      <b>{file?.name || "Payment receipt · optional"}</b>
                       <div>
                         <label className="capture-file">
                           <Upload size={16} />
@@ -396,14 +518,14 @@ export default function KycCapture() {
                       <img
                         className="capture-preview"
                         src={preview}
-                        alt="Selected payment confirmation"
+                        alt="Selected payment receipt"
                       />
                     )}
                     <button
                       className="primary"
-                      disabled={busy || !file || !agents.data?.length}
+                      disabled={busy || !agents.data?.length}
                     >
-                      {busy ? "Uploading…" : "Upload payment confirmation"}
+                      {busy ? "Submitting…" : "Submit sale"}
                     </button>
                   </form>
                 </Panel>
@@ -449,479 +571,534 @@ export default function KycCapture() {
                     >
                       <div className="capture-detail">
                         <ActivationReceipt capture={capture} />
-                        <details className="capture-supporting" open={!["SUBMITTED", "VERIFIED", "REJECTED"].includes(capture.status) ? true : undefined}>
-                        <summary>Payment details & history</summary>
-                        <div className="capture-toolbar">
-                          <Badge value={capture.status} />
-                          <button
-                            disabled={busy}
-                            onClick={() =>
-                              run(() =>
-                                download(
-                                  "/kyc-captures/" + capture.id + "/original",
-                                  "original-" +
-                                    capture.id +
-                                    "." +
-                                    (capture.image_type === "image/jpeg"
-                                      ? "jpg"
-                                      : "png"),
-                                ),
-                              )
-                            }
-                          >
-                            Download original
-                          </button>
-                        </div>
-
-                        {capture.status === "QUEUED" && (
-                          <p role="status">
-                            Your confirmation is being prepared. You can return
-                            later.
-                          </p>
-                        )}
-                        {capture.status === "OCR_FAILED" && (
-                          <div role="alert">
-                            <p>We couldn't read this image automatically. Add the details below or try again.</p>
-                            {canWrite && (
-                              <button
-                                disabled={busy}
-                                onClick={() =>
-                                  run(() =>
-                                    post(
-                                      "/kyc-captures/" + capture.id + "/retry",
-                                      {
-                                        version: capture.version,
-                                      },
-                                    ),
-                                  )
-                                }
-                              >
-                                Try again
-                              </button>
-                            )}
+                        <details
+                          className="capture-supporting"
+                          open={
+                            !["SUBMITTED", "VERIFIED", "REJECTED"].includes(
+                              capture.status,
+                            )
+                              ? true
+                              : undefined
+                          }
+                        >
+                          <summary>
+                            {capture.intake?.capture_mode === "SCREENSHOT_SALE"
+                              ? "Sale details & history"
+                              : "Payment details & history"}
+                          </summary>
+                          <div className="capture-toolbar">
+                            <Badge value={capture.status} />
+                            <button
+                              disabled={busy}
+                              onClick={() =>
+                                run(() =>
+                                  download(
+                                    "/kyc-captures/" + capture.id + "/original",
+                                    "original-" +
+                                      capture.id +
+                                      "." +
+                                      (capture.image_type === "image/jpeg"
+                                        ? "jpg"
+                                        : "png"),
+                                  ),
+                                )
+                              }
+                            >
+                              Download original
+                            </button>
                           </div>
-                        )}
-                        {!!capture.lines?.length && (
-                          <details open={rows.length === 0}>
-                            <summary>
-                              {capture.document_kind === "PAYMENT_CONFIRMATION"
-                                ? "Text from image"
-                                : "Receipt text"} · {capture.lines.length} lines
-                            </summary>
-                            <p className="field-help">
-                              Use the uploaded text to check or add missing
-                              details.
+
+                          {capture.status === "QUEUED" && (
+                            <p role="status">
+                              Your confirmation is being prepared. You can
+                              return later.
                             </p>
-                            <div className="ocr-lines">
-                              {capture.lines.map((line: Row, i: number) => (
-                                <div key={i}>
-                                  <span>
-                                    <small>Line {i + 1}</small>
-                                    <p dir="auto">{line.text}</p>
-                                  </span>
+                          )}
+                          {capture.status === "OCR_FAILED" && (
+                            <div role="alert">
+                              <p>
+                                We couldn't read this image automatically. Add
+                                the details below or try again.
+                              </p>
+                              {canWrite && (
+                                <button
+                                  disabled={busy}
+                                  onClick={() =>
+                                    run(() =>
+                                      post(
+                                        "/kyc-captures/" +
+                                          capture.id +
+                                          "/retry",
+                                        {
+                                          version: capture.version,
+                                        },
+                                      ),
+                                    )
+                                  }
+                                >
+                                  Try again
+                                </button>
+                              )}
+                            </div>
+                          )}
+                          {!!capture.lines?.length && (
+                            <details open={rows.length === 0}>
+                              <summary>
+                                {capture.document_kind ===
+                                "PAYMENT_CONFIRMATION"
+                                  ? "Text from image"
+                                  : "Receipt text"}{" "}
+                                · {capture.lines.length} lines
+                              </summary>
+                              <p className="field-help">
+                                Use the uploaded text to check or add missing
+                                details.
+                              </p>
+                              <div className="ocr-lines">
+                                {capture.lines.map((line: Row, i: number) => (
+                                  <div key={i}>
+                                    <span>
+                                      <small>Line {i + 1}</small>
+                                      <p dir="auto">{line.text}</p>
+                                    </span>
+                                    {editable && (
+                                      <button
+                                        aria-label={"Add image text " + (i + 1)}
+                                        disabled={rows.length >= 100}
+                                        onClick={() => {
+                                          setRows([
+                                            ...rows,
+                                            {
+                                              fields: [
+                                                {
+                                                  label:
+                                                    capture.document_kind ===
+                                                    "PAYMENT_CONFIRMATION"
+                                                      ? "Image text"
+                                                      : "Receipt text",
+                                                  value: line.text,
+                                                  source_line: i,
+                                                  confidence: line.confidence,
+                                                },
+                                              ],
+                                              source_line: i,
+                                            },
+                                          ]);
+                                          setDirty(true);
+                                        }}
+                                      >
+                                        <Plus size={16} />
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            </details>
+                          )}
+                          {(editable || rows.length > 0) && (
+                            <section className="capture-rows">
+                              <h2>
+                                {capture.document_kind ===
+                                "PAYMENT_CONFIRMATION"
+                                  ? "Payment details"
+                                  : "Transaction rows"}
+                              </h2>
+
+                              {rows.length === 0 && (
+                                <p>
+                                  Add details from the image or create a new
+                                  row.
+                                </p>
+                              )}
+                              {rows.map((r, i) => (
+                                <fieldset key={i}>
+                                  <legend>
+                                    Transaction {i + 1}
+                                    {r.source_line !== null
+                                      ? " · Line " + (r.source_line + 1)
+                                      : " · Manual entry"}
+                                  </legend>
+                                  {Array.isArray(r.fields) ? (
+                                    <div className="receipt-fields">
+                                      {r.fields.map(
+                                        (field: Row, fi: number) => (
+                                          <div
+                                            className="receipt-field"
+                                            key={fi}
+                                          >
+                                            <label>
+                                              Field name
+                                              <input
+                                                aria-label={`Field name ${i + 1}.${fi + 1}`}
+                                                maxLength={120}
+                                                disabled={!editable}
+                                                value={field.label}
+                                                onChange={(e) => {
+                                                  change(
+                                                    i,
+                                                    "fields",
+                                                    r.fields.map(
+                                                      (f: Row, n: number) =>
+                                                        n === fi
+                                                          ? {
+                                                              ...f,
+                                                              label:
+                                                                e.target.value,
+                                                            }
+                                                          : f,
+                                                    ),
+                                                  );
+                                                }}
+                                              />
+                                            </label>
+                                            <label>
+                                              Value
+                                              <textarea
+                                                aria-label={`Value ${i + 1}.${fi + 1}`}
+                                                dir="auto"
+                                                maxLength={1000}
+                                                disabled={!editable}
+                                                value={field.value}
+                                                onChange={(e) =>
+                                                  change(
+                                                    i,
+                                                    "fields",
+                                                    r.fields.map(
+                                                      (f: Row, n: number) =>
+                                                        n === fi
+                                                          ? {
+                                                              ...f,
+                                                              value:
+                                                                e.target.value,
+                                                            }
+                                                          : f,
+                                                    ),
+                                                  )
+                                                }
+                                              />
+                                            </label>
+
+                                            {editable && (
+                                              <button
+                                                aria-label={`Remove field ${i + 1}.${fi + 1}`}
+                                                onClick={() =>
+                                                  change(
+                                                    i,
+                                                    "fields",
+                                                    r.fields.filter(
+                                                      (_: Row, n: number) =>
+                                                        n !== fi,
+                                                    ),
+                                                  )
+                                                }
+                                              >
+                                                <Trash2 size={15} />
+                                                Remove field
+                                              </button>
+                                            )}
+                                          </div>
+                                        ),
+                                      )}
+                                      {editable && (
+                                        <button
+                                          disabled={r.fields.length >= 100}
+                                          onClick={() =>
+                                            change(i, "fields", [
+                                              ...r.fields,
+                                              {
+                                                label: "",
+                                                value: "",
+                                                source_line: null,
+                                                confidence: null,
+                                              },
+                                            ])
+                                          }
+                                        >
+                                          <Plus size={16} />
+                                          Add field
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <label>
+                                        Transaction reference
+                                        <input
+                                          required
+                                          minLength={2}
+                                          maxLength={120}
+                                          disabled={!editable}
+                                          value={r.reference}
+                                          onChange={(e) =>
+                                            change(
+                                              i,
+                                              "reference",
+                                              e.target.value,
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        Customer
+                                        <input
+                                          maxLength={120}
+                                          disabled={!editable}
+                                          value={r.customer}
+                                          onChange={(e) =>
+                                            change(
+                                              i,
+                                              "customer",
+                                              e.target.value,
+                                            )
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        Account / MSISDN
+                                        <input
+                                          maxLength={80}
+                                          disabled={!editable}
+                                          value={r.account}
+                                          onChange={(e) =>
+                                            change(i, "account", e.target.value)
+                                          }
+                                        />
+                                      </label>
+                                      <label>
+                                        Transaction details
+                                        <textarea
+                                          required
+                                          minLength={2}
+                                          maxLength={1000}
+                                          disabled={!editable}
+                                          value={r.details}
+                                          onChange={(e) =>
+                                            change(i, "details", e.target.value)
+                                          }
+                                        />
+                                      </label>
+                                    </>
+                                  )}
                                   {editable && (
                                     <button
-                                    aria-label={"Add image text " + (i + 1)}
-                                      disabled={rows.length >= 100}
                                       onClick={() => {
-                                        setRows([
-                                          ...rows,
-                                          {
-                                            fields: [
-                                              {
-                                                label: capture.document_kind === "PAYMENT_CONFIRMATION" ? "Image text" : "Receipt text",
-                                                value: line.text,
-                                                source_line: i,
-                                                confidence: line.confidence,
-                                              },
-                                            ],
-                                            source_line: i,
-                                          },
-                                        ]);
+                                        setRows(rows.filter((_, n) => n !== i));
                                         setDirty(true);
                                       }}
                                     >
-                                      <Plus size={16} />
+                                      <Trash2 size={15} />
+                                      Remove row
                                     </button>
                                   )}
-                                </div>
+                                </fieldset>
                               ))}
-                            </div>
-                          </details>
-                        )}
-                        {(editable || rows.length > 0) && (
-                          <section className="capture-rows">
-                            <h2>{capture.document_kind === "PAYMENT_CONFIRMATION" ? "Payment details" : "Transaction rows"}</h2>
-
-                            {rows.length === 0 && (
-                              <p>
-                                Add details from the image or create a new row.
-                              </p>
-                            )}
-                            {rows.map((r, i) => (
-                              <fieldset key={i}>
-                                <legend>
-                                  Transaction {i + 1}
-                                  {r.source_line !== null
-                                    ? " · Line " + (r.source_line + 1)
-                                    : " · Manual entry"}
-                                </legend>
-                                {Array.isArray(r.fields) ? (
-                                  <div className="receipt-fields">
-                                    {r.fields.map((field: Row, fi: number) => (
-                                      <div className="receipt-field" key={fi}>
-                                        <label>
-                                          Field name
-                                          <input
-                                            aria-label={`Field name ${i + 1}.${fi + 1}`}
-                                            maxLength={120}
-                                            disabled={!editable}
-                                            value={field.label}
-                                            onChange={(e) => {
-                                              change(
-                                                i,
-                                                "fields",
-                                                r.fields.map(
-                                                  (f: Row, n: number) =>
-                                                    n === fi
-                                                      ? {
-                                                          ...f,
-                                                          label: e.target.value,
-                                                        }
-                                                      : f,
-                                                ),
-                                              );
-                                            }}
-                                          />
-                                        </label>
-                                        <label>
-                                          Value
-                                          <textarea
-                                            aria-label={`Value ${i + 1}.${fi + 1}`}
-                                            dir="auto"
-                                            maxLength={1000}
-                                            disabled={!editable}
-                                            value={field.value}
-                                            onChange={(e) =>
-                                              change(
-                                                i,
-                                                "fields",
-                                                r.fields.map(
-                                                  (f: Row, n: number) =>
-                                                    n === fi
-                                                      ? {
-                                                          ...f,
-                                                          value: e.target.value,
-                                                        }
-                                                      : f,
-                                                ),
-                                              )
-                                            }
-                                          />
-                                        </label>
-
-                                        {editable && (
-                                          <button
-                                            aria-label={`Remove field ${i + 1}.${fi + 1}`}
-                                            onClick={() =>
-                                              change(
-                                                i,
-                                                "fields",
-                                                r.fields.filter(
-                                                  (_: Row, n: number) =>
-                                                    n !== fi,
-                                                ),
-                                              )
-                                            }
-                                          >
-                                            <Trash2 size={15} />
-                                            Remove field
-                                          </button>
-                                        )}
-                                      </div>
-                                    ))}
-                                    {editable && (
-                                      <button
-                                        disabled={r.fields.length >= 100}
-                                        onClick={() =>
-                                          change(i, "fields", [
-                                            ...r.fields,
+                              {editable && (
+                                <>
+                                  <button
+                                    disabled={rows.length >= 100}
+                                    onClick={() => {
+                                      setRows([
+                                        ...rows,
+                                        {
+                                          fields: [
                                             {
                                               label: "",
                                               value: "",
                                               source_line: null,
                                               confidence: null,
                                             },
-                                          ])
-                                        }
-                                      >
-                                        <Plus size={16} />
-                                        Add field
-                                      </button>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <>
-                                    <label>
-                                      Transaction reference
-                                      <input
-                                        required
-                                        minLength={2}
-                                        maxLength={120}
-                                        disabled={!editable}
-                                        value={r.reference}
-                                        onChange={(e) =>
-                                          change(i, "reference", e.target.value)
-                                        }
-                                      />
-                                    </label>
-                                    <label>
-                                      Customer
-                                      <input
-                                        maxLength={120}
-                                        disabled={!editable}
-                                        value={r.customer}
-                                        onChange={(e) =>
-                                          change(i, "customer", e.target.value)
-                                        }
-                                      />
-                                    </label>
-                                    <label>
-                                      Account / MSISDN
-                                      <input
-                                        maxLength={80}
-                                        disabled={!editable}
-                                        value={r.account}
-                                        onChange={(e) =>
-                                          change(i, "account", e.target.value)
-                                        }
-                                      />
-                                    </label>
-                                    <label>
-                                      Transaction details
-                                      <textarea
-                                        required
-                                        minLength={2}
-                                        maxLength={1000}
-                                        disabled={!editable}
-                                        value={r.details}
-                                        onChange={(e) =>
-                                          change(i, "details", e.target.value)
-                                        }
-                                      />
-                                    </label>
-                                  </>
-                                )}
-                                {editable && (
-                                  <button
-                                    onClick={() => {
-                                      setRows(rows.filter((_, n) => n !== i));
+                                          ],
+                                          source_line: null,
+                                        },
+                                      ]);
                                       setDirty(true);
                                     }}
                                   >
-                                    <Trash2 size={15} />
-                                    Remove row
+                                    <Plus size={16} />
+                                    Add transaction row
                                   </button>
-                                )}
-                              </fieldset>
-                            ))}
-                            {editable && (
-                              <>
-                                <button
-                                  disabled={rows.length >= 100}
-                                  onClick={() => {
-                                    setRows([
-                                      ...rows,
-                                      {
-                                        fields: [
+                                  <label>
+                                    Review / correction note
+                                    <input
+                                      minLength={3}
+                                      maxLength={300}
+                                      value={reason}
+                                      onChange={(e) =>
+                                        setReason(e.target.value)
+                                      }
+                                    />
+                                  </label>
+                                  <button
+                                    className="primary"
+                                    disabled={
+                                      busy ||
+                                      !rows.length ||
+                                      reason.trim().length < 3 ||
+                                      rows.some((r) =>
+                                        Array.isArray(r.fields)
+                                          ? !r.fields.length ||
+                                            r.fields.some(
+                                              (f: Row) => !f.label.trim(),
+                                            ) ||
+                                            !r.fields.some((f: Row) =>
+                                              f.value.trim(),
+                                            )
+                                          : r.reference.trim().length < 2 ||
+                                            r.details.trim().length < 2,
+                                      )
+                                    }
+                                    onClick={() =>
+                                      run(async () => {
+                                        await patch(
+                                          "/kyc-captures/" +
+                                            capture.id +
+                                            "/rows",
                                           {
-                                            label: "",
-                                            value: "",
-                                            source_line: null,
-                                            confidence: null,
+                                            version: capture.version,
+                                            rows,
+                                            reason,
                                           },
-                                        ],
-                                        source_line: null,
-                                      },
-                                    ]);
-                                    setDirty(true);
-                                  }}
-                                >
-                                  <Plus size={16} />
-                                  Add transaction row
-                                </button>
-                                <label>
-                                  Review / correction note
-                                  <input
-                                    minLength={3}
-                                    maxLength={300}
-                                    value={reason}
-                                    onChange={(e) => setReason(e.target.value)}
-                                  />
-                                </label>
+                                        );
+                                        setDirty(false);
+                                      })
+                                    }
+                                  >
+                                    Save details
+                                  </button>
+                                  {dirty && (
+                                    <p className="field-help">
+                                      Unsaved changes. Validate before leaving
+                                      or exporting.
+                                    </p>
+                                  )}
+                                </>
+                              )}
+                            </section>
+                          )}
+                          {!!capture.rows?.length &&
+                            capture.status !== "EXTRACTED" && (
+                              <div className="capture-toolbar">
                                 <button
-                                  className="primary"
-                                  disabled={
-                                    busy ||
-                                    !rows.length ||
-                                    reason.trim().length < 3 ||
-                                    rows.some((r) =>
-                                      Array.isArray(r.fields)
-                                        ? !r.fields.length ||
-                                          r.fields.some(
-                                            (f: Row) => !f.label.trim(),
-                                          ) ||
-                                          !r.fields.some((f: Row) =>
-                                            f.value.trim(),
-                                          )
-                                        : r.reference.trim().length < 2 ||
-                                          r.details.trim().length < 2,
-                                    )
-                                  }
-                                  onClick={() =>
-                                    run(async () => {
-                                      await patch(
-                                        "/kyc-captures/" + capture.id + "/rows",
-                                        {
-                                          version: capture.version,
-                                          rows,
-                                          reason,
-                                        },
-                                      );
-                                      setDirty(false);
-                                    })
-                                  }
-                                >
-                                  Save details
-                                </button>
-                                {dirty && (
-                                  <p className="field-help">
-                                    Unsaved changes. Validate before leaving or
-                                    exporting.
-                                  </p>
-                                )}
-                              </>
-                            )}
-                          </section>
-                        )}
-                        {!!capture.rows?.length &&
-                          capture.status !== "EXTRACTED" && (
-                            <div className="capture-toolbar">
-                              <button
-                                disabled={busy || dirty}
-                                onClick={() =>
-                                  run(() =>
-                                    download(
-                                      "/kyc-captures/" + capture.id + "/excel",
-                                      "kyc-" + capture.id + ".xlsx",
-                                    ),
-                                  )
-                                }
-                              >
-                                <FileSpreadsheet size={16} />
-                                Generate Excel
-                              </button>
-                              {capture.status === "VALIDATED" && canWrite && (
-                                <button
-                                  className="primary"
                                   disabled={busy || dirty}
                                   onClick={() =>
                                     run(() =>
-                                      post(
+                                      download(
                                         "/kyc-captures/" +
                                           capture.id +
-                                          "/submit",
-                                        { version: capture.version },
+                                          "/excel",
+                                        "kyc-" + capture.id + ".xlsx",
                                       ),
                                     )
                                   }
                                 >
-                                  Submit for review
+                                  <FileSpreadsheet size={16} />
+                                  Generate Excel
                                 </button>
+                                {capture.status === "VALIDATED" && canWrite && (
+                                  <button
+                                    className="primary"
+                                    disabled={busy || dirty}
+                                    onClick={() =>
+                                      run(() =>
+                                        post(
+                                          "/kyc-captures/" +
+                                            capture.id +
+                                            "/submit",
+                                          { version: capture.version },
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    Submit for review
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          {capture.status === "SUBMITTED" && (
+                            <section className="capture-review">
+                              <h2>Awaiting backend review</h2>
+
+                              {user.permissions.includes(
+                                "compliance.write",
+                              ) && (
+                                <>
+                                  <label>
+                                    Review decision reason
+                                    <textarea
+                                      minLength={5}
+                                      maxLength={300}
+                                      value={review}
+                                      onChange={(e) =>
+                                        setReview(e.target.value)
+                                      }
+                                    />
+                                  </label>
+                                  <div className="capture-toolbar">
+                                    {["VERIFIED", "REJECTED"].map((outcome) => (
+                                      <button
+                                        key={outcome}
+                                        disabled={
+                                          busy || review.trim().length < 5
+                                        }
+                                        onClick={() =>
+                                          run(() =>
+                                            post(
+                                              "/kyc-captures/" +
+                                                capture.id +
+                                                "/review",
+                                              {
+                                                version: capture.version,
+                                                outcome,
+                                                reason: review,
+                                              },
+                                            ),
+                                          )
+                                        }
+                                      >
+                                        {outcome === "VERIFIED"
+                                          ? "Mark verified"
+                                          : "Reject for correction"}
+                                      </button>
+                                    ))}
+                                  </div>
+                                  <p className="field-help">
+                                    A different authorized user must review the
+                                    capture.
+                                  </p>
+                                </>
                               )}
+                            </section>
+                          )}
+
+                          {capture.review && (
+                            <div className="compliance-banner">
+                              <div>
+                                <b>
+                                  {capture.review.outcome} ·{" "}
+                                  {capture.review.reviewer}
+                                </b>
+                                <p>{capture.review.reason}</p>
+                              </div>
                             </div>
                           )}
-                        {capture.status === "SUBMITTED" && (
-                          <section className="capture-review">
-                            <h2>Awaiting backend review</h2>
-
-                            {user.permissions.includes("compliance.write") && (
-                              <>
-                                <label>
-                                  Review decision reason
-                                  <textarea
-                                    minLength={5}
-                                    maxLength={300}
-                                    value={review}
-                                    onChange={(e) => setReview(e.target.value)}
-                                  />
-                                </label>
-                                <div className="capture-toolbar">
-                                  {["VERIFIED", "REJECTED"].map((outcome) => (
-                                    <button
-                                      key={outcome}
-                                      disabled={
-                                        busy || review.trim().length < 5
-                                      }
-                                      onClick={() =>
-                                        run(() =>
-                                          post(
-                                            "/kyc-captures/" +
-                                              capture.id +
-                                              "/review",
-                                            {
-                                              version: capture.version,
-                                              outcome,
-                                              reason: review,
-                                            },
-                                          ),
-                                        )
-                                      }
-                                    >
-                                      {outcome === "VERIFIED"
-                                        ? "Mark verified"
-                                        : "Reject for correction"}
-                                    </button>
-                                  ))}
-                                </div>
-                                <p className="field-help">
-                                  A different authorized user must review the
-                                  capture.
-                                </p>
-                              </>
-                            )}
-                          </section>
-                        )}
-
-                        {capture.review && (
-                          <div className="compliance-banner">
-                            <div>
-                              <b>
-                                {capture.review.outcome} ·{" "}
-                                {capture.review.reviewer}
-                              </b>
-                              <p>{capture.review.reason}</p>
-                            </div>
-                          </div>
-                        )}
-                        <details className="capture-evidence">
-                          <summary>Transaction history</summary>
-                          <ol className="capture-timeline">
-                            {capture.history?.map((event: Row, i: number) => (
-                              <li key={i}>
-                                <b>
-                                  {event.action
-                                    .replace(/KYC/g, "Receipt")
-                                    .replace(/OCR/g, "Details")}
-                                </b>
-                                <span>
-                                  {event.actor} ·{" "}
-                                  {new Date(event.at + "Z").toLocaleString()}
-                                </span>
-                              </li>
-                            ))}
-                          </ol>
-                        </details>
+                          <details className="capture-evidence">
+                            <summary>Transaction history</summary>
+                            <ol className="capture-timeline">
+                              {capture.history?.map((event: Row, i: number) => (
+                                <li key={i}>
+                                  <b>
+                                    {event.action
+                                      .replace(/KYC/g, "Receipt")
+                                      .replace(/OCR/g, "Details")}
+                                  </b>
+                                  <span>
+                                    {event.actor} ·{" "}
+                                    {new Date(event.at + "Z").toLocaleString()}
+                                  </span>
+                                </li>
+                              ))}
+                            </ol>
+                          </details>
                         </details>
                       </div>
                     </Panel>

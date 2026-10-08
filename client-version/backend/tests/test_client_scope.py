@@ -2217,7 +2217,7 @@ def test_call_tasks_roles_and_sequential_release(client):
     assert {task["status"] for task in client.get("/api/sales-management/call-tasks").json() if task["sale_id"] == sale_id} == {"PENDING", "BLOCKED"}
     staff = client.get("/api/sales-management/staff")
     assert staff.status_code == 200 and any(row["role"] == "Sales Manager" for row in staff.json())
-    assert client.post("/api/sales-management/staff", json={"name":"New Sales Manager", "email":"new.manager@relay.demo",
+    assert client.post("/api/sales-management/staff", json={"name":"New Sales Manager", "email":"not-a-valid-email",
         "password":"strong-test-password", "role":"Sales Manager"}).status_code == 422
     branch = next(row["id"] for row in client.get("/api/resources/branches").json() if row["name"] == "Dubai Central")
     created_staff = client.post("/api/sales-management/staff", json={"name":"New Sales Manager", "email":"new.manager@relay.demo",
@@ -2241,6 +2241,10 @@ def test_call_tasks_roles_and_sequential_release(client):
     passed = client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"TELE_VERIFICATION",
         "outcome":"PASSED", "remark":"Identity confirmed"})
     assert passed.status_code == 201, passed.text
+    login(client, "admin")
+    closed = client.post("/api/sales-management/status-file", json={"filename":"sales.csv", "apply":True,
+        "content_base64":base64.b64encode(f"sale_id,current_status,new_status\n{sale_id},IN_PROGRESS,CLOSED".encode()).decode()})
+    assert closed.status_code == 200, closed.text
     login(client, "welcome")
     ready = [task for task in client.get("/api/sales-management/call-tasks").json() if task["sale_id"] == sale_id]
     assert ready[0]["status"] == "PENDING"

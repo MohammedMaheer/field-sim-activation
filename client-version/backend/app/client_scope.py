@@ -64,6 +64,7 @@ def configure(app):
                 "/api/administration",
                 "/api/kyc-captures",
                 "/api/incentives",
+                "/api/commissions",
                 "/api/support-tickets",
                 "/api/sales-management",
                 "/api/field-assets",

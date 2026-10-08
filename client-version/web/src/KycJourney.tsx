@@ -1,4 +1,4 @@
-export const stages = ["Identity", "SIM & plan", "Payment"];
+export const stages = ["Customer", "Order & plan", "Submit sale"];
 export function captureStage(_status?: string) {
   return 2;
 }

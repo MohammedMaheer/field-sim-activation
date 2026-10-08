@@ -34,7 +34,7 @@ def password_hash(value):
 
 
 KNOWN_ROLES = set(ROLE_PERMISSIONS)
-GLOBAL_AGENT_ROLES = {"Administrator", "Operations Manager", "Compliance Officer", "Inventory Manager"}
+GLOBAL_AGENT_ROLES = {"Administrator", "Operations Manager", "Compliance Officer", "Inventory Manager", "Sales Manager"}
 CAPTURE_WRITERS = {"Administrator", "Operations Manager", "Field Agent"}
 
 
@@ -105,7 +105,7 @@ def visible_agents(db, user):
         query = query.where(Agent.user_id == user.id)
     elif role == "Team Leader":
         query = query.where(Agent.leader_id == user.id)
-    elif role in {"Branch Manager", "Sales Manager"}:
+    elif role == "Branch Manager":
         query = query.join(Outlet, Outlet.id == Agent.outlet_id).where(
             Outlet.branch_id == user.branch_id
         )

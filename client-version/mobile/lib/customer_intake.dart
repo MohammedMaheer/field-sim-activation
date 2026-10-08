@@ -541,7 +541,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   Future<void> load() async {
     final service = ref.read(serviceProvider);
     data = {...widget.initial};
-    data['capture_mode'] = 'SCREENSHOT_ORDER';
+    data['capture_mode'] = 'SCREENSHOT_SALE';
     data.putIfAbsent('transaction_id', () => const Uuid().v4());
     step = (data['step'] as int? ?? 0).clamp(0, 1);
     try {
@@ -627,6 +627,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     'order_reference' => 'request ID',
     'order_type' => 'order type',
     'router_serial' => 'router serial',
+    'router_fulfilment' => 'router fulfilment',
     'sim_identifier' => 'SIM barcode',
     'msisdn' => 'phone number',
     'plan_id' => 'subscriber plan',
@@ -841,7 +842,10 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 'plan_id',
                 'msisdn',
                 'order_type',
-                if (data['order_type'] == 'HW') 'router_serial',
+                if (data['order_type'] == 'HW') 'router_fulfilment',
+                if (data['order_type'] == 'HW' &&
+                    data['router_fulfilment'] == 'ON_SPOT')
+                  'router_serial',
               ];
         final missingFields = required
             .where(
@@ -1305,8 +1309,40 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 },
               ),
               const SizedBox(height: 12),
-              if (data['order_type'] == 'HW')
-                field('router_serial', 'Router serial'),
+              if (data['order_type'] == 'HW') ...[
+                DropdownButtonFormField<String>(
+                  initialValue:
+                      const [
+                        'DELIVERY',
+                        'ON_SPOT',
+                        'WITHOUT_ROUTER',
+                      ].contains(data['router_fulfilment'])
+                      ? data['router_fulfilment']
+                      : null,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Router fulfilment',
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'DELIVERY',
+                      child: Text('Delivery'),
+                    ),
+                    DropdownMenuItem(value: 'ON_SPOT', child: Text('On spot')),
+                    DropdownMenuItem(
+                      value: 'WITHOUT_ROUTER',
+                      child: Text('Without router'),
+                    ),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (value) => set('router_fulfilment', value),
+                ),
+                const SizedBox(height: 12),
+                if (data['router_fulfilment'] == 'ON_SPOT')
+                  field('router_serial', 'Router serial'),
+              ],
+              field('sr_number', 'SR number'),
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: const Text(
@@ -1323,12 +1359,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                     field('router_serial', 'Router serial'),
                   RelayPair(
                     rowGap: 0,
-                    first: field('sr_number', 'SR number'),
-                    second: field('alternate_number', 'Alternate number'),
-                  ),
-                  field(
-                    'advance_transaction_number',
-                    'Advance transaction number',
+                    first: field('alternate_number', 'Alternate number'),
+                    second: field(
+                      'advance_transaction_number',
+                      'Advance transaction number',
+                    ),
                   ),
                 ],
               ),

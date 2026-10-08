@@ -1,3 +1,7 @@
+# October client clarification - 9 October 2026
+
+See [October client update](OCTOBER-2026-CLIENT-UPDATE.md) for the latest rules. New sales capture customer and order screens, then review and submit with an optional payment receipt; there is no separate payment-confirmation gate. Backend evidence review is independent, team leaders receive read-only updates, and daily SR reconciliation has a separate pending/mismatch state that does not block recording external activation. Approved incentive rates and CRR/DRR are implemented; unknown policy inputs and projection remain on hold. Cancelled sales are excluded from original-date net totals. This supersedes earlier workflow notes below.
+
 # Modern Trade clarification — 30 September 2026
 
 The complete client document and owner clarification govern new submissions: activation is completed externally on the salesperson's existing device; Relay captures customer, order and confirmation screens, records the sale and independently verifies its evidence. Backend verification confirms the linked sale and matching SIM once; it does not initiate a second activation. The sale's saved branch leader receives a read-only update. No Grabba/carrier API is required. All seven order types and the document's optional sales fields are predefined in both clients. Commission/CRR/DRR/projection/deduction calculations remain unconfigured until management supplies approved rules. See `client-version/docs/MODERN-TRADE-STATUS.md` for the current requirement matrix. Earlier sequences below describe retained historical workflows.

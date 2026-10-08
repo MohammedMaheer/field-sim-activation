@@ -1,4 +1,5 @@
 import 'role_access.dart';
+import 'commission_calculations.dart';
 import 'notifications.dart';
 import 'saved_drafts.dart';
 import 'sales_management.dart';
@@ -1247,8 +1248,11 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                                             ),
                                             const SizedBox(height: 3),
                                             Text(
-                                              row['document_kind'] ==
-                                                      'PAYMENT_CONFIRMATION'
+                                              row['intake']?['capture_mode'] ==
+                                                      'SCREENSHOT_SALE'
+                                                  ? 'Sale submission'
+                                                  : row['document_kind'] ==
+                                                        'PAYMENT_CONFIRMATION'
                                                   ? 'Payment confirmation'
                                                   : 'Captured transaction',
                                               style: const TextStyle(
@@ -1297,6 +1301,21 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
 
 class IncentivesScreen extends ConsumerWidget {
   const IncentivesScreen({super.key});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) =>
+      [
+        'Administrator',
+        'Operations Manager',
+        'Field Agent',
+        'Team Leader',
+        'Sales Manager',
+      ].contains(ref.read(serviceProvider).user?['role'])
+      ? const CommissionCalculations(history: IncentiveHistory())
+      : const IncentiveHistory();
+}
+
+class IncentiveHistory extends ConsumerWidget {
+  const IncentiveHistory({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final data = ref.watch(incentiveProvider);
@@ -1964,12 +1983,12 @@ class _StockState extends ConsumerState<StockScreen> {
           padding: const EdgeInsets.all(22),
           children: [
             const Text(
-              'My SIM stock',
+              'Branch SIM stock',
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
             const Text(
-              'Every SIM. Accounted for.',
+              'Available and assigned SIMs',
               style: TextStyle(color: muted),
             ),
             const SizedBox(height: 24),
@@ -2053,13 +2072,17 @@ class _StockState extends ConsumerState<StockScreen> {
                                   color: muted,
                                 ),
                               ),
+                              Text(
+                                '${s['branch'] ?? s['outlet'] ?? 'Not recorded'}',
+                                style: RelayTypography.caption,
+                              ),
                               StatusPill(s['status']),
                               if (s['activation_stage'] != null &&
                                   s['activation_stage'] != 'NOT_STARTED')
                                 Padding(
                                   padding: const EdgeInsets.only(top: 5),
                                   child: Text(
-                                    '${s['activation_stage'].toString().replaceAll('_', ' ')} · Payment ${s['payment_status'].toString().replaceAll('_', ' ').toLowerCase()}',
+                                    '${s['activation_stage'].toString().replaceAll('_', ' ')} · Receipt ${s['payment_status'].toString().replaceAll('_', ' ').toLowerCase()}',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: muted,

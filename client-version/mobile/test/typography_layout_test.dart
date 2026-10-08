@@ -144,7 +144,7 @@ void main() {
               for (final title in [
                 '1. Customer',
                 '2. Order & plan',
-                '3. Payment',
+                '3. Submit sale',
               ]) {
                 expectReadableText(tester, title, width);
                 final paragraph = tester.renderObject<RenderParagraph>(
@@ -231,7 +231,7 @@ void main() {
               expectReadableText(tester, action, width);
               expect(find.text(action).hitTestable(), findsOneWidget);
             }
-            final upload = find.text('Upload payment confirmation').last;
+            final upload = find.text('Submit sale').last;
             await tester.scrollUntilVisible(
               upload,
               120,

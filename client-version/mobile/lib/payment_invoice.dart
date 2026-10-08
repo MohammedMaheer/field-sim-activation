@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'typography.dart';
+import 'sr_verification.dart';
 
 Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
   final intake = row['intake'] as Map? ?? {};
-  final orderMode = intake['capture_mode'] == 'SCREENSHOT_ORDER';
+  final saleMode = intake['capture_mode'] == 'SCREENSHOT_SALE';
+  final orderMode = [
+    'SCREENSHOT_ORDER',
+    'SCREENSHOT_SALE',
+  ].contains(intake['capture_mode']);
   final date = DateTime.tryParse(
     row['created_at']?.toString() ?? '',
   )?.toLocal();
@@ -54,6 +59,10 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
   return {
     'heading': row['status'] == 'REJECTED'
         ? 'Correction required'
+        : saleMode
+        ? row['status'] == 'VERIFIED'
+              ? 'Sale verified'
+              : 'Sale submitted'
         : orderMode
         ? 'Payment recorded'
         : 'Payment successful',
@@ -112,6 +121,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
           field('Prepayment on order', intake['prepayment']),
           if (orderMode) ...[
             field('Order type', intake['order_type']),
+            field('Router fulfilment', intake['router_fulfilment']),
             field('Account number', intake['account_number']),
             field('Router serial', intake['router_serial']),
             field(
@@ -131,9 +141,22 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
         ],
       },
       {
-        'title': 'Payment',
+        'title': saleMode ? 'Sale' : 'Payment',
         'fields': [
-          if (orderMode) ...[
+          if (saleMode) ...[
+            field('SR number', intake['sr_number']),
+            field(
+              'SR verification',
+              srVerificationLabel(row['sr_verification']?['status']),
+            ),
+            field('Backend verification', status),
+            field(
+              'Payment receipt',
+              row['payment_record_status'] == 'RECORDED'
+                  ? 'Recorded'
+                  : 'Not recorded',
+            ),
+          ] else if (orderMode) ...[
             field('Request ID', intake['order_reference']),
             field('Agent payment record', 'Uploaded'),
             field('Backend confirmation', status),
@@ -185,7 +208,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
                   ? 'Captured'
                   : null,
             ),
-          field('Payment confirmation', 'Uploaded'),
+          if (!saleMode) field('Payment confirmation', 'Uploaded'),
           field('Verified by', row['review']?['reviewer']),
           field('Activation reference', row['activation']?['reference']),
         ],
@@ -337,6 +360,12 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
         'Total paid',
         'Agent payment record',
         'Backend confirmation',
+      ],
+      'Sale': [
+        'SR number',
+        'SR verification',
+        'Backend verification',
+        'Payment receipt',
       ],
     };
     final main = <Map>[];

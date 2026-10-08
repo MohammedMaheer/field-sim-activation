@@ -5,6 +5,7 @@ import csv
 import hashlib
 import io
 import re
+import calendar
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from itertools import islice
@@ -12,15 +13,15 @@ from zipfile import ZipFile
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import Field, model_validator
+from pydantic import Field, model_validator, field_validator
 from .validation import BusinessInput
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_
 from sqlalchemy.exc import IntegrityError
 from openpyxl import load_workbook
 
 from .db import (
     Agent, Branch, CallAttempt, NoSaleFeedback, Outlet, Role, SalesCallTask, SalesRecord,
-    SalesTarget, Session, User, Customer, Sim, SimProgress, Movement, KycCapture, get_db, now,
+    SalesTarget, Session, User, Customer, Sim, SimProgress, Movement, KycCapture, get_db, now, business_date,
 )
 from .security import agent_for_update, assert_agent, cipher, password_hash, permissions, principal
 from .services import audit
@@ -30,6 +31,13 @@ ORDER_TYPES = ("NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR")
 SALE_STATUSES = ("IN_PROGRESS", "CLOSED", "CANCELLED")
 CALL_STAGES = ("TELE_VERIFICATION", "WELCOME_CALL")
 STAFF_ROLES = ("Sales Manager", "Tele Verification Officer", "Welcome Call Officer")
+CALL_ORDER_TYPES = ("NEW", "MNP", "P2P", "HW", "ELIFE")
+ROUTER_FULFILMENTS = ("DELIVERY", "ON_SPOT", "WITHOUT_ROUTER")
+
+
+def router_required(order_type, details):
+    # Preserve the mandatory serial for historical HW entries with no delivery choice.
+    return order_type == "HW" and (details.get("router_fulfilment") or "ON_SPOT") == "ON_SPOT"
 
 
 @router.get("/staff")
@@ -40,7 +48,7 @@ def staff(user=Depends(principal), db=Depends(get_db)):
     return [{"id": row.id, "name": row.name, "email": row.email,
              "role": db.get(Role, row.role_id).name,
              "branch_id": row.branch_id,
-             "branch": db.get(Branch, row.branch_id).name if row.branch_id else "All branches"}
+             "branch": "All branches" if db.get(Role, row.role_id).name == "Sales Manager" else db.get(Branch, row.branch_id).name if row.branch_id else "All branches"}
             for row in users]
 
 
@@ -67,8 +75,6 @@ def create_staff(body: StaffCreate, request: Request, user=Depends(principal), d
         raise HTTPException(422, "Enter a valid email address")
     if db.scalar(select(User.id).where(User.email == email)):
         raise HTTPException(409, "This sign-in email already exists")
-    if body.role == "Sales Manager" and not body.branch_id:
-        raise HTTPException(422, "Assign a branch to the Sales Manager")
     if body.branch_id:
         from .branch_lifecycle import active_branch
         active_branch(db, body.branch_id)
@@ -99,8 +105,6 @@ def assign_staff(staff_id: str, body: StaffAssignment, request: Request, user=De
     person = db.get(User, staff_id)
     if not person or db.get(Role, person.role_id).name not in STAFF_ROLES:
         raise HTTPException(404, "Sales staff account not found")
-    if body.role == "Sales Manager" and not body.branch_id:
-        raise HTTPException(422, "Assign a branch to the Sales Manager")
     if body.branch_id:
         from .branch_lifecycle import active_branch
         active_branch(db, body.branch_id)
@@ -145,7 +149,7 @@ def permitted(db, user, row):
     if role == "Team Leader":
         return row.leader_id == user.id
     if role == "Sales Manager":
-        return row.manager_id == user.id or row.manager_id is None and row.branch_id == user.branch_id
+        return "read" in permissions(db, user)
     if role == "Branch Manager":
         return row.branch_id == user.branch_id
     if role in {"Tele Verification Officer", "Welcome Call Officer"}:
@@ -163,10 +167,7 @@ def scoped(db, user, model):
         query = query.where(model.agent_id == (agent.id if agent else ""))
     elif role == "Team Leader":
         query = query.where(model.leader_id == user.id)
-    elif role == "Sales Manager" and model is SalesRecord:
-        query = query.where(or_(model.manager_id == user.id,
-            and_(model.manager_id.is_(None), model.branch_id == user.branch_id)))
-    elif role in {"Branch Manager", "Sales Manager"}:
+    elif role == "Branch Manager":
         query = query.where(model.branch_id == user.branch_id)
     elif "read" not in permissions(db, user):
         raise HTTPException(403, "Your role cannot view sales")
@@ -174,6 +175,8 @@ def scoped(db, user, model):
 
 
 def sale_view(db, row):
+    from .sr_verification import sale_state
+    sr_state = sale_state(db, row)
     agent, outlet = assignment(db, row.agent_id)
     document = cipher.decrypt(row.document_encrypted.encode()).decode() if row.document_encrypted else ""
     return {
@@ -191,6 +194,10 @@ def sale_view(db, row):
         "plan_name": row.plan_name, "request_id": row.request_id or "Not recorded",
         "status": row.status, "status_updated_at": row.status_updated_at,
         **row.details,
+        "sr_status": sr_state["status"], "sr_verification": sr_state,
+        "payment_record_status": row.details.get("payment_record_status") or "NOT_RECORDED",
+        "router_fulfilment": (row.details.get("router_fulfilment") or "ON_SPOT") if row.order_type == "HW" else "",
+        "stock_recording_status": "SERIAL_NOT_RECORDED" if not row.details.get("sim_serial") else "CONSUMED" if row.details.get("stock_deducted_sim_id") else "AWAITING_BACKEND_CONFIRMATION",
     }
 
 
@@ -199,14 +206,14 @@ def register_capture_sale(db, capture):
     from .captures import payload
     data = payload(capture)
     intake = data.get("intake") or {}
-    if intake.get("capture_mode") != "SCREENSHOT_ORDER":
+    if intake.get("capture_mode") not in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}:
         return
     if db.scalar(select(SalesRecord.id).where(SalesRecord.capture_id == capture.id)):
         return
     if intake.get("order_type") not in ORDER_TYPES:
         raise HTTPException(422, "Choose the order type before submitting the sale")
-    if intake["order_type"] == "HW" and not intake.get("router_serial", "").strip():
-        raise HTTPException(422, "Router serial is required for home wireless sales")
+    if router_required(intake["order_type"], intake) and not intake.get("router_serial", "").strip():
+        raise HTTPException(422, "Router serial is required for on-spot home wireless sales")
     agent, outlet = assignment(db, capture.agent_id)
     reference = (intake.get("order_reference") or "").strip() or None
     if reference and db.scalar(select(SalesRecord.id).where(SalesRecord.request_id == reference)):
@@ -223,10 +230,12 @@ def register_capture_sale(db, capture):
         details={"msisdn": intake.get("msisdn") or "", "source_reference": capture.source_reference,
                  "monthly_cost": intake.get("monthly_cost") or "", "prepayment": intake.get("prepayment") or "",
                  **{key: intake.get(key) or "" for key in ("account_number", "router_serial", "advance_transaction_number", "sr_number", "alternate_number")},
+                 "router_fulfilment": intake.get("router_fulfilment", "ON_SPOT") if intake["order_type"] == "HW" else "",
                  "sim_serial": intake.get("sim_identifier") or "",
                  "assignment_effective_at": agent.assignment_effective_at.isoformat() if agent.assignment_effective_at else "",
                  "request_id_on_image": intake.get("order_reference") or ""},
     )
+    record.details = {**record.details, "payment_record_status": "RECORDED" if intake.get("payment_image") else "NOT_RECORDED"}
     db.add(record)
     db.flush()
     customer = db.scalar(select(Customer).where(Customer.agent_id == agent.id, Customer.mobile == intake.get("msisdn", ""), Customer.name == record.customer_name))
@@ -258,13 +267,29 @@ def change_sale_status(db, row, status, user, request):
         if progress:
             progress.stage, progress.payment_status = "ACTIVATED", "VERIFIED"
     row.status, row.status_updated_at = status, now()
+    update_call_dependencies(db, row)
 
 
 def create_call_tasks(db, row):
     """Place submitted sales in the internal call queue once per stage."""
+    if row.order_type not in CALL_ORDER_TYPES:
+        return
     for stage, status in (("TELE_VERIFICATION", "PENDING"), ("WELCOME_CALL", "BLOCKED")):
         if not db.scalar(select(SalesCallTask.id).where(SalesCallTask.sale_id == row.id, SalesCallTask.stage == stage)):
             db.add(SalesCallTask(sale_id=row.id, stage=stage, status=status))
+
+
+def update_call_dependencies(db, row):
+    if row.order_type not in CALL_ORDER_TYPES:
+        return
+    tele = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == row.id, SalesCallTask.stage == "TELE_VERIFICATION"))
+    welcome = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == row.id, SalesCallTask.stage == "WELCOME_CALL").with_for_update())
+    if welcome and welcome.status not in {"COMPLETED", "SKIPPED"}:
+        ready = row.status == "CLOSED" and tele and tele.status == "COMPLETED"
+        if ready and welcome.status == "BLOCKED":
+            welcome.status, welcome.updated_at = "PENDING", now()
+        elif not ready and welcome.status != "BLOCKED":
+            welcome.status, welcome.updated_at = "BLOCKED", now()
 
 
 def record_capture_activation(db, capture, outcome):
@@ -272,6 +297,7 @@ def record_capture_activation(db, capture, outcome):
     if row:
         row.status = "CLOSED" if outcome == "ACTIVATED" else "IN_PROGRESS"
         row.status_updated_at = now()
+        update_call_dependencies(db, row)
 
 
 class SaleCreate(BusinessInput):
@@ -285,18 +311,24 @@ class SaleCreate(BusinessInput):
     account_number: str = Field(default="", max_length=120)
     sim_serial: str = Field(default="", max_length=100)
     router_serial: str = Field(default="", max_length=100)
+    router_fulfilment: Literal["DELIVERY", "ON_SPOT", "WITHOUT_ROUTER"] = "ON_SPOT"
     advance_transaction_number: str = Field(default="", max_length=120)
     sr_number: str = Field(default="", max_length=120)
     alternate_number: str = Field(default="", max_length=40)
     msisdn: str = Field(default="", max_length=40)
     note: str = Field(default="", max_length=500)
 
+    @field_validator("router_fulfilment", mode="before")
+    @classmethod
+    def legacy_router_default(cls, value):
+        return "ON_SPOT" if isinstance(value, str) and not value.strip() else value
+
     @model_validator(mode="after")
     def conditional_fields(self):
         if not self.customer_name.strip() or not self.plan_name.strip():
             raise ValueError("Enter customer and plan names")
-        if self.order_type == "HW" and not self.router_serial.strip():
-            raise ValueError("Router serial is required for home wireless sales")
+        if router_required(self.order_type, self.model_dump()) and not self.router_serial.strip():
+            raise ValueError("Router serial is required for on-spot home wireless sales")
         return self
 
 
@@ -342,33 +374,47 @@ def sale_detail(sale_id: str, user=Depends(principal), db=Depends(get_db)):
         raise HTTPException(404, "Sale not found")
     attempts = db.scalars(select(CallAttempt).where(CallAttempt.sale_id == row.id).order_by(CallAttempt.created_at)).all()
     tasks = db.scalars(select(SalesCallTask).where(SalesCallTask.sale_id == row.id)).all()
-    return {**sale_view(db, row), "calls": [{"stage": task.stage, "status": task.status} for task in tasks],
+    tele = next((task for task in tasks if task.stage == "TELE_VERIFICATION"), None)
+    return {**sale_view(db, row), "calls": [{"stage": task.stage, "status": call_state(row, task, tele), **call_timing(row, task.stage)} for task in tasks if row.order_type in CALL_ORDER_TYPES],
         "attempts": [{"stage": attempt.stage, "outcome": attempt.outcome, "remark": attempt.remark,
                       "at": attempt.created_at, "actor": db.get(User, attempt.actor_id).name} for attempt in attempts]}
 
 
 @router.get("/performance")
-def performance(period: str = "", user=Depends(principal), db=Depends(get_db)):
-    period = period or now().strftime("%Y-%m")
+def performance(period: str = "", user=Depends(principal), db=Depends(get_db), order_type: str = "", status: str = "", branch_id: str = "", agent_id: str = "", leader_id: str = "", from_date: str = "", to_date: str = ""):
+    period = period or business_date(now()).strftime("%Y-%m")
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period):
         raise HTTPException(422, "Period must use YYYY-MM")
     year, month = (int(part) for part in period.split("-"))
     dubai = ZoneInfo("Asia/Dubai")
-    start = datetime(year, month, 1, tzinfo=dubai).astimezone(timezone.utc).replace(tzinfo=None)
-    end_local = datetime(year + 1, 1, 1, tzinfo=dubai) if month == 12 else datetime(year, month + 1, 1, tzinfo=dubai)
-    end = end_local.astimezone(timezone.utc).replace(tzinfo=None)
-    query = scoped(db, user, SalesRecord).where(SalesRecord.created_at >= start, SalesRecord.created_at < end)
+    query = filtered_sales_query(db, user, period, order_type, status, branch_id, agent_id, leader_id, from_date, to_date)
     rows = db.scalars(query).all()
     closed = [row for row in rows if row.status == "CLOSED"]
     product = {name: sum(row.order_type == name for row in closed) for name in ORDER_TYPES}
     today = now().replace(tzinfo=timezone.utc).astimezone(dubai).date()
     today_rows = [row for row in rows if row.created_at.replace(tzinfo=timezone.utc).astimezone(dubai).date() == today]
     target_rows = targets(period, user, db)
+    target_rows = [item for item in target_rows if
+        (not agent_id or item["agent_id"] == agent_id)
+        and (not branch_id or db.get(Outlet, db.get(Agent, item["agent_id"]).outlet_id).branch_id == branch_id)
+        and (not leader_id or db.get(Agent, item["agent_id"]).leader_id == leader_id)
+        and (not order_type or item["order_type"] == order_type)]
     by_agent = {}
     for target_row in target_rows:
         by_agent.setdefault(target_row["agent_id"], []).append(target_row)
     target = sum(next((item["monthly_target"] for item in items if item["order_type"] == "ALL"),
                       sum(item["monthly_target"] for item in items)) for items in by_agent.values())
+    month_days = calendar.monthrange(year, month)[1]
+    month_start, month_end = date(year, month, 1), date(year, month, month_days)
+    elapsed_days = 0 if today < month_start else month_days if today > month_end else today.day
+    remaining_days = month_days - elapsed_days
+    achieved = sum(business_date(row.created_at) <= today for row in closed)
+    daily = {}
+    for row in rows:
+        day = business_date(row.created_at).isoformat()
+        item = daily.setdefault(day, {"date": day, "recorded": 0, "closed": 0, "cancelled": 0, "in_progress": 0})
+        item["recorded"] += 1
+        item[{"CLOSED": "closed", "CANCELLED": "cancelled"}.get(row.status, "in_progress")] += 1
     return {"period": period, "recorded": len(rows), "closed": len(closed),
             "in_progress": sum(row.status == "IN_PROGRESS" for row in rows),
             "cancelled": sum(row.status == "CANCELLED" for row in rows),
@@ -376,7 +422,12 @@ def performance(period: str = "", user=Depends(principal), db=Depends(get_db)):
             "achievement_percent": round(len(closed) * 100 / target, 1) if target else None,
             "daily_by_product": {name: sum(row.order_type == name and row.status == "CLOSED" for row in today_rows) for name in ORDER_TYPES},
             "recorded_today": len(today_rows), "closed_today": sum(row.status == "CLOSED" for row in today_rows),
-            "by_product": product}
+            "by_product": product, "mtd_achievement": achieved, "as_of": today.isoformat(),
+            "elapsed_days": elapsed_days, "remaining_days": remaining_days,
+            "crr": achieved / elapsed_days if elapsed_days else None,
+            "drr": (target - achieved) / remaining_days if remaining_days and target_rows else None,
+            "projection": None, "projection_status": "UNCONFIGURED",
+            "daily_summary": [daily[day] for day in sorted(daily)]}
 
 
 @router.post("/sales", status_code=201)
@@ -424,7 +475,13 @@ def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=
 class SaleCorrection(BusinessInput):
     order_type: Literal["NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR"]
     router_serial: str = Field(default="", max_length=100)
+    router_fulfilment: Literal["DELIVERY", "ON_SPOT", "WITHOUT_ROUTER"] = "ON_SPOT"
     reason: str = Field(min_length=5, max_length=300)
+
+    @field_validator("router_fulfilment", mode="before")
+    @classmethod
+    def legacy_router_default(cls, value):
+        return "ON_SPOT" if isinstance(value, str) and not value.strip() else value
 
 
 @router.patch("/sales/{sale_id}")
@@ -434,13 +491,14 @@ def correct_sale(sale_id: str, body: SaleCorrection, request: Request, user=Depe
     row = db.get(SalesRecord, sale_id)
     if not row or not permitted(db, user, row):
         raise HTTPException(404, "Sale not found")
-    if body.order_type == "HW" and not body.router_serial.strip():
-        raise HTTPException(422, "Router serial is required for home wireless sales")
-    old = {"order_type": row.order_type, "router_serial": row.details.get("router_serial", "")}
+    if router_required(body.order_type, body.model_dump()) and not body.router_serial.strip():
+        raise HTTPException(422, "Router serial is required for on-spot home wireless sales")
+    old = {"order_type": row.order_type, "router_serial": row.details.get("router_serial", ""), "router_fulfilment": row.details.get("router_fulfilment") or "ON_SPOT"}
     row.order_type = body.order_type
-    row.details = {**row.details, "router_serial": body.router_serial.strip()}
+    row.details = {**row.details, "router_serial": body.router_serial.strip(), "router_fulfilment": body.router_fulfilment}
+    create_call_tasks(db, row)
     audit(db, user, "Sale Corrected", row.id, row.agent_id, old=old,
-          new={"order_type": row.order_type, "router_serial": body.router_serial.strip()},
+          new={"order_type": row.order_type, "router_serial": body.router_serial.strip(), "router_fulfilment": body.router_fulfilment},
           reason=body.reason.strip(), request=request)
     db.commit()
     return sale_view(db, row)
@@ -508,7 +566,7 @@ def targets(period: str = "", user=Depends(principal), db=Depends(get_db)):
         query = query.where(SalesTarget.agent_id == (agent.id if agent else ""))
     elif role == "Team Leader":
         query = query.where(SalesTarget.agent_id.in_(select(Agent.id).where(Agent.leader_id == user.id)))
-    elif role in {"Branch Manager", "Sales Manager"}:
+    elif role == "Branch Manager":
         query = query.where(SalesTarget.agent_id.in_(select(Agent.id).join(Outlet).where(Outlet.branch_id == user.branch_id)))
     if period:
         query = query.where(SalesTarget.period == period)
@@ -573,7 +631,7 @@ def visible_call_rows(db, user):
             query = query.where(SalesRecord.branch_id == user.branch_id)
     else:
         query = scoped(db, user, SalesRecord)
-    return db.scalars(query.order_by(SalesRecord.created_at.desc()).limit(1000)).all()
+    return db.scalars(query.where(SalesRecord.order_type.in_(CALL_ORDER_TYPES)).order_by(SalesRecord.created_at.desc()).limit(1000)).all()
 
 
 def task_stage_filter(db, user):
@@ -585,6 +643,38 @@ def task_stage_filter(db, user):
     return None
 
 
+def call_timing(row, stage):
+    sale_day = business_date(row.created_at)
+    deferred = row.details.get("tele_deferred_until")
+    due = sale_day + timedelta(days=2) if stage == "WELCOME_CALL" else sale_day
+    if stage == "TELE_VERIFICATION" and deferred == (sale_day + timedelta(days=1)).isoformat():
+        due = sale_day + timedelta(days=1)
+    due_at = datetime.combine(due + timedelta(days=1), datetime.min.time(), ZoneInfo("Asia/Dubai")).astimezone(timezone.utc)
+    return {"due_date": due.isoformat(), "due_at": due_at.isoformat(),
+            "deferred": stage == "TELE_VERIFICATION" and due != sale_day,
+            "overdue": business_date(now()) > due}
+
+
+def call_state(row, task, tele):
+    if row.status == "CANCELLED":
+        return "CANCELLED"
+    if task.stage == "WELCOME_CALL" and task.status not in {"COMPLETED", "SKIPPED"}:
+        return "BLOCKED" if row.status != "CLOSED" or not tele or tele.status != "COMPLETED" else "PENDING" if task.status == "BLOCKED" else task.status
+    return task.status
+
+
+def call_task_view(db, row, task, tele):
+    state = call_state(row, task, tele)
+    timing = call_timing(row, task.stage)
+    tele_timing = call_timing(row, "TELE_VERIFICATION")
+    return {**sale_view(db, row), "id": task.id, "sale_id": row.id, "stage": task.stage,
+            "status": state, "last_outcome": task.last_outcome or "Not started",
+            **timing, "overdue": timing["overdue"] and state not in {"COMPLETED", "SKIPPED", "CANCELLED"},
+            "activation_blocked": task.stage == "WELCOME_CALL" and row.status != "CLOSED",
+            "sequence_warning": "Activation recorded before tele-verification" if row.status == "CLOSED" and not (tele and tele.status == "COMPLETED") and (not tele_timing["deferred"] or tele_timing["overdue"]) else "",
+            "updated_at": task.updated_at}
+
+
 @router.get("/call-tasks")
 def call_tasks(user=Depends(principal), db=Depends(get_db)):
     rows = visible_call_rows(db, user)
@@ -592,15 +682,12 @@ def call_tasks(user=Depends(principal), db=Depends(get_db)):
     if not sale_ids:
         return []
     tasks = db.scalars(select(SalesCallTask).where(SalesCallTask.sale_id.in_(sale_ids))).all()
+    tele_by_sale = {task.sale_id: task for task in tasks if task.stage == "TELE_VERIFICATION"}
     sales_by_id = {row.id: row for row in rows}
     restricted_stage = task_stage_filter(db, user)
     tasks = [task for task in tasks if not restricted_stage or task.stage == restricted_stage]
     tasks.sort(key=lambda task: (task.status not in {"PENDING", "FAILED"}, task.created_at))
-    return [{**sale_view(db, sales_by_id[task.sale_id]), "id": task.id,
-             "sale_id": task.sale_id, "stage": task.stage,
-             "status": "CANCELLED" if sales_by_id[task.sale_id].status == "CANCELLED" else task.status, "last_outcome": task.last_outcome or "Not started",
-             "updated_at": task.updated_at}
-            for task in tasks]
+    return [call_task_view(db, sales_by_id[task.sale_id], task, tele_by_sale.get(task.sale_id)) for task in tasks]
 
 
 @router.get("/call-tasks/summary")
@@ -609,7 +696,9 @@ def call_task_summary(user=Depends(principal), db=Depends(get_db)):
     return {"actionable": sum(task["status"] in {"PENDING", "FAILED"} for task in tasks),
             "pending_tele": sum(task["stage"] == "TELE_VERIFICATION" and task["status"] == "PENDING" for task in tasks),
             "pending_welcome": sum(task["stage"] == "WELCOME_CALL" and task["status"] == "PENDING" for task in tasks),
-            "blocked_welcome": sum(task["stage"] == "WELCOME_CALL" and task["status"] == "BLOCKED" for task in tasks)}
+            "blocked_welcome": sum(task["stage"] == "WELCOME_CALL" and task["status"] == "BLOCKED" for task in tasks),
+            "overdue": sum(task["overdue"] for task in tasks),
+            "sequence_warnings": len({task["sale_id"] for task in tasks if task["sequence_warning"]})}
 
 
 @router.get("/calls")
@@ -637,6 +726,8 @@ def record_call(sale_id: str, body: CallWrite, request: Request, user=Depends(pr
         raise HTTPException(404, "Sale not found")
     if row.status == "CANCELLED":
         raise HTTPException(409, "Calls cannot be recorded for a cancelled sale")
+    if row.order_type not in CALL_ORDER_TYPES:
+        raise HTTPException(409, "This product does not require these call stages")
     task = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == row.id,
                      SalesCallTask.stage == body.stage).with_for_update())
     if not task:
@@ -644,8 +735,10 @@ def record_call(sale_id: str, body: CallWrite, request: Request, user=Depends(pr
         db.flush()
         task = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == row.id,
                          SalesCallTask.stage == body.stage).with_for_update())
-    if task.status == "BLOCKED":
-        raise HTTPException(409, "Complete tele-verification before the welcome call")
+    tele = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == row.id,
+                     SalesCallTask.stage == "TELE_VERIFICATION"))
+    if body.stage == "WELCOME_CALL" and (row.status != "CLOSED" or not tele or tele.status != "COMPLETED"):
+        raise HTTPException(409, "Complete tele-verification and record activation before the welcome call")
     if task.status in {"COMPLETED", "SKIPPED"}:
         raise HTTPException(409, "This call stage is already complete")
     attempt = CallAttempt(sale_id=row.id, stage=body.stage, outcome=body.outcome,
@@ -657,7 +750,7 @@ def record_call(sale_id: str, body: CallWrite, request: Request, user=Depends(pr
     if body.stage == "TELE_VERIFICATION" and task.status == "COMPLETED":
         welcome = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == row.id,
                             SalesCallTask.stage == "WELCOME_CALL").with_for_update())
-        if welcome and welcome.status == "BLOCKED":
+        if welcome and welcome.status == "BLOCKED" and row.status == "CLOSED":
             welcome.status, welcome.updated_at = "PENDING", now()
     audit(db, user, "Sales Call Recorded", row.id, row.agent_id,
           new={"stage": body.stage, "outcome": body.outcome}, request=request)
@@ -676,19 +769,35 @@ def skip_tele(sale_id: str, body: CallSkip, request: Request, user=Depends(princ
     row = db.get(SalesRecord, sale_id)
     if not row or not permitted(db, user, row):
         raise HTTPException(404, "Sale not found")
+    raise HTTPException(409, "Tele-verification is required. Record a technical postponement to the next day instead.")
+
+
+@router.post("/sales/{sale_id}/calls/defer-tele")
+def defer_tele(sale_id: str, body: CallSkip, request: Request, user=Depends(principal), db=Depends(get_db)):
+    call_stage_access(db, user, "TELE_VERIFICATION")
+    row = db.scalar(select(SalesRecord).where(SalesRecord.id == sale_id).with_for_update())
+    if not row or not permitted(db, user, row):
+        raise HTTPException(404, "Sale not found")
+    if row.status == "CANCELLED" or row.order_type not in CALL_ORDER_TYPES:
+        raise HTTPException(409, "This sale cannot be postponed for tele-verification")
+    sale_day, today = business_date(row.created_at), business_date(now())
+    due_day = sale_day + timedelta(days=1)
+    if today < sale_day or today > due_day:
+        raise HTTPException(409, "Technical postponement is limited to the day after the sale")
     task = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == sale_id,
                      SalesCallTask.stage == "TELE_VERIFICATION").with_for_update())
     if not task or task.status in {"COMPLETED", "SKIPPED"}:
-        raise HTTPException(409, "Tele-verification cannot be waived now")
-    task.status, task.updated_at = "SKIPPED", now()
-    welcome = db.scalar(select(SalesCallTask).where(SalesCallTask.sale_id == sale_id,
-                        SalesCallTask.stage == "WELCOME_CALL").with_for_update())
-    if welcome and welcome.status == "BLOCKED":
-        welcome.status, welcome.updated_at = "PENDING", now()
-    audit(db, user, "Tele-verification waived", sale_id, row.agent_id,
-          reason=body.reason.strip(), request=request)
+        raise HTTPException(409, "Tele-verification cannot be postponed now")
+    if row.details.get("tele_deferred_until"):
+        raise HTTPException(409, "The next-day postponement has already been recorded")
+    row.details = {**row.details, "tele_deferred_until": due_day.isoformat(),
+                   "tele_defer_reason": body.reason.strip(), "tele_deferred_by": user.id,
+                   "tele_deferred_at": now().isoformat()}
+    task.updated_at = now()
+    audit(db, user, "Tele-verification technically postponed", row.id, row.agent_id,
+          new={"due_date": due_day.isoformat()}, reason=body.reason.strip(), request=request)
     db.commit()
-    return {"status": "SKIPPED"}
+    return {"status": task.status, "due_date": due_day.isoformat(), "deferred": True}
 
 
 class StatusFile(BusinessInput):
@@ -744,7 +853,7 @@ def status_file(body: StatusFile, request: Request, user=Depends(principal), db=
             errors.append(f"Row {number}: status changed since download; refresh the file")
         elif status not in SALE_STATUSES:
             errors.append(f"Row {number}: use IN_PROGRESS, CLOSED or CANCELLED")
-        elif status == "CLOSED" and (row.order_type not in ORDER_TYPES or row.order_type == "HW" and not row.details.get("router_serial")):
+        elif status == "CLOSED" and (row.order_type not in ORDER_TYPES or router_required(row.order_type, row.details) and not row.details.get("router_serial")):
             errors.append(f"Row {number}: correct the product and required router serial before closing")
         elif status == "CLOSED" and row.capture_id and db.get(KycCapture, row.capture_id).status != "VERIFIED":
             errors.append(f"Row {number}: backend evidence verification is pending")
@@ -794,7 +903,7 @@ def table_download(columns, rows, filename, format="csv"):
 def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager", "Team Leader"}:
         raise HTTPException(403, "Your role cannot upload targets")
-    period = period or now().strftime("%Y-%m")
+    period = period or business_date(now()).strftime("%Y-%m")
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period):
         raise HTTPException(422, "Period must use YYYY-MM")
     from .security import visible_agents

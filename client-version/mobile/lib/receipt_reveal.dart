@@ -3,8 +3,13 @@ import 'typography.dart';
 
 /// A single paper-feed reveal; refreshing the record never restarts it.
 class ReceiptReveal extends StatefulWidget {
-  const ReceiptReveal({super.key, required this.child});
+  const ReceiptReveal({
+    super.key,
+    required this.child,
+    this.readyLabel = 'INVOICE READY',
+  });
   final Widget child;
+  final String readyLabel;
   @override
   State<ReceiptReveal> createState() => _ReceiptRevealState();
 }
@@ -93,7 +98,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                       },
                     );
                     final status = Text(
-                      _controller.isCompleted ? 'INVOICE READY' : 'PRINTING…',
+                      _controller.isCompleted ? widget.readyLabel : 'PRINTING…',
                       style: RelayTypography.caption.copyWith(
                         color: Color(0xff9ff4da),
                         letterSpacing: .6,

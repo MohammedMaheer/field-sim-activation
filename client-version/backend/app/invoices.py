@@ -7,7 +7,8 @@ MISSING = "Not recorded"
 
 def invoice(row, data):
     intake = data.get("intake") or {}
-    order_mode = intake.get("capture_mode") == "SCREENSHOT_ORDER"
+    sale_mode = intake.get("capture_mode") == "SCREENSHOT_SALE"
+    order_mode = intake.get("capture_mode") in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}
     plan = data.get("plan_snapshot") or {}
     uploaded = [f for item in data.get("rows", []) for f in (item.get("fields") or [])]
 
@@ -46,7 +47,7 @@ def invoice(row, data):
         {
             "title": "Invoice",
             "fields": [
-                field("Invoice number", "PAY-" + row.id[:8].upper()),
+                field("Sale reference" if sale_mode else "Invoice number", ("SALE-" if sale_mode else "PAY-") + row.id[:8].upper()),
                 field("Date", row.created_at.strftime("%d %b %Y, %H:%M UTC")),
                 field("Review", review),
                 field("Activation", ("Confirmed by backend" if row.status == "VERIFIED" else "Recorded by agent") if order_mode else activation.get("status") or "Awaiting backend team"),
@@ -90,6 +91,7 @@ def invoice(row, data):
                     ("router_serial", "Router serial"), ("advance_transaction_number", "Advance transaction number"),
                     ("sr_number", "SR number"), ("alternate_number", "Alternate contact number"),
                 ]] if order_mode else []),
+                *([field("Router fulfilment", {"DELIVERY": "Delivery", "ON_SPOT": "On spot", "WITHOUT_ROUTER": "Without router"}.get(intake.get("router_fulfilment")))] if sale_mode and intake.get("order_type") == "HW" else []),
                 field(
                     "Plan price",
                     f"AED {plan['monthly_cost']:.2f}" if "monthly_cost" in plan else None,
@@ -98,8 +100,11 @@ def invoice(row, data):
             ],
         },
         {
-            "title": "Payment",
+            "title": "Payment receipt" if sale_mode else "Payment",
             "fields": [
+                field("Receipt", "Received" if intake.get("payment_image") else None),
+                field("Payment", "Recorded" if intake.get("payment_image") else None),
+            ] if sale_mode else [
                 field("Request ID", intake.get("order_reference")),
                 field("Agent payment record", "Uploaded"),
                 field("Backend confirmation", review),
@@ -124,15 +129,15 @@ def invoice(row, data):
             "fields": [
                 field(
                     "Customer details screen"
-                    if intake.get("capture_mode") == "SCREENSHOT_ORDER"
+                    if order_mode
                     else "Identity document",
                     "Captured" if intake.get("document_image") else None,
                 ),
                 field("Order details screen", "Captured" if intake.get("order_image") else None),
                 field("Selfie", "Captured" if intake.get("selfie_image") else None),
                 *([field("Customer signature", "Captured" if intake.get("signature") else None)]
-                  if intake.get("capture_mode") != "SCREENSHOT_ORDER" else []),
-                field("Payment confirmation", "Uploaded"),
+                  if not order_mode else []),
+                field("Payment receipt" if sale_mode else "Payment confirmation", ("Received" if intake.get("payment_image") else None) if sale_mode else "Uploaded"),
                 field("Verified by", (data.get("review") or {}).get("reviewer")),
                 field("Activation reference", activation.get("reference")),
             ],
@@ -148,7 +153,24 @@ def invoice(row, data):
                 ],
             }
         )
-    if uploaded:
+    state, sale_status = None, None
+    if sale_mode:
+        from sqlalchemy import select
+        from sqlalchemy.orm import object_session
+        from .db import SalesRecord
+        from .sr_verification import sale_state
+        session = object_session(row)
+        sale = session.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id)) if session else None
+        state = sale_state(session, sale) if sale else {"status": "PENDING_SR_VERIFICATION", "reason": "Daily SR report not checked"}
+        sale_status = sale.status if sale else "IN_PROGRESS"
+        sections[0]["fields"][3] = field("Activation", {
+            "CLOSED": "Confirmed by backend", "CANCELLED": "Cancelled", "IN_PROGRESS": "Pending backend confirmation",
+        }.get(sale_status, sale_status))
+        sections.append({"title": "SR verification", "fields": [
+            field("Status", state["status"].replace("_", " ").title()),
+            field("Result", state["reason"]), field("Report date", state.get("business_date")),
+        ]})
+    if uploaded and not sale_mode:
         sections.append(
             {
                 "title": "Confirmation details",
@@ -156,11 +178,19 @@ def invoice(row, data):
             }
         )
     return {
-        "heading": "Correction required"
+        "heading": "Sale cancelled"
+        if sale_status == "CANCELLED"
+        else "Sale confirmed"
+        if sale_status == "CLOSED" and sale_mode
+        else "Correction required"
         if row.status == "REJECTED"
+        else "Sale submitted"
+        if sale_mode
         else "Payment recorded"
         if order_mode
         else "Payment successful",
         "status": review,
         "sections": sections,
+        **({"sale_status": sale_status, "sr_verification": state,
+            "payment_record_status": "RECORDED" if intake.get("payment_image") else "NOT_RECORDED"} if sale_mode else {}),
     }

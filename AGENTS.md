@@ -1,3 +1,7 @@
+# October client clarification - 9 October 2026
+
+See [October client update](docs/OCTOBER-2026-CLIENT-UPDATE.md) for the latest rules. New sales capture customer and order screens, then review and submit with an optional payment receipt; there is no separate payment-confirmation gate. Backend evidence review is independent, team leaders receive read-only updates, and daily SR reconciliation has a separate pending/mismatch state that does not block recording external activation. Approved incentive rates and CRR/DRR are implemented; unknown policy inputs and projection remain on hold. Cancelled sales are excluded from original-date net totals. This supersedes earlier workflow notes below.
+
 # Branch leader clarification - 29 September 2026
 
 Backend staff independently verify transactions. Branch team leaders receive read-only notifications and transaction updates after backend confirmation; they do not verify, approve or confirm transactions. This supersedes the earlier leader-confirmation handoff.

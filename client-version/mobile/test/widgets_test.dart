@@ -42,9 +42,9 @@ void main() {
       expect(
         find.text(
           [
-            'Identity',
-            'SIM & plan',
-            'Payment',
+            'Customer',
+            'Order & plan',
+            'Submit sale',
           ][entry.value],
         ),
         findsOneWidget,

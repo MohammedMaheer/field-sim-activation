@@ -61,27 +61,82 @@ export default function ReceiptReview({
     setChecked(false);
     setError("");
     setZoom(100);
-    setTab("fields");
-    setEvidence("payment");
+    setTab(
+      capture.intake?.capture_mode === "SCREENSHOT_SALE"
+        ? "customer"
+        : "fields",
+    );
+    setEvidence(
+      capture.intake?.capture_mode === "SCREENSHOT_SALE"
+        ? "identity"
+        : "payment",
+    );
   }, [capture.id, capture.version]);
   const own = capture.creator_id === user.id;
-  const eligible = capture.status === "SUBMITTED" && !own && user.permissions?.includes("compliance.write");
-  const payment = capture.document_kind === "PAYMENT_CONFIRMATION";
-  const orderMode = capture.intake?.capture_mode === "SCREENSHOT_ORDER";
-  const evidenceLabel = payment ? "Payment confirmation" : "Historical activation receipt";
-  const evidenceImage = evidence === "identity" ? capture.intake?.document_image : evidence === "order" ? capture.intake?.order_image : "";
-  const canDownloadOriginal = evidence === "payment" ? !!image && !imageError : !!evidenceImage;
+  const eligible =
+    capture.status === "SUBMITTED" &&
+    !own &&
+    user.permissions?.includes("compliance.write");
+  const saleMode = capture.intake?.capture_mode === "SCREENSHOT_SALE";
+  const payment = saleMode || capture.document_kind === "PAYMENT_CONFIRMATION";
+  const orderMode = ["SCREENSHOT_ORDER", "SCREENSHOT_SALE"].includes(
+    capture.intake?.capture_mode,
+  );
+  const evidenceLabel = saleMode
+    ? "Sale submission"
+    : payment
+      ? "Payment confirmation"
+      : "Historical activation receipt";
+  const evidenceImage =
+    evidence === "identity"
+      ? capture.intake?.document_image
+      : evidence === "order"
+        ? capture.intake?.order_image
+        : evidence === "receipt"
+          ? capture.intake?.payment_image
+          : "";
+  const reviewEvidenceReady = saleMode
+    ? !!capture.intake?.document_image && !!capture.intake?.order_image
+    : !!image && !imageError;
+  const canDownloadOriginal =
+    evidence === "payment" ? !!image && !imageError : !!evidenceImage;
   const customerId = String(capture.intake?.document_number || "");
   const paidAmount = (capture.rows || [])
     .flatMap((row: Row) => row.fields || [])
-    .find((field: Row) => /^(total paid|amount paid|paid amount)$/i.test(String(field.label || "").trim()))?.value;
+    .find((field: Row) =>
+      /^(total paid|amount paid|paid amount)$/i.test(
+        String(field.label || "").trim(),
+      ),
+    )?.value;
   const summary = [
     ["Customer", capture.intake?.name],
     ["Document", customerId ? `•••• ${customerId.slice(-4)}` : ""],
     ["Phone", capture.intake?.msisdn],
     ["Plan", capture.intake?.plan_name],
-    [orderMode ? "Request ID" : "SIM", orderMode ? capture.intake?.order_reference : capture.intake?.sim_identifier],
-    [orderMode ? "Payment record" : payment ? "Paid amount" : "Record type", orderMode ? capture.invoice?.status || "Pending backend confirmation" : payment ? paidAmount : "Earlier receipt"],
+    [
+      orderMode ? "Request ID" : "SIM",
+      orderMode
+        ? capture.intake?.order_reference
+        : capture.intake?.sim_identifier,
+    ],
+    [
+      saleMode
+        ? "SR verification"
+        : orderMode
+          ? "Payment record"
+          : payment
+            ? "Paid amount"
+            : "Record type",
+      saleMode
+        ? String(
+            capture.sr_verification?.status || "PENDING_SR_VERIFICATION",
+          ).replaceAll("_", " ")
+        : orderMode
+          ? capture.invoice?.status || "Pending backend confirmation"
+          : payment
+            ? paidAmount
+            : "Earlier receipt",
+    ],
   ];
   async function perform(action: () => Promise<unknown>) {
     setBusy(true);
@@ -99,16 +154,23 @@ export default function ReceiptReview({
     ["VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"].includes(capture.status);
   async function downloadOriginal() {
     if (evidence === "payment") {
-      await download(`/kyc-captures/${capture.id}/original`, `confirmation-${capture.id}.${capture.image_type === "image/jpeg" ? "jpg" : "png"}`);
+      await download(
+        `/kyc-captures/${capture.id}/original`,
+        `confirmation-${capture.id}.${capture.image_type === "image/jpeg" ? "jpg" : "png"}`,
+      );
       return;
     }
     if (!evidenceImage) return;
-    const mime = String(evidenceImage).startsWith("iVBOR") ? "image/png" : "image/jpeg";
-    const bytes = Uint8Array.from(atob(evidenceImage), (character) => character.charCodeAt(0));
-    const url = URL.createObjectURL(new Blob([bytes], {type: mime}));
+    const mime = String(evidenceImage).startsWith("iVBOR")
+      ? "image/png"
+      : "image/jpeg";
+    const bytes = Uint8Array.from(atob(evidenceImage), (character) =>
+      character.charCodeAt(0),
+    );
+    const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `${evidence === "identity" ? "customer-details" : "order-details"}-${capture.id}.${mime === "image/png" ? "png" : "jpg"}`;
+    link.download = `${evidence === "identity" ? "customer-details" : evidence === "receipt" ? "payment-receipt" : "order-details"}-${capture.id}.${mime === "image/png" ? "png" : "jpg"}`;
     link.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
@@ -147,7 +209,10 @@ export default function ReceiptReview({
         <Badge value={capture.status} />
       </header>
       {payment && (
-        <div className="review-summary" aria-label="Captured transaction summary">
+        <div
+          className="review-summary"
+          aria-label="Captured transaction summary"
+        >
           {summary.map(([label, value]) => (
             <div key={label}>
               <span>{label}</span>
@@ -161,18 +226,50 @@ export default function ReceiptReview({
           {error}
         </div>
       )}
-      {payment && <div className="review-evidence-switch" role="group" aria-label="Evidence to compare">
-        {[["payment", "Payment confirmation"], ["identity", capture.intake?.capture_mode === "SCREENSHOT_ORDER" ? "Customer details" : "Identity document"], ...(capture.intake?.order_image ? [["order", "Order details"]] : []), ...(!orderMode ? [["signature", "Signature"]] : [])].map(([key,label]) => <button key={key} className={evidence === key ? "primary" : ""} aria-pressed={evidence === key} onClick={() => {setEvidence(key); setZoom(100); setTab(key === "payment" ? "fields" : "customer");}}>{label}</button>)}
-      </div>}
-      <div className="review-comparison">
-        <section
-          className="review-pane"
-          aria-label={evidenceLabel}
+      {payment && (
+        <div
+          className="review-evidence-switch"
+          role="group"
+          aria-label="Evidence to compare"
         >
+          {[
+            ...(!saleMode ? [["payment", "Payment confirmation"]] : []),
+            ["identity", orderMode ? "Customer details" : "Identity document"],
+            ...(capture.intake?.order_image
+              ? [["order", "Order details"]]
+              : []),
+            ...(saleMode && capture.intake?.payment_image
+              ? [["receipt", "Payment receipt"]]
+              : []),
+            ...(!orderMode ? [["signature", "Signature"]] : []),
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              className={evidence === key ? "primary" : ""}
+              aria-pressed={evidence === key}
+              onClick={() => {
+                setEvidence(key);
+                setZoom(100);
+                setTab(key === "payment" ? "fields" : "customer");
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="review-comparison">
+        <section className="review-pane" aria-label={evidenceLabel}>
           <div className="review-pane-heading">
             <div>
               <h3>
-                {evidence === "order" ? "Order details" : evidence === "identity" ? "Customer details" : evidence === "signature" ? "Customer signature" : evidenceLabel}
+                {evidence === "order"
+                  ? "Order details"
+                  : evidence === "identity"
+                    ? "Customer details"
+                    : evidence === "signature"
+                      ? "Customer signature"
+                      : evidenceLabel}
               </h3>
               <small>Original image uploaded by the agent</small>
             </div>
@@ -201,7 +298,61 @@ export default function ReceiptReview({
             tabIndex={0}
             aria-label="Scrollable original image"
           >
-            {evidence === "order" ? (capture.intake?.order_image ? <img alt="Order details" src={`data:image/jpeg;base64,${capture.intake.order_image}`} style={{width:`${zoom}%`}} /> : <p>Not recorded</p>) : evidence === "identity" ? (capture.intake?.document_image ? <img alt="Identity document" src={`data:image/${String(capture.intake.document_image).startsWith("iVBOR") ? "png" : "jpeg"};base64,${capture.intake.document_image}`} style={{width:`${zoom}%`}} /> : <p>Not recorded</p>) : evidence === "signature" ? (capture.intake?.signature?.length ? <svg viewBox="0 0 400 180" role="img" aria-label="Captured customer signature">{capture.intake.signature.map((stroke:number[][],i:number)=><polyline key={i} points={stroke.map(p=>`${p[0]*400},${p[1]*180}`).join(" ")} fill="none" stroke="#762765" strokeWidth="3" />)}</svg> : <p>Not recorded</p>) : imageError ? (
+            {evidence === "receipt" ? (
+              evidenceImage ? (
+                <img
+                  alt="Payment receipt"
+                  src={`data:image/${String(evidenceImage).startsWith("iVBOR") ? "png" : "jpeg"};base64,${evidenceImage}`}
+                  style={{ width: `${zoom}%` }}
+                />
+              ) : (
+                <p>Not recorded</p>
+              )
+            ) : evidence === "order" ? (
+              capture.intake?.order_image ? (
+                <img
+                  alt="Order details"
+                  src={`data:image/jpeg;base64,${capture.intake.order_image}`}
+                  style={{ width: `${zoom}%` }}
+                />
+              ) : (
+                <p>Not recorded</p>
+              )
+            ) : evidence === "identity" ? (
+              capture.intake?.document_image ? (
+                <img
+                  alt={orderMode ? "Customer details" : "Identity document"}
+                  src={`data:image/${String(capture.intake.document_image).startsWith("iVBOR") ? "png" : "jpeg"};base64,${capture.intake.document_image}`}
+                  style={{ width: `${zoom}%` }}
+                />
+              ) : (
+                <p>Not recorded</p>
+              )
+            ) : evidence === "signature" ? (
+              capture.intake?.signature?.length ? (
+                <svg
+                  viewBox="0 0 400 180"
+                  role="img"
+                  aria-label="Captured customer signature"
+                >
+                  {capture.intake.signature.map(
+                    (stroke: number[][], i: number) => (
+                      <polyline
+                        key={i}
+                        points={stroke
+                          .map((p) => `${p[0] * 400},${p[1] * 180}`)
+                          .join(" ")}
+                        fill="none"
+                        stroke="#762765"
+                        strokeWidth="3"
+                      />
+                    ),
+                  )}
+                </svg>
+              ) : (
+                <p>Not recorded</p>
+              )
+            ) : imageError ? (
               <div role="alert">
                 <p>{imageError}</p>
                 <button onClick={() => setRetry((v) => v + 1)}>
@@ -239,10 +390,26 @@ export default function ReceiptReview({
           <div className="review-pane-heading">
             <div>
               <h3>
-                {tab === "customer" ? (orderMode ? "Customer & order details" : "Customer & SIM details") : tab === "ocr" ? "Text from image" : payment ? "Payment details" : "Historical receipt details"}
+                {tab === "customer"
+                  ? orderMode
+                    ? "Customer & order details"
+                    : "Customer & SIM details"
+                  : tab === "ocr"
+                    ? "Text from image"
+                    : saleMode
+                      ? "Captured sale fields"
+                      : payment
+                        ? "Payment details"
+                        : "Historical receipt details"}
               </h3>
               <small>
-                {tab === "customer" ? (orderMode ? "Customer and captured order" : "Customer, document and SIM") : tab === "ocr" ? "Extracted from the uploaded image" : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
+                {tab === "customer"
+                  ? orderMode
+                    ? "Customer and captured order"
+                    : "Customer, document and SIM"
+                  : tab === "ocr"
+                    ? "Extracted from the uploaded image"
+                    : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
               </small>
             </div>
             <button
@@ -265,7 +432,17 @@ export default function ReceiptReview({
             role="tablist"
             aria-label="Captured data"
           >
-            {payment && <button role="tab" id="review-customer-tab" aria-controls="review-customer-panel" aria-selected={tab === "customer"} onClick={() => setTab("customer")}>{orderMode ? "Customer & order" : "Customer & SIM"}</button>}
+            {payment && (
+              <button
+                role="tab"
+                id="review-customer-tab"
+                aria-controls="review-customer-panel"
+                aria-selected={tab === "customer"}
+                onClick={() => setTab("customer")}
+              >
+                {orderMode ? "Customer & order" : "Customer & SIM"}
+              </button>
+            )}
             <button
               role="tab"
               id="review-fields-tab"
@@ -273,7 +450,11 @@ export default function ReceiptReview({
               aria-selected={tab === "fields"}
               onClick={() => setTab("fields")}
             >
-              {payment ? "Payment fields" : "Transaction fields"}
+              {saleMode
+                ? "Sale fields"
+                : payment
+                  ? "Payment fields"
+                  : "Transaction fields"}
             </button>
             <button
               role="tab"
@@ -282,7 +463,8 @@ export default function ReceiptReview({
               aria-selected={tab === "ocr"}
               onClick={() => setTab("ocr")}
             >
-              {payment ? "Text from image" : "Receipt text"} ({capture.lines?.length || 0})
+              {payment ? "Text from image" : "Receipt text"} (
+              {capture.lines?.length || 0})
             </button>
           </div>
           <div
@@ -292,11 +474,39 @@ export default function ReceiptReview({
             aria-labelledby={`review-${tab}-tab`}
             tabIndex={0}
           >
-            {tab === "customer" ? <div className="review-transaction">{(capture.invoice?.sections || []).filter((s:Row) => (evidence === "identity" ? ["Customer"] : evidence === "order" ? ["SIM & plan", "Order details"] : ["Customer", "SIM & plan", "Records"]).includes(s.title)).map((section:Row) => <section key={section.title}><h4>{section.title}</h4><dl>{section.fields.map((field:Row,i:number) => <div key={i}><dt>{field.label}</dt><dd dir="auto">{field.value || "Not recorded"}</dd></div>)}</dl></section>)}</div> : tab === "fields" ? (
+            {tab === "customer" ? (
+              <div className="review-transaction">
+                {(capture.invoice?.sections || [])
+                  .filter((s: Row) =>
+                    (evidence === "identity"
+                      ? ["Customer"]
+                      : evidence === "order"
+                        ? ["SIM & plan", "Order details"]
+                        : ["Customer", "SIM & plan", "Records"]
+                    ).includes(s.title),
+                  )
+                  .map((section: Row) => (
+                    <section key={section.title}>
+                      <h4>{section.title}</h4>
+                      <dl>
+                        {section.fields.map((field: Row, i: number) => (
+                          <div key={i}>
+                            <dt>{field.label}</dt>
+                            <dd dir="auto">{field.value || "Not recorded"}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                    </section>
+                  ))}
+              </div>
+            ) : tab === "fields" ? (
               capture.rows?.length ? (
                 capture.rows.map((row: Row, i: number) => (
                   <section className="review-transaction" key={i}>
-                    <h4>{payment ? "Payment" : "Transaction"} {i + 1}</h4>
+                    <h4>
+                      {saleMode ? "Sale" : payment ? "Payment" : "Transaction"}{" "}
+                      {i + 1}
+                    </h4>
                     <dl>
                       {(
                         row.fields ||
@@ -337,10 +547,12 @@ export default function ReceiptReview({
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={busy || !image || !!imageError}
+                  disabled={busy || !reviewEvidenceReady}
                   onChange={(e) => setChecked(e.target.checked)}
                 />
-                {orderMode ? "I checked the images against the customer, order and captured details." : "I checked the image against the customer, SIM and captured details."}
+                {orderMode
+                  ? "I checked the images against the customer, order and captured details."
+                  : "I checked the image against the customer, SIM and captured details."}
               </label>
             </div>
             <div>
@@ -368,8 +580,7 @@ export default function ReceiptReview({
                   disabled={
                     busy ||
                     !checked ||
-                    !image ||
-                    !!imageError ||
+                    !reviewEvidenceReady ||
                     note.trim().length < 5
                   }
                   onClick={() => decide("VERIFIED")}
@@ -384,7 +595,11 @@ export default function ReceiptReview({
           <div>
             <h3>
               {capture.status === "VERIFIED"
-                ? orderMode ? "Backend confirmation complete" : payment ? "Payment verified" : "Historical receipt verified"
+                ? orderMode
+                  ? "Backend confirmation complete"
+                  : payment
+                    ? "Payment verified"
+                    : "Historical receipt verified"
                 : capture.status === "REJECTED"
                   ? "Returned for correction"
                   : own
@@ -401,7 +616,11 @@ export default function ReceiptReview({
           </div>
         )}
       </section>
-      {capture.status === "VERIFIED" && <div className="setup-summary" role="status">Transaction confirmed by backend</div>}
+      {capture.status === "VERIFIED" && (
+        <div className="setup-summary" role="status">
+          Transaction confirmed by backend
+        </div>
+      )}
       {capture.document_kind === "PAYMENT_CONFIRMATION" &&
         !orderMode &&
         capture.status === "VERIFIED" && (
@@ -521,7 +740,13 @@ export default function ReceiptReview({
         </details>
       )}
       <details className="review-history">
-        <summary>{payment ? "Payment invoice" : "Historical receipt"}</summary>
+        <summary>
+          {saleMode
+            ? "Sale receipt"
+            : payment
+              ? "Payment invoice"
+              : "Historical receipt"}
+        </summary>
         <ActivationReceipt capture={capture} />
       </details>
       <details className="review-history">

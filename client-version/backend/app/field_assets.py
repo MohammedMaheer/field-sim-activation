@@ -43,7 +43,7 @@ def asset_scope(db, user):
                                 FieldAsset.branch_id.in_(branch_ids) & FieldAsset.agent_id.is_(None)))
     elif name == "Team Leader":
         query = query.where(FieldAsset.branch_id.in_(visible_branches(db, user)))
-    elif name in {"Branch Manager", "Sales Manager"}:
+    elif name == "Branch Manager":
         query = query.where(FieldAsset.branch_id == user.branch_id)
     elif name in {"Tele Verification Officer", "Welcome Call Officer"}:
         raise HTTPException(403, "Your role cannot view stock")
@@ -51,11 +51,13 @@ def asset_scope(db, user):
 
 
 def request_scope(db, user):
+    if "read" not in permissions(db, user):
+        raise HTTPException(403, "Your role cannot view stock requests")
     query = select(FieldAssetRequest)
     name = role(db, user)
     if name in {"Field Agent", "Team Leader"}:
         query = query.where(FieldAssetRequest.agent_id.in_(visible_agents(db, user)))
-    elif name in {"Branch Manager", "Sales Manager"}:
+    elif name == "Branch Manager":
         query = query.where(FieldAssetRequest.branch_id == user.branch_id)
     elif name in {"Tele Verification Officer", "Welcome Call Officer"}:
         raise HTTPException(403, "Your role cannot view stock requests")
@@ -63,13 +65,15 @@ def request_scope(db, user):
 
 
 def visible_branches(db, user):
+    if "read" not in permissions(db, user):
+        return []
     name = role(db, user)
-    if name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer"}:
+    if name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer", "Sales Manager"}:
         return list(db.scalars(select(Branch.id)))
     if name == "Field Agent":
         agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
         return [db.get(Outlet, agent.outlet_id).branch_id] if agent else []
-    if name in {"Team Leader", "Branch Manager", "Sales Manager"}:
+    if name in {"Team Leader", "Branch Manager"}:
         return [user.branch_id] if user.branch_id else []
     return []
 

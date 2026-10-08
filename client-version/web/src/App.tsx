@@ -164,28 +164,107 @@ const navigation = [
   },
   {
     label: "ADMINISTRATION",
-    items: [["plans", "Subscriber plans", Settings], ["administration", "Manage workspace", Settings]],
+    items: [
+      ["plans", "Subscriber plans", Settings],
+      ["administration", "Manage workspace", Settings],
+    ],
   },
 ];
 
 export function canVisitPage(path: string, user: Row) {
   path = path.replace(/^\//, "");
   if (path === "screenshot-capture") path = "kyc-capture";
-  if (!["Administrator", "Operations Manager", "Compliance Officer", "Inventory Manager", "Field Agent", "Team Leader", "Branch Manager", "Sales Manager", "Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) return false;
+  if (
+    ![
+      "Administrator",
+      "Operations Manager",
+      "Compliance Officer",
+      "Inventory Manager",
+      "Field Agent",
+      "Team Leader",
+      "Branch Manager",
+      "Sales Manager",
+      "Tele Verification Officer",
+      "Welcome Call Officer",
+    ].includes(user.role)
+  )
+    return false;
   if (path === "notifications") return true;
   const permissions = user.permissions || [];
-  if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) return path === "call-work";
-  if (user.role === "Sales Manager") return ["", "sales", "equipment", "reports"].includes(path);
-  if (path === "call-work") return permissions.includes("compliance.write") || permissions.includes("call.tele.read") || permissions.includes("call.welcome.read");
-  if (path === "team-leaders") return ["Administrator", "Team Leader"].includes(user.role);
-  if (path === "administration") return ["Administrator", "Operations Manager"].includes(user.role);
+  if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role))
+    return path === "call-work";
+  if (user.role === "Sales Manager")
+    return [
+      "",
+      "sales",
+      "equipment",
+      "reports",
+      "agents",
+      "branches",
+      "team-leaders",
+      "customers",
+      "activations",
+      "kyc-capture",
+      "inventory",
+      "incentives",
+    ].includes(path);
+  if (path === "call-work")
+    return (
+      permissions.includes("compliance.write") ||
+      permissions.includes("call.tele.read") ||
+      permissions.includes("call.welcome.read")
+    );
+  if (path === "team-leaders")
+    return ["Administrator", "Team Leader"].includes(user.role);
+  if (path === "administration")
+    return ["Administrator", "Operations Manager"].includes(user.role);
   if (path === "plans") return permissions.includes("settings.write");
   if (path === "audit") return permissions.includes("audit.read");
   if (path === "reports") return permissions.includes("report.read");
-  if (user.role === "Field Agent") return ["", "customers", "activations", "sales", "equipment", "kyc-capture", "inventory", "incentives", "support"].includes(path);
-  if (user.role === "Compliance Officer") return ["", "agents", "branches", "customers", "activations", "sales", "kyc-capture", "audit", "reports"].includes(path);
-  if (path === "kyc-capture") return ["Administrator", "Operations Manager", "Team Leader", "Branch Manager"].includes(user.role);
-  return ["", "live", "agents", "branches", "customers", "activations", "sales", "equipment", "inventory", "incentives", "support"].includes(path);
+  if (user.role === "Field Agent")
+    return [
+      "",
+      "customers",
+      "activations",
+      "sales",
+      "equipment",
+      "kyc-capture",
+      "inventory",
+      "incentives",
+      "support",
+    ].includes(path);
+  if (user.role === "Compliance Officer")
+    return [
+      "",
+      "agents",
+      "branches",
+      "customers",
+      "activations",
+      "sales",
+      "kyc-capture",
+      "audit",
+      "reports",
+    ].includes(path);
+  if (path === "kyc-capture")
+    return [
+      "Administrator",
+      "Operations Manager",
+      "Team Leader",
+      "Branch Manager",
+    ].includes(user.role);
+  return [
+    "",
+    "live",
+    "agents",
+    "branches",
+    "customers",
+    "activations",
+    "sales",
+    "equipment",
+    "inventory",
+    "incentives",
+    "support",
+  ].includes(path);
 }
 
 function Login({ onLogin }: { onLogin: (u: Row) => void }) {
@@ -278,7 +357,6 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
               <ArrowRight size={17} />
             </button>
           </form>
-
         </div>
       </section>
     </main>
@@ -290,9 +368,41 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [live, setLive] = useState(false);
   const [toast, setToast] = useState("");
-  const inbox = useQuery({queryKey:['notifications',user?.id],queryFn:() => api('/notifications'),enabled:!!user,refetchInterval:20000});
-  const callAlerts = useQuery({queryKey:['sales-management','call-summary'],queryFn:() => api('/sales-management/call-tasks/summary'),enabled:!!user && (user.permissions?.includes('compliance.write') || user.permissions?.includes('call.tele.read') || user.permissions?.includes('call.welcome.read')),refetchInterval:15000});
-  const stockAlerts = useQuery({queryKey:['field-assets','alerts'],queryFn:async()=>{const [requests,levels]=await Promise.all([api('/field-assets/requests/list'),api('/field-assets/report/summary')]);return requests.filter((r:Row)=>['REQUESTED','APPROVED'].includes(r.status)).length+levels.filter((r:Row)=>r.low_stock).length},enabled:!!user && !!user.permissions?.includes('read') && canVisitPage('equipment',user),refetchInterval:20000});
+  const inbox = useQuery({
+    queryKey: ["notifications", user?.id],
+    queryFn: () => api("/notifications"),
+    enabled: !!user,
+    refetchInterval: 20000,
+  });
+  const callAlerts = useQuery({
+    queryKey: ["sales-management", "call-summary"],
+    queryFn: () => api("/sales-management/call-tasks/summary"),
+    enabled:
+      !!user &&
+      (user.permissions?.includes("compliance.write") ||
+        user.permissions?.includes("call.tele.read") ||
+        user.permissions?.includes("call.welcome.read")),
+    refetchInterval: 15000,
+  });
+  const stockAlerts = useQuery({
+    queryKey: ["field-assets", "alerts"],
+    queryFn: async () => {
+      const [requests, levels] = await Promise.all([
+        api("/field-assets/requests/list"),
+        api("/field-assets/report/summary"),
+      ]);
+      return (
+        requests.filter((r: Row) =>
+          ["REQUESTED", "APPROVED"].includes(r.status),
+        ).length + levels.filter((r: Row) => r.low_stock).length
+      );
+    },
+    enabled:
+      !!user &&
+      !!user.permissions?.includes("read") &&
+      canVisitPage("equipment", user),
+    refetchInterval: 20000,
+  });
   const [mobileMenu, setMobileMenu] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const client = useQueryClient();
@@ -312,11 +422,19 @@ export default function App() {
   }, [client]);
   useEffect(() => {
     if (!user) return;
-    if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role) && !["/call-work", "/notifications"].includes(location.pathname)) navigate("/call-work", {replace:true});
+    if (
+      ["Tele Verification Officer", "Welcome Call Officer"].includes(
+        user.role,
+      ) &&
+      !["/call-work", "/notifications"].includes(location.pathname)
+    )
+      navigate("/call-work", { replace: true });
   }, [user, location.pathname, navigate]);
   useEffect(() => {
     if (!user) return;
-    if (["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)) {
+    if (
+      ["Tele Verification Officer", "Welcome Call Officer"].includes(user.role)
+    ) {
       setLive(true); // Their dedicated queries refresh every 15 seconds.
       return;
     }
@@ -413,7 +531,12 @@ export default function App() {
       />
     );
   const current =
-    (["/kyc-capture", "/screenshot-capture"].includes(location.pathname) && !user.permissions.includes("compliance.write") ? (user.role === "Field Agent" ? "New transaction" : "Transaction history") : "") ||
+    (["/kyc-capture", "/screenshot-capture"].includes(location.pathname) &&
+    !user.permissions.includes("compliance.write")
+      ? user.role === "Field Agent"
+        ? "New transaction"
+        : "Transaction history"
+      : "") ||
     navigation
       .flatMap((g) => g.items)
       .find((i) => "/" + i[0] === location.pathname)?.[1] ||
@@ -462,33 +585,63 @@ export default function App() {
             <ChevronDown size={14} />
           </button>
           <nav aria-label="Main navigation">
-            {navigation.filter(g => g.items.some(([path]) => canVisitPage(String(path), user))).map((g) => (
-              <div className="nav-group" key={g.label}>
-                <div className="nav-label">{g.label}</div>
-                {g.items
-                  .filter(([path]) => canVisitPage(String(path), user))
-                  .filter(
-                    ([path]) =>
-                      path !== "audit" ||
-                      user.permissions.includes("audit.read"),
-                  )
-                  .filter(
-                    ([path]) =>
-                      (path === "administration" ? ["Administrator", "Operations Manager"].includes(user.role) : path !== "plans" || user.permissions.includes("settings.write")),
-                  )
-                  .map(([path, label, Icon]: any) => (
-                    <NavLink key={path} end to={"/" + path} data-section={path || "overview"}>
-                      <span className="nav-icon" aria-hidden="true"><Icon size={17} /></span>
-                      <span>{path === "kyc-capture" ? user.role === "Field Agent" ? "New transaction" : user.permissions.includes("compliance.write") ? label : "Transaction history" : label}</span>
-                      {path === "equipment" && !!stockAlerts.data && <span className="nav-tag" title="Stock requests and shortage alerts">{stockAlerts.data}</span>}
-                      {path === "live" && <i className="live-dot" />}
-                      {path === "compliance" && (
-                        <span className="nav-tag">!</span>
-                      )}
-                    </NavLink>
-                  ))}
-              </div>
-            ))}
+            {navigation
+              .filter((g) =>
+                g.items.some(([path]) => canVisitPage(String(path), user)),
+              )
+              .map((g) => (
+                <div className="nav-group" key={g.label}>
+                  <div className="nav-label">{g.label}</div>
+                  {g.items
+                    .filter(([path]) => canVisitPage(String(path), user))
+                    .filter(
+                      ([path]) =>
+                        path !== "audit" ||
+                        user.permissions.includes("audit.read"),
+                    )
+                    .filter(([path]) =>
+                      path === "administration"
+                        ? ["Administrator", "Operations Manager"].includes(
+                            user.role,
+                          )
+                        : path !== "plans" ||
+                          user.permissions.includes("settings.write"),
+                    )
+                    .map(([path, label, Icon]: any) => (
+                      <NavLink
+                        key={path}
+                        end
+                        to={"/" + path}
+                        data-section={path || "overview"}
+                      >
+                        <span className="nav-icon" aria-hidden="true">
+                          <Icon size={17} />
+                        </span>
+                        <span>
+                          {path === "kyc-capture"
+                            ? user.role === "Field Agent"
+                              ? "New transaction"
+                              : user.permissions.includes("compliance.write")
+                                ? label
+                                : "Transaction history"
+                            : label}
+                        </span>
+                        {path === "equipment" && !!stockAlerts.data && (
+                          <span
+                            className="nav-tag"
+                            title="Stock requests and shortage alerts"
+                          >
+                            {stockAlerts.data}
+                          </span>
+                        )}
+                        {path === "live" && <i className="live-dot" />}
+                        {path === "compliance" && (
+                          <span className="nav-tag">!</span>
+                        )}
+                      </NavLink>
+                    ))}
+                </div>
+              ))}
           </nav>
           <div className="sidebar-bottom">
             <span className="secure-icon">
@@ -572,77 +725,92 @@ export default function App() {
                 {live ? "Live updates" : "Reconnecting"}
               </span>
               <span className="top-divider" />
-              {canVisitPage('activations',user) && <button
-                className="icon-btn"
-                title="Search activation records"
-                aria-label="Search activation records"
-                onClick={() => navigate("/activations")}
-              >
-                <Search size={18} />
-              </button>}
+              {canVisitPage("activations", user) && (
+                <button
+                  className="icon-btn"
+                  title="Search activation records"
+                  aria-label="Search activation records"
+                  onClick={() => navigate("/activations")}
+                >
+                  <Search size={18} />
+                </button>
+              )}
               <button
                 className="icon-btn notification-btn"
                 title="Notifications"
                 aria-label="Notifications"
-                onClick={() => navigate('/notifications')}
+                onClick={() => navigate("/notifications")}
               >
                 <Bell size={18} />
-                {!!inbox.data?.unread && <b className="call-alert-count">{inbox.data.unread > 99 ? '99+' : inbox.data.unread}</b>}
+                {!!inbox.data?.unread && (
+                  <b className="call-alert-count">
+                    {inbox.data.unread > 99 ? "99+" : inbox.data.unread}
+                  </b>
+                )}
               </button>
               <Avatar name={user.name} size="small" />
             </div>
           </header>
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>
-              {canVisitPage(location.pathname, user) ? <Routes>
-                <Route path="/notifications" element={<Notifications />} />
-                <Route path="/kyc-capture" element={<KycCapture />} />
-                <Route path="/sales" element={<SalesManagement />} />
-                <Route path="/call-work" element={<CallWorkspace />} />
-                <Route path="/equipment" element={<FieldAssets />} />
-                <Route path="/screenshot-capture" element={<KycCapture />} />
-                <Route
-                  path="/incentives"
-                  element={<Incentives user={user} notify={setToast} />}
-                />
-                <Route
-                  path="/support"
-                  element={<Support user={user} notify={setToast} />}
-                />
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/live" element={<LiveOperations />} />
-                <Route path="/reports" element={<Reports />} />
-                <Route path="/plans" element={<PlanManagement />} />
-                <Route path="/team-leaders" element={<TeamLeaders />} />
-                <Route path="/administration" element={<Administration />} />
-                {[
-                  "agents",
-                  "customers",
-                  "branches",
-
-                  "activations",
-
-                  "inventory",
-                  "audit",
-                ].map((resource) => (
+              {canVisitPage(location.pathname, user) ? (
+                <Routes>
+                  <Route path="/notifications" element={<Notifications />} />
+                  <Route path="/kyc-capture" element={<KycCapture />} />
+                  <Route path="/sales" element={<SalesManagement />} />
+                  <Route path="/call-work" element={<CallWorkspace />} />
+                  <Route path="/equipment" element={<FieldAssets />} />
+                  <Route path="/screenshot-capture" element={<KycCapture />} />
                   <Route
-                    key={resource}
-                    path={"/" + resource}
+                    path="/incentives"
+                    element={<Incentives user={user} notify={setToast} />}
+                  />
+                  <Route
+                    path="/support"
+                    element={<Support user={user} notify={setToast} />}
+                  />
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/live" element={<LiveOperations />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/plans" element={<PlanManagement />} />
+                  <Route path="/team-leaders" element={<TeamLeaders />} />
+                  <Route path="/administration" element={<Administration />} />
+                  {[
+                    "agents",
+                    "customers",
+                    "branches",
+
+                    "activations",
+
+                    "inventory",
+                    "audit",
+                  ].map((resource) => (
+                    <Route
+                      key={resource}
+                      path={"/" + resource}
+                      element={
+                        <ResourcePage key={resource} resource={resource} />
+                      }
+                    />
+                  ))}
+                  <Route
+                    path="*"
                     element={
-                      <ResourcePage key={resource} resource={resource} />
+                      <PageHeader
+                        title="Page not included"
+                        description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
+                      />
                     }
                   />
-                ))}
-                <Route
-                  path="*"
-                  element={
-                    <PageHeader
-                      title="Page not included"
-                      description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
-                    />
-                  }
-                />
-              </Routes> : <div className="panel access-denied"><h2>This page is not available for your role</h2><Link className="button primary" to="/">Return to overview</Link></div>}
+                </Routes>
+              ) : (
+                <div className="panel access-denied">
+                  <h2>This page is not available for your role</h2>
+                  <Link className="button primary" to="/">
+                    Return to overview
+                  </Link>
+                </div>
+              )}
             </div>
             <footer className="page-footer">
               <span>
@@ -826,8 +994,8 @@ function AgentDrawer({
       : tab === "Inventory"
         ? "inventory"
         : tab === "Audit history"
-            ? "audit"
-            : "activations";
+          ? "audit"
+          : "activations";
   const { data = [] } = useResource(resource);
   return (
     <Drawer title="Agent workspace" onClose={onClose}>
@@ -866,7 +1034,9 @@ function AgentDrawer({
 
           "Inventory",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
-          ...(["Administrator", "Operations Manager"].includes(user.role) ? ["Manage"] : []),
+          ...(["Administrator", "Operations Manager"].includes(user.role)
+            ? ["Manage"]
+            : []),
         ].map((t) => (
           <button
             className={tab === t ? "active" : ""}
@@ -993,10 +1163,26 @@ const inventoryColumns: Column[] = [
   { key: "sim_type", label: "Type" },
   { key: "business_category", label: "Business category" },
   { key: "agent", label: "Assigned agent" },
-  { key: "outlet", label: "Outlet" },
   { key: "status", label: "Stock", render: (r) => <Badge value={r.status} /> },
-  { key: "activation_stage", label: "Progress", render: r => <Badge value={(r.activation_stage || "NOT_STARTED").replaceAll('_',' ')} /> },
-  { key: "payment_status", label: "Payment", render: r => <Badge value={(r.payment_status || "NOT_UPLOADED").replaceAll('_',' ')} /> },
+  { key: "branch", label: "Branch" },
+  {
+    key: "activation_stage",
+    label: "Progress",
+    render: (r) => (
+      <Badge
+        value={(r.activation_stage || "NOT_STARTED").replaceAll("_", " ")}
+      />
+    ),
+  },
+  {
+    key: "payment_status",
+    label: "Payment receipt",
+    render: (r) => (
+      <Badge
+        value={(r.payment_status || "NOT_UPLOADED").replaceAll("_", " ")}
+      />
+    ),
+  },
 ];
 const agentColumns: Column[] = [
   {
@@ -1012,7 +1198,6 @@ const agentColumns: Column[] = [
       </div>
     ),
   },
-  { key: "outlet", label: "Outlet" },
   {
     key: "branch",
     label: "Branch",
@@ -1091,8 +1276,7 @@ const configs: Record<
   },
   ekyc: {
     title: "Identity verification",
-    description:
-      "Customer verification records.",
+    description: "Customer verification records.",
     columns: [
       { key: "customer", label: "Customer" },
       { key: "agent", label: "Agent" },
@@ -1153,15 +1337,20 @@ function ResourcePage({ resource }: { resource: string }) {
       {setup && (
         <OrganizationSetup initial={setup} onClose={() => setSetup(null)} />
       )}
-      {importStock && <InventoryImport onClose={() => setImportStock(false)} onImported={() => cache.invalidateQueries({ queryKey: ["inventory"] })} />}
+      {importStock && (
+        <InventoryImport
+          onClose={() => setImportStock(false)}
+          onImported={() =>
+            cache.invalidateQueries({ queryKey: ["inventory"] })
+          }
+        />
+      )}
       <PageHeader
         eyebrow="CONNECTED OPERATIONS"
         title={config.title}
         description={config.description}
       >
-        {["agents", "inventory", "activations"].includes(
-          resource,
-        ) && (
+        {["agents", "inventory", "activations"].includes(resource) && (
           <BranchFilter
             value={branch}
             onChange={(v) => {
@@ -1181,10 +1370,18 @@ function ResourcePage({ resource }: { resource: string }) {
               {resource === "agents" ? "Add agent" : "Add branch"}
             </button>
           )}
-        {resource === "inventory" && user.role === "Administrator" && <>
-          <button onClick={() => navigate("/administration?section=inventory")}><Plus size={16} /> Add SIM</button>
-          <button className="primary" onClick={() => setImportStock(true)}><Download size={16} /> Import Excel</button>
-        </>}
+        {resource === "inventory" && user.role === "Administrator" && (
+          <>
+            <button
+              onClick={() => navigate("/administration?section=inventory")}
+            >
+              <Plus size={16} /> Add SIM
+            </button>
+            <button className="primary" onClick={() => setImportStock(true)}>
+              <Download size={16} /> Import Excel
+            </button>
+          </>
+        )}
         <button onClick={() => refetch()}>
           <RefreshCw size={15} />
           Refresh
@@ -1196,7 +1393,33 @@ function ResourcePage({ resource }: { resource: string }) {
           </button>
         )}
       </PageHeader>
-      <RecordOverview rows={data} categories={resource === "inventory" ? ["AVAILABLE","RESERVED","ACTIVATED","DAMAGED"] : []} field={resource === "branches" ? "agents" : resource === "customers" ? "nationality" : resource === "audit" ? "action" : "status"} numeric={resource === "branches"} title={resource === "branches" ? "Agents by branch" : resource === "customers" ? "Customer nationalities" : resource === "audit" ? "Activity breakdown" : "Status breakdown"} />
+      <RecordOverview
+        rows={data}
+        categories={
+          resource === "inventory"
+            ? ["AVAILABLE", "RESERVED", "ACTIVATED", "DAMAGED"]
+            : []
+        }
+        field={
+          resource === "branches"
+            ? "agents"
+            : resource === "customers"
+              ? "nationality"
+              : resource === "audit"
+                ? "action"
+                : "status"
+        }
+        numeric={resource === "branches"}
+        title={
+          resource === "branches"
+            ? "Agents by branch"
+            : resource === "customers"
+              ? "Customer nationalities"
+              : resource === "audit"
+                ? "Activity breakdown"
+                : "Status breakdown"
+        }
+      />
       <Panel
         title="Records"
         subtitle={`${data.length} records in your authorized scope`}
@@ -1243,14 +1466,19 @@ function ResourcePage({ resource }: { resource: string }) {
                 <pre>{JSON.stringify(selected.new_value, null, 2)}</pre>
               </>
             )}
-
           </Drawer>
         ))}
     </>
   );
 }
 
-function BranchDrawer({ branch, onClose }: { branch: Row; onClose: () => void }) {
+function BranchDrawer({
+  branch,
+  onClose,
+}: {
+  branch: Row;
+  onClose: () => void;
+}) {
   const navigate = useNavigate();
   const { data = [], isPending, error, refetch } = useResource("agents");
   return (
@@ -1351,7 +1579,9 @@ export function OrderDrawer({
 function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
   const { data: agents = [] } = useResource("agents");
   const { data: movements = [] } = useResource("movements");
-  const [status, setStatus] = useState(["BLOCKED","DAMAGED"].includes(sim.status)?"RETIRED":"RETURNED");
+  const [status, setStatus] = useState(
+    ["BLOCKED", "DAMAGED"].includes(sim.status) ? "RETIRED" : "RETURNED",
+  );
   const [agent, setAgent] = useState(sim.agent_id);
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1367,42 +1597,137 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
           category: sim.business_category || "Not recorded",
           status: sim.status,
           agent: sim.agent,
-          outlet: sim.outlet,
-          progress: (sim.activation_stage || "NOT_STARTED").replaceAll("_"," "),
-          payment: (sim.payment_status || "NOT_UPLOADED").replaceAll("_"," "),
+          branch: sim.branch || sim.outlet,
+          progress: (sim.activation_stage || "NOT_STARTED").replaceAll(
+            "_",
+            " ",
+          ),
+          payment: (sim.payment_status || "NOT_UPLOADED").replaceAll("_", " "),
         }}
       />
-      {user.permissions.includes("inventory.write") && sim.scan_transaction_id && !sim.capture_id && <button disabled={busy} onClick={async () => {if(!window.confirm('Discard the unfinished SIM transaction and free this stock?')) return;setBusy(true);try{await api(`/inventory/scan/${sim.scan_transaction_id}`,{method:'DELETE'});await client.invalidateQueries({queryKey:['inventory']});notify('Unfinished SIM scan cleared');onClose();}catch(e:any){notify(e.message);}finally{setBusy(false);}}}>Clear unfinished scan</button>}
-      {user.permissions.includes("inventory.write") && !["ACTIVATED", "RESERVED"].includes(sim.status) && (!sim.scan_transaction_id || sim.activation_stage === "ACTIVATED") && (
-        <form className="proposal-form sim-stock-edit" onSubmit={async e => {
-          e.preventDefault();
-          const form = new FormData(e.currentTarget);
-          setBusy(true);
-          try {
-            await patch(`/inventory/${sim.id}`, {
-              iccid: form.get("iccid"), serial: form.get("serial"), sim_type: form.get("sim_type"), business_category: form.get("business_category"), expected_category: sim.business_category,
-              expected_iccid: sim.iccid, expected_serial: sim.serial, expected_type: sim.sim_type,
-              reason: form.get("edit_reason"),
-            });
-            await client.invalidateQueries({ queryKey: ["inventory"] });
-            await client.invalidateQueries({ queryKey: ["audit"] });
-            notify("SIM details updated"); onClose();
-          } catch (error: any) { notify(error.message); }
-          finally { setBusy(false); }
-        }}>
-          <h3 className="wide">Edit SIM details</h3>
-          <label>ICCID<input name="iccid" defaultValue={sim.iccid} required minLength={3} maxLength={60} /></label>
-          <label>SIM serial<input name="serial" defaultValue={sim.serial} required minLength={3} maxLength={60} /></label>
-          <label>Business category<select name="business_category" defaultValue={sim.business_category || "Not recorded"}>{["Not recorded","Wasel / Prepaid","Postpaid","Home Wireless","Visitor"].map(value=><option key={value}>{value}</option>)}</select></label>
-          <label>SIM type<select name="sim_type" defaultValue={sim.sim_type}><option>Physical</option><option>eSIM</option></select></label>
-          <label>Reason for edit<input name="edit_reason" required minLength={5} maxLength={300} /></label>
-          <button className="primary wide" disabled={busy}>{busy ? "Saving…" : "Save SIM details"}</button>
-        </form>
-      )}
       {user.permissions.includes("inventory.write") &&
-        !["ACTIVATED", "RESERVED", "RETIRED"].includes(
-          sim.status,
-        ) && (
+        sim.scan_transaction_id &&
+        !sim.capture_id && (
+          <button
+            disabled={busy}
+            onClick={async () => {
+              if (
+                !window.confirm(
+                  "Discard the unfinished SIM transaction and free this stock?",
+                )
+              )
+                return;
+              setBusy(true);
+              try {
+                await api(`/inventory/scan/${sim.scan_transaction_id}`, {
+                  method: "DELETE",
+                });
+                await client.invalidateQueries({ queryKey: ["inventory"] });
+                notify("Unfinished SIM scan cleared");
+                onClose();
+              } catch (e: any) {
+                notify(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            Clear unfinished scan
+          </button>
+        )}
+      {user.permissions.includes("inventory.write") &&
+        !["ACTIVATED", "RESERVED"].includes(sim.status) &&
+        (!sim.scan_transaction_id || sim.activation_stage === "ACTIVATED") && (
+          <form
+            className="proposal-form sim-stock-edit"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const form = new FormData(e.currentTarget);
+              setBusy(true);
+              try {
+                await patch(`/inventory/${sim.id}`, {
+                  iccid: form.get("iccid"),
+                  serial: form.get("serial"),
+                  sim_type: form.get("sim_type"),
+                  business_category: form.get("business_category"),
+                  expected_category: sim.business_category,
+                  expected_iccid: sim.iccid,
+                  expected_serial: sim.serial,
+                  expected_type: sim.sim_type,
+                  reason: form.get("edit_reason"),
+                });
+                await client.invalidateQueries({ queryKey: ["inventory"] });
+                await client.invalidateQueries({ queryKey: ["audit"] });
+                notify("SIM details updated");
+                onClose();
+              } catch (error: any) {
+                notify(error.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <h3 className="wide">Edit SIM details</h3>
+            <label>
+              ICCID
+              <input
+                name="iccid"
+                defaultValue={sim.iccid}
+                required
+                minLength={3}
+                maxLength={60}
+              />
+            </label>
+            <label>
+              SIM serial
+              <input
+                name="serial"
+                defaultValue={sim.serial}
+                required
+                minLength={3}
+                maxLength={60}
+              />
+            </label>
+            <label>
+              Business category
+              <select
+                name="business_category"
+                defaultValue={sim.business_category || "Not recorded"}
+              >
+                {[
+                  "Not recorded",
+                  "Wasel / Prepaid",
+                  "Postpaid",
+                  "Home Wireless",
+                  "Visitor",
+                ].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              SIM type
+              <select name="sim_type" defaultValue={sim.sim_type}>
+                <option>Physical</option>
+                <option>eSIM</option>
+              </select>
+            </label>
+            <label>
+              Reason for edit
+              <input
+                name="edit_reason"
+                required
+                minLength={5}
+                maxLength={300}
+              />
+            </label>
+            <button className="primary wide" disabled={busy}>
+              {busy ? "Saving…" : "Save SIM details"}
+            </button>
+          </form>
+        )}
+      {user.permissions.includes("inventory.write") &&
+        !["ACTIVATED", "RESERVED", "RETIRED"].includes(sim.status) && (
           <form
             className="proposal-form"
             onSubmit={async (e) => {
@@ -1411,7 +1736,11 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
               try {
                 await post(`/inventory/${sim.id}/move`, {
                   status,
-                  agent_id: ["RETURNED","WAREHOUSE","RETIRED"].includes(status) ? null : agent || null,
+                  agent_id: ["RETURNED", "WAREHOUSE", "RETIRED"].includes(
+                    status,
+                  )
+                    ? null
+                    : agent || null,
                   reason,
                 });
                 await Promise.all([
@@ -1433,7 +1762,17 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
                 value={status}
                 onChange={(e) => setStatus(e.target.value)}
               >
-                {( ["BLOCKED","DAMAGED"].includes(sim.status) ? ["RETIRED"] : ["AVAILABLE","ASSIGNED TO AGENT","RETURNED","DAMAGED","BLOCKED","RETIRED"] ).map((s) => (
+                {(["BLOCKED", "DAMAGED"].includes(sim.status)
+                  ? ["RETIRED"]
+                  : [
+                      "AVAILABLE",
+                      "ASSIGNED TO AGENT",
+                      "RETURNED",
+                      "DAMAGED",
+                      "BLOCKED",
+                      "RETIRED",
+                    ]
+                ).map((s) => (
                   <option key={s}>{s}</option>
                 ))}
               </select>
@@ -1445,11 +1784,17 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
                 onChange={(e) => setAgent(e.target.value)}
               >
                 <option value="">No change</option>
-                {agents.filter(a => a.employment_status !== "EXITED").map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name} · {a.employee_id}
-                  </option>
-                ))}
+                {agents
+                  .filter(
+                    (a) =>
+                      a.employment_status !== "EXITED" &&
+                      (!sim.branch_id || a.branch_id === sim.branch_id),
+                  )
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.name} · {a.employee_id}
+                    </option>
+                  ))}
               </select>
             </label>
             <label className="wide">
@@ -1561,8 +1906,16 @@ function Reports() {
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState("");
   const reports = [
-    ["daily", "Historical daily activation", "A complete snapshot of daily connections."],
-    ["monthly", "Historical monthly activation", "Activation performance over the month."],
+    [
+      "daily",
+      "Historical daily activation",
+      "A complete snapshot of daily connections.",
+    ],
+    [
+      "monthly",
+      "Historical monthly activation",
+      "Activation performance over the month.",
+    ],
     ["agent", "Agent performance", "Productivity and quality by field agent."],
 
     [
@@ -1591,7 +1944,13 @@ function Reports() {
         title="Reports & exports"
         description="Structured data. Clear reporting. Ready for your next decision."
       />
-      <section className="panel report-card" style={{marginBottom:16}}><h2>Sales, targets &amp; follow-ups</h2><p>Current sales with product, agent, branch and call outcomes</p><Link className="primary button-link" to="/sales">Open sales reports &amp; Excel export</Link></section>
+      <section className="panel report-card" style={{ marginBottom: 16 }}>
+        <h2>Sales, targets &amp; follow-ups</h2>
+        <p>Current sales with product, agent, branch and call outcomes</p>
+        <Link className="primary button-link" to="/sales">
+          Open sales reports &amp; Excel export
+        </Link>
+      </section>
       <div className="report-filters">
         <BranchFilter value={branch} onChange={setBranch} />
         <label>

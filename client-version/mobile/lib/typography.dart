@@ -146,7 +146,7 @@ class RelayStepPills extends StatelessWidget {
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text(
-            '${i + 1}. ${const ['Customer', 'Order & plan', 'Payment'][i]}',
+            '${i + 1}. ${const ['Customer', 'Order & plan', 'Submit sale'][i]}',
             textAlign: TextAlign.center,
             style: RelayTypography.caption.copyWith(
               fontWeight: FontWeight.w600,

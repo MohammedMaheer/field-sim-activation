@@ -1,7 +1,14 @@
 const knownRoles = {
-  'Administrator', 'Operations Manager', 'Compliance Officer', 'Inventory Manager',
-  'Field Agent', 'Team Leader', 'Branch Manager', 'Sales Manager',
-  'Tele Verification Officer', 'Welcome Call Officer',
+  'Administrator',
+  'Operations Manager',
+  'Compliance Officer',
+  'Inventory Manager',
+  'Field Agent',
+  'Team Leader',
+  'Branch Manager',
+  'Sales Manager',
+  'Tele Verification Officer',
+  'Welcome Call Officer',
 };
 
 bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
@@ -14,18 +21,49 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
     return path == '/call-work';
   }
   if (role == 'Sales Manager') {
-    return ['/sales-management', '/assets', '/reports'].contains(path);
+    return [
+      '/sales-management',
+      '/assets',
+      '/reports',
+      '/incentives',
+      '/stock',
+      '/records',
+      '/customers',
+      '/transactions',
+    ].contains(path);
   }
-  if (role == 'Compliance Officer' && ['/assets', '/stock', '/incentives', '/support'].contains(path)) return false;
+  if (role == 'Compliance Officer' &&
+      ['/assets', '/stock', '/incentives', '/support'].contains(path)) {
+    return false;
+  }
   if (path == '/call-work') return permissions.contains('compliance.write');
   if (['/ekyc', '/screenshot-capture', '/drafts'].contains(path)) {
-    return ['Field Agent', 'Administrator', 'Operations Manager'].contains(role) &&
+    return [
+          'Field Agent',
+          'Administrator',
+          'Operations Manager',
+        ].contains(role) &&
         permissions.contains('ekyc.write');
   }
   if (path == '/transactions' || path.startsWith('/transaction/')) {
-    return ['Field Agent', 'Team Leader', 'Branch Manager', 'Administrator',
-      'Operations Manager', 'Compliance Officer'].contains(role);
+    return [
+      'Field Agent',
+      'Team Leader',
+      'Branch Manager',
+      'Administrator',
+      'Operations Manager',
+      'Compliance Officer',
+    ].contains(role);
   }
-  return ['/sales-management', '/assets', '/stock', '/records', '/incentives',
-    '/customers', '/support', '/reports'].contains(path) && permissions.contains('read');
+  return [
+        '/sales-management',
+        '/assets',
+        '/stock',
+        '/records',
+        '/incentives',
+        '/customers',
+        '/support',
+        '/reports',
+      ].contains(path) &&
+      permissions.contains('read');
 }

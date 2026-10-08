@@ -30,6 +30,7 @@ export default function CustomerIntake({
     order_reference: "request ID",
     order_type: "order type",
     router_serial: "router serial",
+    router_fulfilment: "router fulfilment",
     sim_identifier: "SIM barcode",
     plan_id: "subscriber plan",
     msisdn: "phone number",
@@ -45,7 +46,11 @@ export default function CustomerIntake({
     api("/kyc-captures/draft")
       .then((r) => {
         if (live) {
-          const restored: Row = { ...value, capture_mode: value.capture_mode || "SCREENSHOT_ORDER", transaction_id: value.transaction_id || crypto.randomUUID() };
+          const restored: Row = {
+            ...value,
+            capture_mode: "SCREENSHOT_SALE",
+            transaction_id: value.transaction_id || crypto.randomUUID(),
+          };
           if (!restored.document_check) {
             restored.document_image = "";
             restored.step = 0;
@@ -123,13 +128,22 @@ export default function CustomerIntake({
   async function detectOrder(file: File) {
     try {
       const image = await preparedImage(file);
-      const details = await post("/kyc-captures/read-order", { image_base64: image });
+      const details = await post("/kyc-captures/read-order", {
+        image_base64: image,
+      });
       if (!details.order_check) return false;
       setScanImage(image);
       clearMissing(["order_image", ...Object.keys(details)]);
-      onChange({ ...value, ...details, order_image: image, capture_mode: "SCREENSHOT_ORDER" });
+      onChange({
+        ...value,
+        ...details,
+        order_image: image,
+        capture_mode: "SCREENSHOT_SALE",
+      });
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
@@ -138,19 +152,34 @@ export default function CustomerIntake({
     setError("");
     try {
       const image = await preparedImage(file);
-      if (key === "document_image" || key === "order_image") setScanImage(image);
+      if (key === "document_image" || key === "order_image")
+        setScanImage(image);
       let details: Row = {};
       if (key === "document_image" || key === "order_image") {
         try {
-          details = await post(key === "order_image" ? "/kyc-captures/read-order" : "/kyc-captures/read-document", {
-            image_base64: image,
-          });
-          if (!details[key === "order_image" ? "order_check" : "document_check"]) throw Error("Screen unreadable");
+          details = await post(
+            key === "order_image"
+              ? "/kyc-captures/read-order"
+              : "/kyc-captures/read-document",
+            {
+              image_base64: image,
+            },
+          );
+          if (
+            !details[key === "order_image" ? "order_check" : "document_check"]
+          )
+            throw Error("Screen unreadable");
         } catch {
           setScanImage("");
-          onChange({ ...value, [key]: "", [key === "order_image" ? "order_check" : "document_check"]: "" });
+          onChange({
+            ...value,
+            [key]: "",
+            [key === "order_image" ? "order_check" : "document_check"]: "",
+          });
           throw Error(
-            key === "order_image" ? "Order details weren't captured clearly. Try again." : "Customer details weren't captured clearly. Try again.",
+            key === "order_image"
+              ? "Order details weren't captured clearly. Try again."
+              : "Customer details weren't captured clearly. Try again.",
           );
         }
       }
@@ -172,7 +201,9 @@ export default function CustomerIntake({
             "Customer details weren't captured clearly. Scan or upload the checkout screen.",
           );
         if (step === 1 && !value.order_check)
-          throw Error("Order details weren't captured clearly. Scan or upload the order screen.");
+          throw Error(
+            "Order details weren't captured clearly. Scan or upload the order screen.",
+          );
         const keys =
           step === 0
             ? [
@@ -183,8 +214,23 @@ export default function CustomerIntake({
                 "expiry_date",
                 "document_image",
               ]
-            : ["order_image", "order_reference", "plan_id", "msisdn", "order_type", ...(value.order_type === "HW" ? ["router_serial"] : [])];
-        const absent = keys.filter((k) => !String(value[k] || "").trim() || (k === "order_type" && value[k] === "UNSPECIFIED"));
+            : [
+                "order_image",
+                "order_reference",
+                "plan_id",
+                "msisdn",
+                "order_type",
+                ...(value.order_type === "HW" ? ["router_fulfilment"] : []),
+                ...(value.order_type === "HW" &&
+                value.router_fulfilment === "ON_SPOT"
+                  ? ["router_serial"]
+                  : []),
+              ];
+        const absent = keys.filter(
+          (k) =>
+            !String(value[k] || "").trim() ||
+            (k === "order_type" && value[k] === "UNSPECIFIED"),
+        );
         if (absent.length) {
           setMissing(absent);
           const labels: Record<string, string> = {
@@ -221,8 +267,20 @@ export default function CustomerIntake({
         )
           throw Error("Check date of birth and document expiry.");
       }
-      const scan = next && step === 1 && value.sim_identifier ? await post('/inventory/scan',{code:value.sim_identifier,transaction_id:value.transaction_id,agent_id:value.agent_id}) : {};
-      const data = { ...value, capture_mode: "SCREENSHOT_ORDER", ...scan, step: next ? step + 1 : step };
+      const scan =
+        next && step === 1 && value.sim_identifier
+          ? await post("/inventory/scan", {
+              code: value.sim_identifier,
+              transaction_id: value.transaction_id,
+              agent_id: value.agent_id,
+            })
+          : {};
+      const data = {
+        ...value,
+        capture_mode: "SCREENSHOT_SALE",
+        ...scan,
+        step: next ? step + 1 : step,
+      };
       const r = await api("/kyc-captures/draft", {
         method: "PUT",
         body: JSON.stringify({ version, data }),
@@ -230,7 +288,7 @@ export default function CustomerIntake({
       setVersion(r.version);
       onChange(data);
       if (!next) {
-        await post('/kyc-captures/saved-drafts',{data});
+        await post("/kyc-captures/saved-drafts", { data });
         onSaved();
       }
       if (next) {
@@ -265,7 +323,7 @@ export default function CustomerIntake({
   return (
     <section className="customer-intake">
       <ol className="transaction-stages">
-        {["Customer", "Order & plan", "Payment"].map((s, i) => (
+        {["Customer", "Order & plan", "Submit sale"].map((s, i) => (
           <li
             key={s}
             className={i === step ? "active" : i < step ? "complete" : ""}
@@ -385,47 +443,167 @@ export default function CustomerIntake({
               </label>
             ))}
           </div>
-          {<div className="intake-grid">
-            {input("name", "Full name")}
-            {input("document_number", "Document number", "text", 80)}
-            {input("nationality", "Nationality", "text", 80)}
-            {input("birth_date", "Date of birth", "date")}
-            {input("expiry_date", "Expiry date", "date")}
-          </div>}
+          {
+            <div className="intake-grid">
+              {input("name", "Full name")}
+              {input("document_number", "Document number", "text", 80)}
+              {input("nationality", "Nationality", "text", 80)}
+              {input("birth_date", "Date of birth", "date")}
+              {input("expiry_date", "Expiry date", "date")}
+            </div>
+          }
         </>
       ) : (
         <>
           <h2>Order & plan</h2>
-          {loaded && !value.order_image && !reading && <IntakeCamera embedded onPhoto={(file) => photo(file, "order_image")} onDetect={detectOrder} onCode={() => {}} onClose={() => setCamera("")} />}
-          {(value.order_image || reading) && <div data-intake-field="order_image" className={`document-scan ${reading ? "reading" : "complete"}`} aria-live="polite">
-            {value.order_image && <img src={"data:image/jpeg;base64," + value.order_image} alt="Captured order details" />}
-            <div className="scan-beam" /><span className="scan-status">{reading ? "Reading order…" : "Order captured"}</span>
-          </div>}
-          <div className="intake-photos"><label className="intake-photo">
-            <Camera size={28} /><strong>Capture order details</strong>
-            <input type="file" aria-label="Order details screen" accept="image/png,image/jpeg" capture="environment" disabled={busy} onChange={(e) => photo(e.target.files?.[0], "order_image")} />
-          </label></div>
-          {<>
-            <label data-intake-field="order_type">Order type<select value={value.order_type === "UNSPECIFIED" ? "" : value.order_type || ""} onChange={e => set("order_type", e.target.value)}><option value="">Choose order type</option>{[["NEW","New postpaid"],["MNP","Number transfer"],["P2P","Prepaid to postpaid"],["HW","Home wireless"],["ELIFE","eLife"],["WASEL","Wasel / prepaid"],["VISITOR","Visitor"]].map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label>
-            <div className="intake-grid order-fields">
-              {[["package_name","Package name"],["order_reference","Request ID"],["msisdn","Phone number"],["monthly_cost","Monthly charge"],["prepayment","Order prepayment"]].map(([key,label]) => <label key={key}>{label}<input value={value[key] || ""} readOnly /></label>)}
+          {loaded && !value.order_image && !reading && (
+            <IntakeCamera
+              embedded
+              onPhoto={(file) => photo(file, "order_image")}
+              onDetect={detectOrder}
+              onCode={() => {}}
+              onClose={() => setCamera("")}
+            />
+          )}
+          {(value.order_image || reading) && (
+            <div
+              data-intake-field="order_image"
+              className={`document-scan ${reading ? "reading" : "complete"}`}
+              aria-live="polite"
+            >
+              {value.order_image && (
+                <img
+                  src={"data:image/jpeg;base64," + value.order_image}
+                  alt="Captured order details"
+                />
+              )}
+              <div className="scan-beam" />
+              <span className="scan-status">
+                {reading ? "Reading order…" : "Order captured"}
+              </span>
             </div>
-            <label data-intake-field="plan_id">Subscriber plan
-              <select value={value.plan_id || ""} onChange={(e) => { const plan = (plans.data || []).find((p:Row) => p.id === e.target.value); onChange({...value,plan_id:e.target.value,plan_name:plan?.name || ""}); clearMissing(["plan_id"]); }}>
-                <option value="">Choose plan</option>
-                {(plans.data || []).map((p:Row) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
+          )}
+          <div className="intake-photos">
+            <label className="intake-photo">
+              <Camera size={28} />
+              <strong>Capture order details</strong>
+              <input
+                type="file"
+                aria-label="Order details screen"
+                accept="image/png,image/jpeg"
+                capture="environment"
+                disabled={busy}
+                onChange={(e) => photo(e.target.files?.[0], "order_image")}
+              />
             </label>
-            {value.order_type === "HW" && input("router_serial", "Router serial", "text", 100)}
-            <details className="intake-extra"><summary>Additional sale details</summary><div className="intake-grid">
-              {input("account_number", "Account number", "text", 120)}
-              {input("sim_identifier", "SIM serial", "text", 100)}
-              {value.order_type !== "HW" && input("router_serial", "Router serial", "text", 100)}
-              {input("advance_transaction_number", "Advance transaction number", "text", 120)}
+          </div>
+          {
+            <>
+              <label data-intake-field="order_type">
+                Order type
+                <select
+                  value={
+                    value.order_type === "UNSPECIFIED"
+                      ? ""
+                      : value.order_type || ""
+                  }
+                  onChange={(e) => set("order_type", e.target.value)}
+                >
+                  <option value="">Choose order type</option>
+                  {[
+                    ["NEW", "New postpaid"],
+                    ["MNP", "Number transfer"],
+                    ["P2P", "Prepaid to postpaid"],
+                    ["HW", "Home wireless"],
+                    ["ELIFE", "eLife"],
+                    ["WASEL", "Wasel / prepaid"],
+                    ["VISITOR", "Visitor"],
+                  ].map(([id, label]) => (
+                    <option key={id} value={id}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="intake-grid order-fields">
+                {[
+                  ["package_name", "Package name"],
+                  ["order_reference", "Request ID"],
+                  ["msisdn", "Phone number"],
+                  ["monthly_cost", "Monthly charge"],
+                  ["prepayment", "Order prepayment"],
+                ].map(([key, label]) => (
+                  <label key={key}>
+                    {label}
+                    <input value={value[key] || ""} readOnly />
+                  </label>
+                ))}
+              </div>
+              <label data-intake-field="plan_id">
+                Subscriber plan
+                <select
+                  value={value.plan_id || ""}
+                  onChange={(e) => {
+                    const plan = (plans.data || []).find(
+                      (p: Row) => p.id === e.target.value,
+                    );
+                    onChange({
+                      ...value,
+                      plan_id: e.target.value,
+                      plan_name: plan?.name || "",
+                    });
+                    clearMissing(["plan_id"]);
+                  }}
+                >
+                  <option value="">Choose plan</option>
+                  {(plans.data || []).map((p: Row) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {value.order_type === "HW" && (
+                <label data-intake-field="router_fulfilment">
+                  Router fulfilment
+                  <select
+                    value={value.router_fulfilment || ""}
+                    onChange={(e) => set("router_fulfilment", e.target.value)}
+                  >
+                    <option value="">Choose fulfilment</option>
+                    <option value="DELIVERY">Delivery</option>
+                    <option value="ON_SPOT">On spot</option>
+                    <option value="WITHOUT_ROUTER">Without router</option>
+                  </select>
+                </label>
+              )}
+              {value.order_type === "HW" &&
+                value.router_fulfilment === "ON_SPOT" &&
+                input("router_serial", "Router serial", "text", 100)}
               {input("sr_number", "SR number", "text", 120)}
-              {input("alternate_number", "Alternate contact number", "tel", 40)}
-            </div></details>
-          </>}
+              <details className="intake-extra">
+                <summary>Additional sale details</summary>
+                <div className="intake-grid">
+                  {input("account_number", "Account number", "text", 120)}
+                  {input("sim_identifier", "SIM serial", "text", 100)}
+                  {value.order_type !== "HW" &&
+                    input("router_serial", "Router serial", "text", 100)}
+                  {input(
+                    "advance_transaction_number",
+                    "Advance transaction number",
+                    "text",
+                    120,
+                  )}
+                  {input(
+                    "alternate_number",
+                    "Alternate contact number",
+                    "tel",
+                    40,
+                  )}
+                </div>
+              </details>
+            </>
+          }
         </>
       )}
       <footer className="intake-actions">

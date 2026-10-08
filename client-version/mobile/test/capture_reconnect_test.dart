@@ -105,7 +105,7 @@ void main() {
     }
     expect(service.reads, greaterThanOrEqualTo(2));
     expect(find.text(warning), findsNothing);
-    expect(find.text('Upload payment confirmation'), findsWidgets);
+    expect(find.text('Submit sale'), findsWidgets);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));

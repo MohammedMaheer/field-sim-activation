@@ -253,7 +253,7 @@ void main() {
           ),
         );
         await settleCompact(tester);
-        for (final title in ['1. Customer', '2. Order & plan', '3. Payment']) {
+        for (final title in ['1. Customer', '2. Order & plan', '3. Submit sale']) {
           final caption = find.text(title);
           final frame = find.ancestor(
             of: caption,
@@ -365,7 +365,7 @@ void main() {
           matching: find.byWidgetPredicate((w) => w is OutlinedButton),
         );
         final upload = find.ancestor(
-          of: find.text('Upload payment confirmation').last,
+          of: find.text('Submit sale'),
           matching: find.byWidgetPredicate((w) => w is FilledButton),
         );
         expect(photo, findsOneWidget);
@@ -374,7 +374,7 @@ void main() {
           tester.getRect(upload).top - tester.getRect(photo).bottom,
           greaterThanOrEqualTo(10),
         );
-        final heading = find.text('Upload payment confirmation').first;
+        final heading = find.text('Review & submit sale').first;
         final card = find
             .ancestor(of: heading, matching: find.byType(Card))
             .first;

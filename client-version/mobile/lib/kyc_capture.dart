@@ -219,21 +219,28 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   }
 
   Future<void> upload() async {
-    if (bytes == null || busy) return;
+    final saleFlow = intake['capture_mode'] == 'SCREENSHOT_SALE';
+    if ((!saleFlow && bytes == null) || busy) return;
     await act(() async {
       pending = true;
       await saveDraft();
       final s = ref.read(serviceProvider);
       try {
         final result = await s.dio.post(
-          '/kyc-captures',
+          saleFlow ? '/kyc-captures/sale-submissions' : '/kyc-captures',
           data: {
             'agent_id': s.user!['agent_id'],
-            'source_reference': source.text.trim(),
-            'document_kind': 'PAYMENT_CONFIRMATION',
+            'source_reference': source.text.trim().isEmpty
+                ? intake['order_reference'] ?? ''
+                : source.text.trim(),
+            if (!saleFlow) 'document_kind': 'PAYMENT_CONFIRMATION',
             'operation_id': operation,
-            'image_base64': base64Encode(bytes!),
-            'intake': intake,
+            if (!saleFlow) 'image_base64': base64Encode(bytes!),
+            'intake': {
+              ...intake,
+              if (saleFlow && bytes != null)
+                'payment_image': base64Encode(bytes!),
+            },
           },
         );
         await s.store.remove(key);
@@ -253,6 +260,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           }
         });
         await refresh();
+        ref.invalidate(dashboardProvider);
       } on DioException catch (e) {
         if (e.response != null &&
             e.response!.statusCode != 429 &&
@@ -321,7 +329,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Future<void> export(String type) async {
     await act(() async {
       if (capture == null) {
-        throw StateError('Upload payment confirmation first.');
+        throw StateError('Submit the sale first.');
       }
       final id = capture!['id'];
       final service = ref.read(serviceProvider);
@@ -551,7 +559,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     final receipt = capture;
     final verified = receipt?['intake'] != null;
     final receiptSuccess = receipt?['status'] == 'VERIFIED';
-    final payment = receipt?['document_kind'] == 'PAYMENT_CONFIRMATION';
+    final saleMode = receipt?['intake']?['capture_mode'] == 'SCREENSHOT_SALE';
+    final saleFlow = intake['capture_mode'] == 'SCREENSHOT_SALE';
+    final payment =
+        saleMode || receipt?['document_kind'] == 'PAYMENT_CONFIRMATION';
     final invoice = payment
         ? (receipt?['invoice'] as Map? ?? paymentInvoice(receipt!))
         : null;
@@ -591,7 +602,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         leading: const WorkspaceBackButton(),
         title: Text(
           capture == null
-              ? 'Payment'
+              ? saleFlow
+                    ? 'Submit sale'
+                    : 'Payment'
               : payment
               ? 'Invoice'
               : 'Receipt',
@@ -650,6 +663,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
           if (receipt != null && receipt['intake'] != null)
             ReceiptReveal(
+              readyLabel: saleMode ? 'RECEIPT READY' : 'INVOICE READY',
               key: ValueKey('receipt-${receipt["id"]}'),
               child: Container(
                 decoration: BoxDecoration(
@@ -702,7 +716,11 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             ),
                           ),
                           Text(
-                            payment
+                            saleMode
+                                ? receiptSuccess
+                                      ? 'Backend verification complete'
+                                      : 'Pending backend verification'
+                                : payment
                                 ? invoice!['status']
                                 : receiptSuccess
                                 ? 'Receipt confirmed'
@@ -730,7 +748,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                 ),
                               ),
                               Text(
-                                payment
+                                saleMode
+                                    ? 'SALE RECEIPT'
+                                    : payment
                                     ? 'PAYMENT INVOICE'
                                     : 'ACTIVATION RECEIPT',
                                 style: TextStyle(
@@ -834,22 +854,48 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
-                      'Upload payment confirmation',
+                    Text(
+                      saleFlow
+                          ? 'Review & submit sale'
+                          : 'Upload payment confirmation',
                       style: RelayTypography.section,
                     ),
                     const SizedBox(height: 6),
-                    const Text(
-                      'PNG or JPEG · up to 4 MB',
-                      style: RelayTypography.caption,
-                    ),
+                    if (saleFlow) ...[
+                      const SizedBox(height: 10),
+                      _ReceiptLine(
+                        'Customer',
+                        intake['name'] ?? 'Not recorded',
+                      ),
+                      _ReceiptLine(
+                        'Plan',
+                        intake['plan_name'] ??
+                            intake['package_name'] ??
+                            'Not recorded',
+                      ),
+                      _ReceiptLine(
+                        'Request ID',
+                        intake['order_reference'] ?? 'Not recorded',
+                      ),
+                      _ReceiptLine(
+                        'SR number',
+                        intake['sr_number'] ?? 'Not recorded',
+                      ),
+                    ] else
+                      const Text(
+                        'PNG or JPEG · up to 4 MB',
+                        style: RelayTypography.caption,
+                      ),
                     gap(),
                     TextField(
                       controller: source,
                       maxLength: 120,
                       enabled: !busy && !pending,
-                      decoration: const InputDecoration(
-                        labelText: 'Request ID (optional)',
+                      decoration: InputDecoration(
+                        labelText: saleFlow
+                            ? 'Reference · optional'
+                            : 'Request ID (optional)',
+                        hintText: intake['order_reference']?.toString(),
                       ),
                       onChanged: (_) {
                         saveDraft();
@@ -857,6 +903,14 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       },
                     ),
                     gap(),
+                    if (saleFlow)
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 8),
+                        child: Text(
+                          'Payment receipt · optional',
+                          style: RelayTypography.bodyStrong,
+                        ),
+                      ),
                     RelayPair(
                       first: OutlinedButton(
                         onPressed: busy || pending
@@ -916,12 +970,16 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       gap(),
                     ],
                     FilledButton(
-                      onPressed: busy || bytes == null ? null : upload,
+                      onPressed: busy || (!saleFlow && bytes == null)
+                          ? null
+                          : upload,
                       child: Text(
                         busy
                             ? 'Working…'
                             : pending
                             ? 'Retry queued upload'
+                            : saleFlow
+                            ? 'Submit sale'
                             : 'Upload payment confirmation',
                       ),
                     ),
@@ -936,7 +994,11 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
           if (capture != null)
             ExpansionTile(
-              title: const Text('Payment details & history'),
+              title: Text(
+                saleMode
+                    ? 'Sale details & history'
+                    : 'Payment details & history',
+              ),
               initiallyExpanded:
                   capture!['status'] == 'OCR_FAILED' ||
                   capture!['status'] == 'EXTRACTED' ||

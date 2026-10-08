@@ -32,6 +32,9 @@ from .sim_scanning import router as sim_scanning_router
 from .transactions import router as transaction_router
 from .sales_management import router as sales_management_router, scoped as scoped_sales
 from .field_assets import router as field_assets_router
+from .sr_verification import router as sr_verification_router
+from .commissions import router as commissions_router
+from .email_delivery import deliver_pending
 from .client_scope import configure as configure_client_scope
 
 
@@ -61,15 +64,32 @@ async def capture_worker():
             )
 
 
+async def email_worker():
+    while True:
+        await asyncio.sleep(30)
+        try:
+            await asyncio.to_thread(deliver_pending)
+        except Exception:
+            import logging
+
+            logging.getLogger("relay.email").error("Email queue could not complete; persisted messages will retry")
+
+
 @asynccontextmanager
 async def lifespan(app):
     task = asyncio.create_task(worker())
     ocr_task = asyncio.create_task(capture_worker())
+    mail_task = asyncio.create_task(email_worker())
     yield
     task.cancel()
     ocr_task.cancel()
+    mail_task.cancel()
     try:
         await task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await mail_task
     except asyncio.CancelledError:
         pass
     try:
@@ -90,6 +110,8 @@ app.include_router(administration_router)
 app.include_router(transaction_router)
 app.include_router(sales_management_router)
 app.include_router(field_assets_router)
+app.include_router(sr_verification_router)
+app.include_router(commissions_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
@@ -356,7 +378,7 @@ def records(resource, db, user, branch_id=""):
     if resource == "branches":
         agent_branches = {a.id: outlet_branches[a.outlet_id] for a in agents}
         branches = set(agent_branches.values())
-        if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer"}:
+        if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer", "Sales Manager"}:
             branches = set(db.scalars(select(Branch.id)))
         completed_query = scoped_sales(db, user, SalesRecord).where(SalesRecord.status == "CLOSED")
         if branch_id:
@@ -410,7 +432,7 @@ def records(resource, db, user, branch_id=""):
             )
         ]
     if resource == "outlets":
-        if db.get(Role, user.role_id).name == "Administrator":
+        if db.get(Role, user.role_id).name in {"Administrator", "Sales Manager"}:
             outlet_ids = set(db.scalars(select(Outlet.id).where(Outlet.branch_id == branch_id))) if branch_id else set(db.scalars(select(Outlet.id)))
         return [
             {
@@ -458,7 +480,7 @@ def records(resource, db, user, branch_id=""):
         ]
         result = []
         pairs = {(a.leader_id, db.get(Outlet, a.outlet_id).branch_id) for a in agents if a.leader_id}
-        if db.get(Role, user.role_id).name == "Administrator":
+        if db.get(Role, user.role_id).name in {"Administrator", "Sales Manager"}:
             pairs.update(
                 (leader.id, leader.branch_id)
                 for leader in db.scalars(
@@ -511,7 +533,7 @@ def records(resource, db, user, branch_id=""):
         require(db, user, "audit.read")
     model = models[resource]
     query = select(model).where(model.agent_id.in_(ids)).order_by(model.created_at.desc())
-    if resource == "inventory" and "inventory.write" in permissions(db, user):
+    if resource == "inventory" and ("inventory.write" in permissions(db, user) or db.get(Role, user.role_id).name in {"Sales Manager", "Team Leader", "Branch Manager"}):
         from .field_assets import visible_branches
         stock_branches = visible_branches(db, user)
         if branch_id:
@@ -627,11 +649,6 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
         historic = db.get(Branch, historic_id)
         if historic:
             branch_rows.append({**raw(historic), "agents": 0, "target": 0, "today": 0, "activations": 0})
-    actionable_sale_ids = [s.id for s in sale_rows if s.status != "CANCELLED"]
-    call_rows = db.scalars(select(SalesCallTask).where(
-        SalesCallTask.sale_id.in_(actionable_sale_ids),
-        SalesCallTask.status.in_(["PENDING", "FAILED"]),
-    )).all()
     stock_requests = db.scalars(select(FieldAssetRequest).where(
         FieldAssetRequest.agent_id.in_(scope),
         FieldAssetRequest.branch_id.in_([b["id"] for b in branch_rows]),
@@ -642,6 +659,9 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
     )).all()
     closed_sales = [s for s in sale_rows if s.status == "CLOSED"]
     closed_today = sum(business_date(s.created_at) == today for s in closed_sales)
+    from .sales_management import performance as sales_performance, call_tasks
+    month_performance = sales_performance(user=user, db=db, branch_id=branch_id)
+    ready_calls = [task for task in call_tasks(user, db) if task["status"] in {"PENDING", "FAILED"} and (not branch_id or task["branch_id"] == branch_id)]
     sales_trend = [{**t, "activations": sum(business_date(s.created_at).isoformat() == t["date"] for s in closed_sales)} for t in trend]
     agent_names = {a["id"]: a["name"] for a in agents}
     for branch in branch_rows:
@@ -657,6 +677,7 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
         "sales_summary": {"closed_today": closed_today, "target": target,
                           "achievement": round(closed_today / max(target, 1) * 100, 1),
                           "week": sum(t["activations"] for t in sales_trend)},
+        "sales_performance": month_performance,
         "sales_trend": sales_trend,
         "sales_plan_mix": [{"name": name, "value": sum(s.plan_name == name for s in closed_sales)}
                            for name in sorted({s.plan_name for s in closed_sales})],
@@ -666,7 +687,7 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
                          for s in sorted(sale_rows, key=lambda s: s.created_at, reverse=True)[:6]],
         "work_summary": {
             "open_sales": sum(s.status == "IN_PROGRESS" for s in sale_rows),
-            "ready_calls": len(call_rows),
+            "ready_calls": len(ready_calls),
             "stock_requests": len(stock_requests),
             "open_support": len(support_rows),
         },
@@ -1778,7 +1799,7 @@ def pdf_bytes(title, rows, subtitle):
 
     def footer(canvas, doc):
         canvas.setFont("Helvetica", 8)
-        canvas.drawString(30, 20, "Relay Operations | Synthetic demo data | Confidential")
+        canvas.drawString(30, 20, "Relay Operations | Confidential")
         canvas.drawRightString(810, 20, f"Page {doc.page}")
 
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
@@ -1809,6 +1830,12 @@ def export(
     if start and end and start > end:
         raise HTTPException(422, "From date must not be after to date")
     rows = records(REPORTS[report], db, user, branch_id)
+    if report in {"daily", "monthly"}:
+        from .sales_management import sale_view
+        sales_query = scoped_sales(db, user, SalesRecord)
+        if branch_id:
+            sales_query = sales_query.where(SalesRecord.branch_id == branch_id)
+        rows = [sale_view(db, row) for row in db.scalars(sales_query.order_by(SalesRecord.created_at.desc()))]
     if report == "failed":
         rows = [r for r in rows if r.get("status") == "FAILED"]
     if report == "daily" and not start:
@@ -1826,6 +1853,10 @@ def export(
         orders = [r for r in records("orders", db, user, branch_id) if in_period(r)]
         agents = records("agents", db, user, branch_id)
         checks = [r for r in records("ekyc", db, user, branch_id) if in_period(r)]
+        sales_query = scoped_sales(db, user, SalesRecord)
+        if branch_id:
+            sales_query = sales_query.where(SalesRecord.branch_id == branch_id)
+        sales_rows = [sale for sale in db.scalars(sales_query) if in_period({"created_at": sale.created_at})]
         for row in rows:
             members = {
                 a["id"]
@@ -1844,7 +1875,15 @@ def export(
                 o for o in orders if o["agent_id"] in members and o["status"] == "ACTIVATED"
             ]
             verified = [e for e in checks if e["agent_id"] in members]
-            row["activations"] = len(completed)
+            owned_sales = [sale for sale in sales_rows if
+                (sale.agent_id == row["id"] if report == "agent" else
+                 sale.outlet_id == row["id"] if report == "outlet" else
+                 sale.branch_id == row["id"] if report == "branch" else
+                 sale.leader_id == row["leader_id"] and sale.branch_id == row["branch_id"])]
+            row["legacy_activations"] = len(completed)
+            row["activations"] = row["closed_sales"] = sum(sale.status == "CLOSED" for sale in owned_sales)
+            row["cancelled_sales"] = sum(sale.status == "CANCELLED" for sale in owned_sales)
+            row["recorded_sales"] = len(owned_sales)
             row["aht"] = round(
                 sum(o["handling_seconds"] for o in completed) / max(len(completed), 1) / 60, 1
             )
@@ -1887,7 +1926,7 @@ def export(
             db.get(Branch, branch_id).name if db.get(Branch, branch_id) else "No matching branch"
         )
     if performance:
-        subtitle += " | Activations/AHT/eKYC use selected dates; targets and stock are current."
+        subtitle += " | Closed sales use original sale dates and current status; targets and stock are current. Legacy activation, AHT and eKYC remain historical."
     audit(db, user, "Report Exported", report, new={"format": format, "rows": len(rows)})
     db.commit()
     if format == "pdf":
