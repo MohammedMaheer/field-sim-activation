@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
@@ -173,6 +173,23 @@ class Intake(BaseModel):
     payment_image: str = Field(default="", max_length=1_333_336)
     payment_on_receipt: bool = False
     step: int = Field(default=0, ge=0, le=2)
+
+    @field_validator("document_type", mode="before")
+    @classmethod
+    def canonical_document_type(cls, value):
+        # Older saved captures use display labels for the same identity type.
+        # Keep unknown labels invalid rather than treating them as national IDs.
+        if isinstance(value, str):
+            label = " ".join(value.split()).casefold()
+            aliases = {
+                "national id": "National ID",
+                "national identity card": "National ID",
+                "emirates id": "National ID",
+                "uae identity card": "National ID",
+                "passport": "Passport",
+            }
+            return aliases.get(label, value)
+        return value
 
     @model_validator(mode="after")
     def safe_data(self):
@@ -1090,8 +1107,19 @@ def review(
     if row.creator_id == user.id:
         raise HTTPException(403, "Another authorized reviewer must verify this capture")
     data = payload(row)
-    if body.outcome == "VERIFIED" and data.get("intake"):
-        Intake.model_validate(data["intake"]).complete()
+    stored_intake = data.get("intake")
+    if stored_intake is not None and not isinstance(stored_intake, dict):
+        raise HTTPException(
+            422, "Saved customer or order details are invalid. Return the capture for correction."
+        )
+    if body.outcome == "VERIFIED" and stored_intake is not None:
+        try:
+            intake = Intake.model_validate(stored_intake)
+        except ValidationError:
+            raise HTTPException(
+                422, "Saved customer or order details are invalid. Return the capture for correction."
+            ) from None
+        intake.complete()
     data["review"] = {
         "outcome": body.outcome,
         "reason": body.reason,

@@ -111,7 +111,11 @@ def test_order_parser_captures_proposal_fields_without_guessing_type():
     assert 'order_type' not in order_fields([{'text':'Order Type: random text'}])
 
 
-def test_backend_review_closes_external_sale_and_consumes_stock_once(client):
+@pytest.mark.parametrize("document_type", [
+    "National ID", "Emirates ID", "National Identity Card", "UAE Identity card", " passport ",
+])
+@pytest.mark.usefixtures("review_regression_cleanup")
+def test_backend_review_closes_external_sale_and_consumes_stock_once(client, document_type):
     from app import captures
     from app.db import KycCapture, SalesRecord, Sim, Notification, Movement
     from app.sales_management import register_capture_sale
@@ -124,7 +128,7 @@ def test_backend_review_closes_external_sale_and_consumes_stock_once(client):
         sim = Sim(serial=serial,iccid=serial,sim_type='POSTPAID',agent_id=agent.id,outlet_id=agent.outlet_id,status='AVAILABLE')
         db.add(sim)
         capture = KycCapture(agent_id=agent.id,creator_id=agent.user_id,operation_id=str(uuid4()),source_reference=f'FLOW-{uuid4()}',image_hash='test',image_type='image/png',image_encrypted=captures.cipher.encrypt(b'test').decode(),status='SUBMITTED',version=1)
-        captures.store(capture,{'document_kind':'PAYMENT_CONFIRMATION','intake':{'capture_mode':'SCREENSHOT_ORDER','order_type':'NEW','name':'Flow Customer','document_number':'SAMPLE','nationality':'Sample','birth_date':'1990-01-01','expiry_date':'2090-01-01','document_image':'','order_image':'','plan_id':plan_id,'msisdn':'0500000000','order_reference':f'ORDER-{uuid4()}','sim_identifier':serial},'rows':[],'history':[]})
+        captures.store(capture,{'document_kind':'PAYMENT_CONFIRMATION','intake':{'capture_mode':'SCREENSHOT_ORDER','document_type':document_type,'order_type':'NEW','name':'Flow Customer','document_number':'SAMPLE','nationality':'Sample','birth_date':'1990-01-01','expiry_date':'2090-01-01','document_image':'','order_image':'','plan_id':plan_id,'msisdn':'0500000000','order_reference':f'ORDER-{uuid4()}','sim_identifier':serial},'rows':[],'history':[]})
         # Review complete() checks required image presence, not authenticity; extraction evidence is tested separately.
         data = captures.payload(capture)
         data['intake']['document_image']='stored'
@@ -154,6 +158,215 @@ def test_backend_review_closes_external_sale_and_consumes_stock_once(client):
         assert db.get(Sim,sim_id).status=='ACTIVATED'
         assert len(db.scalars(select(Movement).where(Movement.sim_id==sim_id)).all())==1
         assert db.scalar(select(Notification.id).where(Notification.user_id==leader_id,Notification.message.contains('FLOW-')))
+        # Successful review preserves the originally captured historical display label.
+        assert captures.payload(db.get(KycCapture, capture_id))["intake"]["document_type"] == document_type
+
+
+@pytest.mark.parametrize("stored_intake", [
+    {"document_type": "Driving licence"},
+    {"document_type": None},
+    {"birth_date": "not-a-date"},
+    {"document_image": "not-a-valid-image"},
+    {"name": ["Wrong schema"]},
+    {"order_fields": [{"label": "Unknown", "value": "Value", "extra": "Invalid"}]},
+    [],
+    {},
+])
+@pytest.mark.usefixtures("review_regression_cleanup")
+def test_backend_review_invalid_saved_intake_is_422_without_side_effects(client, stored_intake):
+    from uuid import uuid4
+    from PIL import Image
+    from sqlalchemy import func
+    from app import captures
+    from app.db import KycCapture, Sim, SimProgress, SalesRecord, Notification, Movement
+    from app.sales_management import register_capture_sale
+
+    login(client)
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.employee_id == "RLY-1041"))
+        plan = client.get("/api/resources/plans").json()[0]
+        image = io.BytesIO()
+        Image.new("RGB", (80, 80), "white").save(image, format="PNG")
+        encoded = base64.b64encode(image.getvalue()).decode()
+        serial = f"SIM-{uuid4()}"
+        sim = Sim(serial=serial, iccid=serial, sim_type="POSTPAID", agent_id=agent.id,
+                  outlet_id=agent.outlet_id, status="AVAILABLE")
+        capture = KycCapture(agent_id=agent.id, creator_id=agent.user_id,
+                             operation_id=str(uuid4()), source_reference=f"INVALID-{uuid4()}",
+                             image_hash="test", image_type="image/png",
+                             image_encrypted=captures.cipher.encrypt(image.getvalue()).decode(),
+                             status="SUBMITTED", version=1)
+        valid_intake = {
+            "capture_mode": "SCREENSHOT_ORDER", "document_type": "Emirates ID",
+            "order_type": "NEW", "name": "Review Customer", "document_number": "SAMPLE-ID",
+            "nationality": "Sample", "birth_date": "1990-01-01", "expiry_date": "2090-01-01",
+            "document_image": encoded, "order_image": encoded, "plan_id": plan["id"],
+            "plan_name": plan["name"], "msisdn": "0500000000",
+            "order_reference": f"ORDER-{uuid4()}", "sim_identifier": serial,
+        }
+        captures.store(capture, {"document_kind": "PAYMENT_CONFIRMATION", "intake": valid_intake,
+                                 "rows": [], "history": []})
+        db.add_all([sim, capture])
+        db.flush()
+        register_capture_sale(db, capture)
+        progress = SimProgress(sim_id=sim.id, agent_id=agent.id, transaction_id=str(uuid4()),
+                               capture_id=capture.id, stage="AWAITING_REVIEW", payment_status="RECORDED")
+        db.add(progress)
+        data = captures.payload(capture)
+        data["intake"] = ({**valid_intake, **stored_intake} if isinstance(stored_intake, dict)
+                          and stored_intake else stored_intake)
+        captures.store(capture, data)
+        db.commit()
+        identifier, sim_id, progress_id = capture.id, sim.id, progress.id
+        encrypted_before = capture.payload_encrypted
+        updated_before = capture.updated_at
+        notifications_before = db.scalar(select(func.count()).select_from(Notification))
+
+    response = client.post(f"/api/kyc-captures/{identifier}/review",
+                           json={"version": 1, "outcome": "VERIFIED", "reason": "Checked original evidence"})
+    assert response.status_code == 422, response.text
+    assert "SAMPLE-ID" not in response.text and encoded not in response.text
+    with DB() as db:
+        capture = db.get(KycCapture, identifier)
+        assert capture.status == "SUBMITTED" and capture.version == 1
+        assert capture.reviewer_id is None and capture.updated_at == updated_before
+        assert capture.payload_encrypted == encrypted_before
+        assert db.get(Sim, sim_id).status == "AVAILABLE"
+        progress = db.get(SimProgress, progress_id)
+        assert progress.stage == "AWAITING_REVIEW" and progress.payment_status == "RECORDED"
+        assert db.scalar(select(SalesRecord).where(SalesRecord.capture_id == identifier)).status == "IN_PROGRESS"
+        assert not db.scalar(select(Audit.id).where(Audit.entity == identifier))
+        assert not db.scalar(select(Movement.id).where(Movement.sim_id == sim_id))
+        assert db.scalar(select(func.count()).select_from(Notification)) == notifications_before
+
+
+@pytest.mark.usefixtures("review_regression_cleanup")
+def test_backend_review_guards_run_before_saved_intake_validation(client):
+    from uuid import uuid4
+    from app import captures
+    from app.db import KycCapture, User
+
+    login(client)
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.employee_id == "RLY-1041"))
+        admin = db.scalar(select(User).where(User.email == "admin@relay.demo"))
+        capture = KycCapture(agent_id=agent.id, creator_id=admin.id,
+                             operation_id=str(uuid4()), source_reference=f"GUARDS-{uuid4()}",
+                             image_hash="test", image_type="image/png",
+                             image_encrypted=captures.cipher.encrypt(b"test").decode(),
+                             status="SUBMITTED", version=1)
+        captures.store(capture, {"intake": {"document_type": "Invalid"}, "rows": [], "history": []})
+        db.add(capture)
+        db.commit()
+        identifier = capture.id
+        encrypted_before = capture.payload_encrypted
+    path = f"/api/kyc-captures/{identifier}/review"
+    body = {"version": 1, "outcome": "VERIFIED", "reason": "Checked original evidence"}
+    assert client.post(path, json={**body, "version": 2}).status_code == 409
+    assert client.post(path, json=body).status_code == 403
+    login(client, "agent2")
+    assert client.get(f"/api/kyc-captures/{identifier}").status_code == 404
+    assert client.post(path, json=body).status_code == 403
+    login(client, "leader")
+    assert client.post(path, json=body).status_code == 403
+    login(client, "compliance")
+    assert client.post(path, json=body).status_code == 422
+    with DB() as db:
+        capture = db.get(KycCapture, identifier)
+        assert capture.status == "SUBMITTED" and capture.version == 1
+        assert capture.reviewer_id is None and capture.payload_encrypted == encrypted_before
+
+
+@pytest.mark.usefixtures("review_regression_cleanup")
+def test_backend_can_return_invalid_saved_details_for_correction(client):
+    from uuid import uuid4
+    from app import captures
+    from app.db import KycCapture
+
+    login(client)
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.employee_id == "RLY-1041"))
+        capture = KycCapture(agent_id=agent.id, creator_id=agent.user_id,
+                             operation_id=str(uuid4()), source_reference=f"CORRECT-{uuid4()}",
+                             image_hash="test", image_type="image/png",
+                             image_encrypted=captures.cipher.encrypt(b"test").decode(),
+                             status="SUBMITTED", version=1)
+        captures.store(capture, {"intake": {"document_type": "Driving licence"}, "rows": [], "history": []})
+        db.add(capture)
+        db.commit()
+        identifier = capture.id
+    response = client.post(f"/api/kyc-captures/{identifier}/review",
+                           json={"version": 1, "outcome": "REJECTED", "reason": "Recapture a supported identity document"})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "REJECTED" and response.json()["version"] == 2
+
+
+@pytest.mark.parametrize("outcome", ["VERIFIED", "REJECTED"])
+@pytest.mark.parametrize("stored_intake", ["Invalid schema", ["Invalid schema"]])
+@pytest.mark.usefixtures("review_regression_cleanup")
+def test_backend_review_rejects_non_object_saved_intake(client, outcome, stored_intake):
+    from uuid import uuid4
+    from app import captures
+    from app.db import KycCapture
+
+    login(client)
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.employee_id == "RLY-1041"))
+        capture = KycCapture(agent_id=agent.id, creator_id=agent.user_id,
+                             operation_id=str(uuid4()), source_reference=f"SCHEMA-{uuid4()}",
+                             image_hash="test", image_type="image/png",
+                             image_encrypted=captures.cipher.encrypt(b"test").decode(),
+                             status="SUBMITTED", version=1)
+        captures.store(capture, {"intake": stored_intake, "rows": [], "history": []})
+        db.add(capture)
+        db.commit()
+        identifier, encrypted_before = capture.id, capture.payload_encrypted
+    response = client.post(f"/api/kyc-captures/{identifier}/review",
+                           json={"version": 1, "outcome": outcome, "reason": "Checked saved evidence"})
+    assert response.status_code == 422, response.text
+    with DB() as db:
+        capture = db.get(KycCapture, identifier)
+        assert capture.status == "SUBMITTED" and capture.version == 1
+        assert capture.reviewer_id is None and capture.payload_encrypted == encrypted_before
+
+
+@pytest.mark.usefixtures("review_regression_cleanup")
+def test_backend_review_accepts_historical_emirates_id_without_capture_mode(client):
+    from uuid import uuid4
+    from PIL import Image
+    from app import captures
+    from app.db import KycCapture
+
+    login(client)
+    image = io.BytesIO()
+    Image.new("RGB", (80, 80), "white").save(image, format="PNG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    with DB() as db:
+        agent = db.scalar(select(Agent).where(Agent.employee_id == "RLY-1041"))
+        intake = {
+            "document_type": "Emirates ID", "name": "Historical Customer",
+            "document_number": "SAMPLE-ID", "nationality": "Sample",
+            "birth_date": "1990-01-01", "expiry_date": "2090-01-01",
+            "document_image": encoded, "sim_identifier": "SAMPLE-SIM",
+            "plan_id": client.get("/api/resources/plans").json()[0]["id"],
+            "msisdn": "0500000000", "signature": [[[i / 10, 0.5] for i in range(8)]],
+        }
+        capture = KycCapture(agent_id=agent.id, creator_id=agent.user_id,
+                             operation_id=str(uuid4()), source_reference=f"HISTORICAL-{uuid4()}",
+                             image_hash="test", image_type="image/png",
+                             image_encrypted=captures.cipher.encrypt(image.getvalue()).decode(),
+                             status="SUBMITTED", version=1)
+        captures.store(capture, {"document_kind": "PAYMENT_CONFIRMATION", "intake": intake,
+                                 "rows": [], "history": []})
+        db.add(capture)
+        db.commit()
+        identifier = capture.id
+    response = client.post(f"/api/kyc-captures/{identifier}/review",
+                           json={"version": 1, "outcome": "VERIFIED", "reason": "Compared historical customer details"})
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "VERIFIED" and response.json()["version"] == 2
+    assert response.json()["intake"] == intake
+    assert captures.Intake.model_validate(intake).document_type == "National ID"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -162,6 +375,26 @@ def database():
     seed()
     yield
     engine.dispose()
+
+
+@pytest.fixture
+def review_regression_cleanup(database):
+    """Keep deliberately malformed review fixtures out of unrelated workflow tests."""
+    from sqlalchemy import delete
+    from app.db import (KycCapture, SimProgress, SalesRecord, SalesCallTask, CallAttempt,
+                        Notification, Movement, Customer, Sim)
+
+    models = (CallAttempt, SalesCallTask, SimProgress, SalesRecord, Movement,
+              KycCapture, Sim, Customer, Notification, Audit)
+    with DB() as db:
+        existing = {model: set(db.scalars(select(model.id))) for model in models}
+    try:
+        yield
+    finally:
+        with DB() as db:
+            for model in models:
+                db.execute(delete(model).where(model.id.not_in(existing[model])))
+            db.commit()
 
 
 @pytest.fixture
