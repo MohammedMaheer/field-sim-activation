@@ -119,6 +119,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Record call'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Record call'));
       await tester.pumpAndSettle();
       await tester.enterText(

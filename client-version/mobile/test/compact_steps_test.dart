@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:relay_agent/customer_intake.dart';
 import 'package:relay_agent/kyc_capture.dart';
 import 'package:relay_agent/payment_invoice.dart';
+import 'package:relay_agent/relay_theme.dart';
 import 'package:relay_agent/services.dart';
 import 'package:relay_agent/scan_surface.dart';
 import 'package:relay_agent/transaction_journey.dart';
@@ -60,25 +61,8 @@ class CompactService extends RelayService {
   }
 }
 
-// Use the production font, outline and padding so floating labels consume the
-// same space as the app rather than the test runner's default underline theme.
-ThemeData compactTheme() => ThemeData(
-  fontFamily: 'DM Sans',
-  appBarTheme: const AppBarTheme(
-    titleTextStyle: TextStyle(
-      fontFamily: 'Manrope',
-      fontSize: 20,
-      fontWeight: FontWeight.w800,
-    ),
-  ),
-  inputDecorationTheme: InputDecorationTheme(
-    filled: true,
-    fillColor: Colors.white,
-    contentPadding: const EdgeInsets.all(16),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-  ),
-);
+// Keep layout checks on the production typography, outlines and control spacing.
+ThemeData compactTheme() => relayTheme();
 
 Json compactIntake(int step) => {
   'step': step,
@@ -197,7 +181,7 @@ void main() {
         expect(bounds.bottom, lessThanOrEqualTo(frame.bottom));
       }
       expect(ready.bottom, lessThan(guidance.top));
-      expect(frame.height, lessThan(160));
+      expect(frame.height, lessThan(180));
     }
     await tester.pumpWidget(const SizedBox());
   });
@@ -326,10 +310,14 @@ void main() {
           expectFieldGap(tester, 'Monthly charge', 'Subscriber plan');
           expectCompleteValue(tester, 'Request ID', values['order_reference']);
           expectCompleteValue(tester, 'Package name', values['package_name']);
-          expect(
-            tester.getRect(control('Request ID')).top,
-            tester.getRect(control('Phone number')).top,
-          );
+          if (width >= 360) {
+            expect(
+              tester.getRect(control('Request ID')).top,
+              tester.getRect(control('Phone number')).top,
+            );
+          } else {
+            expectFieldGap(tester, 'Request ID', 'Phone number');
+          }
           final button = find.ancestor(
             of: find.text('Scan order'),
             matching: find.byWidgetPredicate((w) => w is FilledButton),
@@ -429,7 +417,9 @@ void main() {
           home: Scaffold(
             body: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 32),
-              child: PaymentInvoiceSections(invoice: invoice),
+              child: SingleChildScrollView(
+                child: PaymentInvoiceSections(invoice: invoice),
+              ),
             ),
           ),
         ),

@@ -1,5 +1,7 @@
 import 'package:go_router/go_router.dart';
 import 'receipt_reveal.dart';
+import 'typography.dart';
+import 'relay_theme.dart';
 import 'payment_invoice.dart';
 import 'customer_intake.dart';
 import 'kyc_journey.dart';
@@ -834,15 +836,12 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                   children: [
                     const Text(
                       'Upload payment confirmation',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                      ),
+                      style: RelayTypography.section,
                     ),
                     const SizedBox(height: 6),
                     const Text(
                       'PNG or JPEG · up to 4 MB',
-                      style: TextStyle(fontSize: 13, color: Color(0xFF596675)),
+                      style: RelayTypography.caption,
                     ),
                     gap(),
                     TextField(
@@ -858,62 +857,49 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       },
                     ),
                     gap(),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: busy || pending
-                                ? null
-                                : () => pick(ImageSource.camera),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(0, 62),
-                              padding: const EdgeInsets.symmetric(vertical: 7),
-                            ),
-                            child: const Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.camera_alt_outlined, size: 20),
-                                SizedBox(height: 3),
-                                Text(
-                                  'Take photo',
-                                  maxLines: 1,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
+                    RelayPair(
+                      first: OutlinedButton(
+                        onPressed: busy || pending
+                            ? null
+                            : () => pick(ImageSource.camera),
+                        style: RelayCaptureStyles.upload.copyWith(
+                          minimumSize: const WidgetStatePropertyAll(
+                            Size(0, 62),
+                          ),
+                          padding: const WidgetStatePropertyAll(
+                            EdgeInsets.symmetric(vertical: 7),
                           ),
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: OutlinedButton(
-                            onPressed: busy || pending
-                                ? null
-                                : () => pick(ImageSource.gallery),
-                            style: OutlinedButton.styleFrom(
-                              minimumSize: const Size(0, 62),
-                              padding: const EdgeInsets.symmetric(vertical: 7),
-                            ),
-                            child: const Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(Icons.upload, size: 20),
-                                SizedBox(height: 3),
-                                Text(
-                                  'Upload',
-                                  maxLines: 1,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.camera_alt_outlined, size: 20),
+                            SizedBox(height: 3),
+                            Text('Take photo', textAlign: TextAlign.center),
+                          ],
+                        ),
+                      ),
+                      second: OutlinedButton(
+                        onPressed: busy || pending
+                            ? null
+                            : () => pick(ImageSource.gallery),
+                        style: RelayCaptureStyles.upload.copyWith(
+                          minimumSize: const WidgetStatePropertyAll(
+                            Size(0, 62),
+                          ),
+                          padding: const WidgetStatePropertyAll(
+                            EdgeInsets.symmetric(vertical: 7),
                           ),
                         ),
-                      ],
+                        child: const Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.upload, size: 20),
+                            SizedBox(height: 3),
+                            Text('Upload', textAlign: TextAlign.center),
+                          ],
+                        ),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     if (bytes != null) ...[
@@ -1217,6 +1203,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             color: const Color(0xFFE7F5F1),
             child: ExpansionTile(
               key: ValueKey('history-${capture?['id'] ?? 'new'}'),
+              tilePadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 4,
+              ),
               initiallyExpanded: false,
               title: const Text('Capture history'),
               subtitle: Text('${captures.length} recent captures'),

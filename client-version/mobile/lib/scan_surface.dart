@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'experience.dart';
+import 'typography.dart';
 
 class ScanSurface extends StatefulWidget {
   final String? image;
@@ -62,30 +63,30 @@ class _ScanSurfaceState extends State<ScanSurface>
             borderRadius: BorderRadius.circular(14),
             onTap: () => setState(() => expanded = true),
             child: Container(
-              height: 62,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
+              constraints: const BoxConstraints(minHeight: 62),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 border: Border.all(color: const Color(0xff69d7b4)),
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.check_circle, color: Color(0xff008f69)),
-                  SizedBox(width: 10),
+                  const Icon(Icons.check_circle, color: Color(0xff008f69)),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       'Document captured',
-                      style: TextStyle(fontWeight: FontWeight.w700),
+                      style: RelayTypography.bodyStrong,
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Text(
                     'View',
-                    style: TextStyle(
+                    style: RelayTypography.label.copyWith(
                       color: Color(0xff006b80),
-                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Icon(Icons.chevron_right, color: Color(0xff006b80)),
+                  const Icon(Icons.chevron_right, color: Color(0xff006b80)),
                 ],
               ),
             ),
@@ -94,11 +95,7 @@ class _ScanSurfaceState extends State<ScanSurface>
       );
     }
     return Container(
-      height: complete
-          ? 220
-          : MediaQuery.sizeOf(context).width < 360
-          ? 190
-          : 142,
+      constraints: BoxConstraints(minHeight: complete ? 220 : 158),
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
@@ -139,78 +136,113 @@ class _ScanSurfaceState extends State<ScanSurface>
                 ),
               ),
             ),
-          Positioned.fill(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(18, 12, 18, 36),
-              child: widget.image != null && !widget.illustration
-                  ? ClipRRect(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (widget.image != null && !widget.illustration)
+                  SizedBox(
+                    height: complete ? 168 : 120,
+                    child: ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.memory(
                         base64Decode(widget.image!),
                         fit: BoxFit.contain,
                       ),
-                    )
-                  : Container(
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xff234968), Color(0xff24423f)],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xff539bb4)),
-                      ),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 8,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.document.toUpperCase(),
-                            style: const TextStyle(
-                              color: Color(0xff61d3ff),
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.5,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          const Row(
-                            children: [
-                              Icon(
-                                Icons.badge_outlined,
-                                color: Color(0xffffd97a),
-                                size: 36,
-                              ),
-                              SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      'Identity document',
-                                      style: TextStyle(
-                                        color: Colors.white,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                    SizedBox(height: 6),
-                                    Text(
-                                      'Ready to capture',
-                                      style: TextStyle(
-                                        color: Color(0xff9ce8e4),
-                                        fontSize: 12,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
                     ),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xff234968), Color(0xff24423f)],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xff539bb4)),
+                    ),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.document.toUpperCase(),
+                          style: RelayTypography.caption.copyWith(
+                            color: Color(0xff61d3ff),
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: .8,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.badge_outlined,
+                              color: Color(0xffffd97a),
+                              size: 36,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Identity document',
+                                    style: RelayTypography.section.copyWith(
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Ready to capture',
+                                    style: RelayTypography.caption.copyWith(
+                                      color: Color(0xff9ce8e4),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(height: 12),
+                AnimatedSwitcher(
+                  duration: motionDuration(context),
+                  child: Row(
+                    key: ValueKey(complete),
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        complete ? Icons.check_circle : Icons.document_scanner,
+                        size: 18,
+                        color: complete
+                            ? const Color(0xff53e5b8)
+                            : const Color(0xff78daff),
+                      ),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          complete
+                              ? 'Document captured'
+                              : widget.reading
+                              ? widget.readingLabel
+                              : 'Position document',
+                          textAlign: TextAlign.center,
+                          style: RelayTypography.label.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
           if (!complete)
@@ -254,50 +286,13 @@ class _ScanSurfaceState extends State<ScanSurface>
                 ),
               ),
             ),
-          Positioned(
-            left: 18,
-            right: 18,
-            bottom: 12,
-            child: AnimatedSwitcher(
-              duration: motionDuration(context),
-              child: Row(
-                key: ValueKey(complete),
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    complete ? Icons.check_circle : Icons.document_scanner,
-                    size: 17,
-                    color: complete
-                        ? const Color(0xff53e5b8)
-                        : const Color(0xff78daff),
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: Text(
-                      complete
-                          ? 'Document captured'
-                          : widget.reading
-                          ? widget.readingLabel
-                          : 'Position document',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
           if (complete)
             Positioned(
               top: 4,
               right: 4,
               child: IconButton(
                 tooltip: 'Collapse document preview',
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
                 onPressed: () => setState(() => expanded = false),
                 icon: const Icon(Icons.close, color: Colors.white),
               ),

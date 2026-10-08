@@ -13,6 +13,8 @@ import 'dashboard_charts.dart';
 
 import 'services.dart';
 import 'experience.dart';
+import 'relay_theme.dart';
+import 'typography.dart';
 
 const burgundy = RelayPalette.brand,
     ink = RelayPalette.ink,
@@ -25,16 +27,30 @@ void main() {
 
 final router = GoRouter(
   redirect: (context, state) {
-    final service = ProviderScope.containerOf(context, listen: false).read(serviceProvider);
+    final service = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(serviceProvider);
     return canVisitMobilePage(state.uri.path, service.user) ? null : '/';
   },
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
-    GoRoute(path: '/notifications', builder: (c, s) => const NotificationsScreen()),
-    GoRoute(path: '/call-work', builder: (c, s) => CallWorkScreen(selectedId: s.uri.queryParameters['selected'])),
+    GoRoute(
+      path: '/notifications',
+      builder: (c, s) => const NotificationsScreen(),
+    ),
+    GoRoute(
+      path: '/call-work',
+      builder: (c, s) =>
+          CallWorkScreen(selectedId: s.uri.queryParameters['selected']),
+    ),
     GoRoute(path: '/drafts', builder: (c, s) => const SavedDraftsScreen()),
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
-    GoRoute(path: '/sales-management', builder: (c, s) => SalesManagementScreen(selectedId: s.uri.queryParameters['selected'])),
+    GoRoute(
+      path: '/sales-management',
+      builder: (c, s) =>
+          SalesManagementScreen(selectedId: s.uri.queryParameters['selected']),
+    ),
     GoRoute(path: '/assets', builder: (c, s) => const FieldAssetsScreen()),
     GoRoute(
       path: '/transactions',
@@ -120,111 +136,19 @@ class RelayApp extends ConsumerWidget {
   const RelayApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<String?>(serviceProvider.select((service) => service.user?['id']?.toString()), (previous, next) {
-      if (previous != null && next == null) router.go('/');
-      router.refresh();
-    });
+    ref.listen<String?>(
+      serviceProvider.select((service) => service.user?['id']?.toString()),
+      (previous, next) {
+        if (previous != null && next == null) router.go('/');
+        router.refresh();
+      },
+    );
     return MaterialApp.router(
-    title: 'Relay Client',
-    debugShowCheckedModeBanner: false,
-    routerConfig: router,
-    theme: ThemeData(
-      useMaterial3: true,
-      pageTransitionsTheme: const PageTransitionsTheme(
-        builders: {
-          TargetPlatform.android: RelayPageTransitions(),
-          TargetPlatform.iOS: RelayPageTransitions(),
-          TargetPlatform.windows: RelayPageTransitions(),
-          TargetPlatform.macOS: RelayPageTransitions(),
-          TargetPlatform.linux: RelayPageTransitions(),
-        },
-      ),
-      navigationBarTheme: NavigationBarThemeData(
-        indicatorColor: const Color(0xFFE8D8FF),
-        labelTextStyle: WidgetStateProperty.resolveWith(
-          (states) => TextStyle(
-            fontFamily: 'DM Sans',
-            fontSize: 12,
-            fontWeight: states.contains(WidgetState.selected)
-                ? FontWeight.w800
-                : FontWeight.w500,
-            color: states.contains(WidgetState.selected)
-                ? const Color(0xFF642BA6)
-                : muted,
-          ),
-        ),
-      ),
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: const Color(0xFF293B58),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-      fontFamily: 'DM Sans',
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: burgundy,
-        primary: burgundy,
-        surface: Colors.white,
-      ),
-      scaffoldBackgroundColor: RelayPalette.canvas,
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Color(0xFFF6EEF6),
-        surfaceTintColor: Colors.transparent,
-        titleTextStyle: TextStyle(
-          fontFamily: 'Manrope',
-          fontSize: 20,
-          fontWeight: FontWeight.w800,
-          color: ink,
-        ),
-        foregroundColor: ink,
-        centerTitle: false,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        color: Colors.white,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFFDCDDEC)),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        contentPadding: const EdgeInsets.all(16),
-        hintStyle: const TextStyle(color: Color(0xFF67758C), fontSize: 14),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: Color(0xFFD6DEEF)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: burgundy, width: 1.6),
-        ),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-          borderSide: const BorderSide(color: Color(0xFFE2E5EB)),
-        ),
-      ),
-      filledButtonTheme: FilledButtonThemeData(
-        style: FilledButton.styleFrom(
-          minimumSize: const Size.fromHeight(50),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10),
-          ),
-        ),
-      ),
-      outlinedButtonTheme: OutlinedButtonThemeData(
-        style: OutlinedButton.styleFrom(
-          minimumSize: const Size(0, 48),
-          foregroundColor: burgundy,
-          side: const BorderSide(color: Color(0xFFD8C5CE)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(11),
-          ),
-        ),
-      ),
-    ),
-  );
+      title: 'Relay Client',
+      debugShowCheckedModeBanner: false,
+      routerConfig: router,
+      theme: relayTheme(),
+    );
   }
 }
 
@@ -246,16 +170,37 @@ class _GateState extends ConsumerState<Gate> {
     final s = ref.watch(serviceProvider);
     if (!s.ready) return const Scaffold(body: LoadingCards());
     if (s.user == null) return const LoginScreen();
-    if (['Tele Verification Officer', 'Welcome Call Officer'].contains(s.user?['role'])) return const CallWorkScreen();
+    if ([
+      'Tele Verification Officer',
+      'Welcome Call Officer',
+    ].contains(s.user?['role'])) {
+      return const CallWorkScreen();
+    }
     if (!knownRoles.contains(s.user?['role'])) return const LoginScreen();
     if (s.user?['role'] == 'Inventory Manager') {
-      return Scaffold(appBar: AppBar(title: const Text('Inventory'), actions: [
-        const NotificationBell(),
-        IconButton(onPressed: () => context.push('/assets'), icon: const Icon(Icons.inventory_2_outlined), tooltip: 'Assets & supplies'),
-        IconButton(onPressed: s.logout, icon: const Icon(Icons.logout), tooltip: 'Sign out'),
-      ]), body: const SafeArea(child: StockScreen()));
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Inventory'),
+          actions: [
+            const NotificationBell(),
+            IconButton(
+              onPressed: () => context.push('/assets'),
+              icon: const Icon(Icons.inventory_2_outlined),
+              tooltip: 'Assets & supplies',
+            ),
+            IconButton(
+              onPressed: s.logout,
+              icon: const Icon(Icons.logout),
+              tooltip: 'Sign out',
+            ),
+          ],
+        ),
+        body: const SafeArea(child: StockScreen()),
+      );
     }
-    if (!['Field Agent', 'Team Leader'].contains(s.user?['role'])) return const SalesManagementScreen();
+    if (!['Field Agent', 'Team Leader'].contains(s.user?['role'])) {
+      return const SalesManagementScreen();
+    }
     return const FieldShell();
   }
 }
@@ -310,6 +255,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
     };
     return '$role · ${account['name']}';
   }
+
   @override
   void dispose() {
     email.dispose();
@@ -455,7 +401,8 @@ class _LoginState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 FilledButton(
-                  onPressed: busy ||
+                  onPressed:
+                      busy ||
                           (ref.read(serviceProvider).hasAccountPicker &&
                               selectedAccount == null)
                       ? null
@@ -465,7 +412,9 @@ class _LoginState extends ConsumerState<LoginScreen> {
                             error = null;
                           });
                           try {
-                            final demo = ref.read(serviceProvider).hasAccountPicker;
+                            final demo = ref
+                                .read(serviceProvider)
+                                .hasAccountPicker;
                             await ref
                                 .read(serviceProvider)
                                 .login(
@@ -618,9 +567,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
             ),
             NavigationDestination(
               icon: Icon(Icons.add_circle_outline, color: RelayPalette.brand),
-              label: s.user?['role'] == 'Team Leader'
-                  ? 'History'
-                  : 'Capture',
+              label: s.user?['role'] == 'Team Leader' ? 'History' : 'Capture',
             ),
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF98610F)),
@@ -701,7 +648,17 @@ class _LeaderConfirmationsState
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        const Row(children: [Expanded(child: Text('Branch updates', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800))), NotificationBell()]),
+        const Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Branch updates',
+                style: TextStyle(fontSize: 23, fontWeight: FontWeight.w800),
+              ),
+            ),
+            NotificationBell(),
+          ],
+        ),
         const SizedBox(height: 12),
         if (busy) const LinearProgressIndicator(),
         if (error != null)
@@ -742,7 +699,8 @@ class _LeaderConfirmationsState
                     ),
                     const SizedBox(height: 10),
                     OutlinedButton(
-                      onPressed: () => context.push('/transaction/${row['id']}'),
+                      onPressed: () =>
+                          context.push('/transaction/${row['id']}'),
                       child: const Text('View details'),
                     ),
                   ],
@@ -788,7 +746,12 @@ class HomeScreen extends ConsumerWidget {
                       letterSpacing: -1.5,
                     ),
                   ),
-                  Row(children: [StatusPill(onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT'), const NotificationBell()]),
+                  Row(
+                    children: [
+                      StatusPill(onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT'),
+                      const NotificationBell(),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 18),
@@ -1044,10 +1007,11 @@ class HomeScreen extends ConsumerWidget {
                         ),
                         const SizedBox(height: 13),
                         LinearProgressIndicator(
-                          value: (((d['sales_summary']?['achievement'] ?? 0) as num) / 100).clamp(
-                            0.0,
-                            1.0,
-                          ),
+                          value:
+                              (((d['sales_summary']?['achievement'] ?? 0)
+                                          as num) /
+                                      100)
+                                  .clamp(0.0, 1.0),
                           minHeight: 8,
                           borderRadius: BorderRadius.circular(4),
                           backgroundColor: const Color(0xFFF2E8EE),
@@ -1085,47 +1049,37 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 22),
               const SectionTitle('Quick actions'),
               const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.push('/customers'),
-                      icon: const Icon(Icons.person_search_outlined),
-                      label: const Text('Customers'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.push('/reports'),
-                      icon: const Icon(Icons.bar_chart_outlined),
-                      label: const Text('Daily report'),
-                    ),
-                  ),
-                ],
+              RelayPair(
+                first: OutlinedButton.icon(
+                  onPressed: () => context.push('/customers'),
+                  icon: const Icon(Icons.person_search_outlined),
+                  label: const Text('Customers'),
+                ),
+                second: OutlinedButton.icon(
+                  onPressed: () => context.push('/reports'),
+                  icon: const Icon(Icons.bar_chart_outlined),
+                  label: const Text('Daily report'),
+                ),
               ),
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.push('/sales-management'),
-                      icon: const Icon(Icons.receipt_long_outlined),
-                      label: const Text('Sales records'),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => context.push('/incentives'),
-                      icon: const Icon(Icons.payments_outlined),
-                      label: const Text('Incentives'),
-                    ),
-                  ),
-                ],
+              RelayPair(
+                first: OutlinedButton.icon(
+                  onPressed: () => context.push('/sales-management'),
+                  icon: const Icon(Icons.receipt_long_outlined),
+                  label: const Text('Sales records'),
+                ),
+                second: OutlinedButton.icon(
+                  onPressed: () => context.push('/incentives'),
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('Incentives'),
+                ),
               ),
               const SizedBox(height: 8),
-              TextButton.icon(onPressed: () => context.push('/assets'), icon: const Icon(Icons.inventory_2_outlined), label: const Text('Assets & supplies')),
+              TextButton.icon(
+                onPressed: () => context.push('/assets'),
+                icon: const Icon(Icons.inventory_2_outlined),
+                label: const Text('Assets & supplies'),
+              ),
               TextButton.icon(
                 onPressed: () => context.push('/support'),
                 icon: const Icon(Icons.support_agent_outlined),
@@ -1505,9 +1459,15 @@ class DailyReportScreen extends ConsumerWidget {
                   children: [
                     KeyValue('Transactions today', '${d['kyc_today']}'),
                     KeyValue('Awaiting review', '${d['kyc_pending_review']}'),
-                    KeyValue('Sales completed', '${d['sales_summary']?['closed_today'] ?? 0}'),
+                    KeyValue(
+                      'Sales completed',
+                      '${d['sales_summary']?['closed_today'] ?? 0}',
+                    ),
                     KeyValue('Daily target', '${d['target']}'),
-                    KeyValue('Achievement', '${(d['sales_summary']?['achievement'] ?? 0)}%'),
+                    KeyValue(
+                      'Achievement',
+                      '${(d['sales_summary']?['achievement'] ?? 0)}%',
+                    ),
                     KeyValue('Available SIMs', '${d['stock']}'),
                     KeyValue(
                       'Recorded incentives this month',
@@ -1579,11 +1539,17 @@ class _SupportState extends ConsumerState<SupportScreen> {
                   final title = subject.text.trim();
                   final details = description.text.trim();
                   if (title.length < 3) {
-                    message(context, 'Enter a subject of at least 3 characters');
+                    message(
+                      context,
+                      'Enter a subject of at least 3 characters',
+                    );
                     return;
                   }
                   if (details.length < 10) {
-                    message(context, 'Describe the issue in at least 10 characters');
+                    message(
+                      context,
+                      'Describe the issue in at least 10 characters',
+                    );
                     return;
                   }
                   setState(() => busy = true);
@@ -1896,6 +1862,7 @@ class _StockState extends ConsumerState<StockScreen> {
           builder: (dialogContext, setDialogState) {
             return AlertDialog(
               title: const Text('Update SIM stock'),
+              scrollable: true,
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -2079,7 +2046,13 @@ class _StockState extends ConsumerState<StockScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text('${s['sim_type']} · ${s['business_category'] ?? 'Not recorded'}', style: const TextStyle(fontSize: 12, color: muted)),
+                              Text(
+                                '${s['sim_type']} · ${s['business_category'] ?? 'Not recorded'}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: muted,
+                                ),
+                              ),
                               StatusPill(s['status']),
                               if (s['activation_stage'] != null &&
                                   s['activation_stage'] != 'NOT_STARTED')
@@ -2291,7 +2264,10 @@ class StatusPill extends StatelessWidget {
       child: Text(
         status.replaceAll('_', ' '),
         style: TextStyle(
-          fontSize: 11,
+          fontFamily: 'DM Sans',
+          fontSize: 12,
+          height: 1.25,
+          letterSpacing: 0,
           color: color,
           fontWeight: FontWeight.w600,
         ),
@@ -2362,10 +2338,9 @@ class MetricTile extends StatelessWidget {
               const SizedBox(height: 12),
               Text(
                 value,
-                style: const TextStyle(
-                  fontSize: 29,
+                style: RelayTypography.numeric.copyWith(
+                  fontSize: 28,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: -1,
                 ),
               ),
             ],
@@ -2432,14 +2407,8 @@ class SectionTitle extends StatelessWidget {
   final String text;
   const SectionTitle(this.text, {super.key});
   @override
-  Widget build(BuildContext context) => Text(
-    text,
-    style: const TextStyle(
-      fontSize: 17,
-      fontWeight: FontWeight.w700,
-      color: ink,
-    ),
-  );
+  Widget build(BuildContext context) =>
+      Text(text, style: RelayTypography.section);
 }
 
 class KeyValue extends StatelessWidget {
@@ -2447,25 +2416,37 @@ class KeyValue extends StatelessWidget {
   const KeyValue(this.label, this.value, {super.key});
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 10),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 14, color: muted),
-          ),
-        ),
-        const SizedBox(width: 16),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-          ),
-        ),
-      ],
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: LayoutBuilder(
+      builder: (context, size) {
+        final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+        final labelText = Text(label, style: RelayTypography.label);
+        if (size.maxWidth / scale < 270) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              labelText,
+              const SizedBox(height: 4),
+              Text(value, style: RelayTypography.bodyStrong),
+            ],
+          );
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 4, child: labelText),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 6,
+              child: Text(
+                value,
+                textAlign: TextAlign.right,
+                style: RelayTypography.bodyStrong,
+              ),
+            ),
+          ],
+        );
+      },
     ),
   );
 }
@@ -2489,10 +2470,9 @@ class InfoCard extends StatelessWidget {
         Expanded(
           child: Text(
             text,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF90667D),
-              height: 1.6,
+            style: RelayTypography.label.copyWith(
+              color: const Color(0xFF744660),
+              height: 1.4,
             ),
           ),
         ),

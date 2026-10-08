@@ -1,12 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as imaging;
 import 'package:relay_agent/customer_intake.dart';
 import 'package:relay_agent/preview_main.dart';
+import 'package:relay_agent/relay_theme.dart';
 import 'package:relay_agent/services.dart';
 
 void main() {
@@ -51,11 +53,20 @@ void main() {
       isTrue,
     );
   });
-  testWidgets('photo action stays on one line on a narrow phone', (t) async {
+  testWidgets('photo action remains readable on a narrow phone', (t) async {
     t.view.physicalSize = const Size(320, 700);
     t.view.devicePixelRatio = 1;
     addTearDown(t.view.resetPhysicalSize);
     addTearDown(t.view.resetDevicePixelRatio);
+    for (final entry in {
+      'DM Sans': 'assets/fonts/dmsans.ttf',
+      'Manrope': 'assets/fonts/manrope.ttf',
+      'MaterialIcons': 'fonts/MaterialIcons-Regular.otf',
+    }.entries) {
+      final loader = FontLoader(entry.key)
+        ..addFont(rootBundle.load(entry.value));
+      await loader.load();
+    }
     final service = PreviewService(
       jsonDecode(File('assets/demo/workspace.json').readAsStringSync()),
     );
@@ -63,6 +74,7 @@ void main() {
       ProviderScope(
         overrides: [serviceProvider.overrideWith((ref) => service)],
         child: MaterialApp(
+          theme: relayTheme(),
           home: CustomerIntakeScreen(
             initial: const {},
             onReady: (_) {},
@@ -74,11 +86,32 @@ void main() {
     await t.pump(const Duration(seconds: 1));
     final label = find.text('Upload photo');
     expect(label, findsOneWidget);
-    expect(t.getSize(label).height, lessThan(25));
+    final paragraph = t.renderObject<RenderParagraph>(
+      find.descendant(of: label, matching: find.byType(RichText)),
+    );
+    expect(paragraph.didExceedMaxLines, isFalse);
+    for (final word in RegExp(r'\S+').allMatches('Upload photo')) {
+      for (final box in paragraph.getBoxesForSelection(
+        TextSelection(baseOffset: word.start, extentOffset: word.end),
+      )) {
+        expect(box.left, greaterThanOrEqualTo(-.5));
+        expect(box.right, lessThanOrEqualTo(paragraph.size.width + .5));
+      }
+    }
+    final button = find.ancestor(
+      of: label,
+      matching: find.byWidgetPredicate((widget) => widget is OutlinedButton),
+    );
+    final labelBounds = t.getRect(label);
+    final buttonBounds = t.getRect(button);
+    expect(labelBounds.left, greaterThanOrEqualTo(buttonBounds.left));
+    expect(labelBounds.right, lessThanOrEqualTo(buttonBounds.right));
+    expect(label.hitTestable(), findsOneWidget);
     expect(find.byType(IntakeCamera), findsNothing);
     expect(find.text('Ready to capture'), findsOneWidget);
     expect(find.text('Camera unavailable'), findsNothing);
     expect(find.text('Capture photo'), findsNothing);
+    expect(t.takeException(), isNull);
   });
 
   testWidgets(

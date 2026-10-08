@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'typography.dart';
 
 /// A single paper-feed reveal; refreshing the record never restarts it.
 class ReceiptReveal extends StatefulWidget {
@@ -41,8 +42,8 @@ class _ReceiptRevealState extends State<ReceiptReveal>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          height: 102,
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          constraints: const BoxConstraints(minHeight: 102),
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           decoration: const BoxDecoration(
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             gradient: LinearGradient(
@@ -50,6 +51,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
             ),
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Container(
                 padding: const EdgeInsets.symmetric(
@@ -61,22 +63,23 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                   border: Border.all(color: const Color(0xff8d829d)),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Row(
-                  children: [
-                    const Text(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final textScale =
+                        MediaQuery.textScalerOf(context).scale(12) / 12;
+                    final stacked = constraints.maxWidth / textScale < 260;
+                    final brand = Text(
                       'relay.',
-                      style: TextStyle(
+                      style: RelayTypography.section.copyWith(
                         color: Colors.white,
-                        fontWeight: FontWeight.w900,
-                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
                       ),
-                    ),
-                    const Spacer(),
-                    IconButton(
+                    );
+                    final replay = IconButton(
                       tooltip: 'Replay invoice printing',
                       constraints: const BoxConstraints(
-                        minWidth: 32,
-                        minHeight: 32,
+                        minWidth: 48,
+                        minHeight: 48,
                       ),
                       padding: EdgeInsets.zero,
                       icon: const Icon(
@@ -88,26 +91,54 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                         if (MediaQuery.disableAnimationsOf(context)) return;
                         _controller.forward(from: 0);
                       },
-                    ),
-                    Text(
+                    );
+                    final status = Text(
                       _controller.isCompleted ? 'INVOICE READY' : 'PRINTING…',
-                      style: const TextStyle(
+                      style: RelayTypography.caption.copyWith(
                         color: Color(0xff9ff4da),
-                        fontSize: 10,
-                        letterSpacing: 1,
-                        fontWeight: FontWeight.w800,
+                        letterSpacing: .6,
+                        fontWeight: FontWeight.w700,
                       ),
-                    ),
-                    const SizedBox(width: 9),
-                    Container(
+                    );
+                    final indicator = Container(
                       width: 8,
                       height: 8,
                       decoration: const BoxDecoration(
                         color: Color(0xff31d5a3),
                         shape: BoxShape.circle,
                       ),
-                    ),
-                  ],
+                    );
+                    if (stacked) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(child: brand),
+                              replay,
+                              const SizedBox(width: 9),
+                              indicator,
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: status,
+                          ),
+                        ],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        brand,
+                        const Spacer(),
+                        replay,
+                        Flexible(child: status),
+                        const SizedBox(width: 9),
+                        indicator,
+                      ],
+                    );
+                  },
                 ),
               ),
               Container(

@@ -1,6 +1,7 @@
 import 'experience.dart';
 import 'package:flutter/material.dart';
 import 'services.dart';
+import 'typography.dart';
 
 const chartViolet = RelayPalette.plum, chartTeal = RelayPalette.teal;
 
@@ -24,65 +25,70 @@ class WeeklyActivityCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Your week in view',
-              style: TextStyle(
-                fontFamily: 'Manrope',
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
-              ),
-            ),
+            const Text('Your week in view', style: RelayTypography.section),
             const SizedBox(height: 5),
             const Text(
               'KYC captures and completed sales',
-              style: TextStyle(fontSize: 12, color: Color(0xFF69758E)),
+              style: RelayTypography.caption,
             ),
             const SizedBox(height: 22),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: trend
-                  .map(
-                    (r) => Expanded(
-                      child: Semantics(
-                        label:
-                            '${r['date']}: ${r['captures'] ?? 0} captures, ${r['activations']} sales',
-                        child: Column(
-                          children: [
-                            SizedBox(
-                              height: 105,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  _bar(
-                                    ((r['captures'] as num? ?? 0) / maxValue) *
-                                        100,
-                                    chartViolet,
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final scale = MediaQuery.textScalerOf(context).scale(12) / 12;
+                final minimumWidth = trend.length * 36 * scale;
+                final chart = Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: trend
+                      .map(
+                        (r) => Expanded(
+                          child: Semantics(
+                            label:
+                                '${r['date']}: ${r['captures'] ?? 0} captures, ${r['activations']} sales',
+                            child: Column(
+                              children: [
+                                SizedBox(
+                                  height: 105,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      _bar(
+                                        ((r['captures'] as num? ?? 0) /
+                                                maxValue) *
+                                            100,
+                                        chartViolet,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      _bar(
+                                        ((r['activations'] as num? ?? 0) /
+                                                maxValue) *
+                                            100,
+                                        chartTeal,
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 4),
-                                  _bar(
-                                    ((r['activations'] as num? ?? 0) /
-                                            maxValue) *
-                                        100,
-                                    chartTeal,
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const SizedBox(height: 9),
+                                Text(
+                                  '${r['day']}',
+                                  textAlign: TextAlign.center,
+                                  style: RelayTypography.caption,
+                                ),
+                              ],
                             ),
-                            const SizedBox(height: 9),
-                            Text(
-                              '${r['day']}',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                color: Color(0xFF69758E),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-                  )
-                  .toList(),
+                      )
+                      .toList(),
+                );
+                if (constraints.maxWidth < minimumWidth) {
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SizedBox(width: minimumWidth, child: chart),
+                  );
+                }
+                return chart;
+              },
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -134,32 +140,29 @@ class VerificationCard extends StatelessWidget {
                 const Expanded(
                   child: Text(
                     'Verification progress',
-                    style: TextStyle(
-                      fontFamily: 'Manrope',
-                      fontSize: 17,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: RelayTypography.section,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 17),
-            Row(
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   '$verified',
-                  style: const TextStyle(
-                    fontFamily: 'Manrope',
-                    fontWeight: FontWeight.w800,
+                  style: RelayTypography.numeric.copyWith(
                     fontSize: 29,
+                    fontWeight: FontWeight.w700,
                     color: chartTeal,
                   ),
                 ),
                 Text(
-                  ' / $total verified',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF567770),
+                  '/ $total verified',
+                  style: RelayTypography.label.copyWith(
+                    color: const Color(0xFF567770),
                   ),
                 ),
               ],
@@ -175,7 +178,9 @@ class VerificationCard extends StatelessWidget {
             const SizedBox(height: 10),
             Text(
               '$pending awaiting backend review',
-              style: const TextStyle(fontSize: 12, color: Color(0xFF567770)),
+              style: RelayTypography.caption.copyWith(
+                color: const Color(0xFF567770),
+              ),
             ),
           ],
         ),
@@ -201,10 +206,7 @@ class _Legend extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 5),
-      Text(
-        label,
-        style: const TextStyle(fontSize: 11, color: Color(0xFF69758E)),
-      ),
+      Text(label, style: RelayTypography.caption),
     ],
   );
 }

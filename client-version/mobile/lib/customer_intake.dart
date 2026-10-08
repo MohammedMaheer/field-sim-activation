@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:uuid/uuid.dart';
 import 'scan_surface.dart';
 import 'experience.dart';
+import 'typography.dart';
+import 'relay_theme.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -950,11 +952,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       initialValue: data[key] ?? '',
       readOnly: date || locked,
       keyboardType: keyboardType,
-      style: const TextStyle(fontSize: 14, height: 1.25),
+      style: RelayTypography.body.copyWith(height: 1.25),
       maxLines: locked && ['package_name', 'order_reference'].contains(key)
           ? null
           : key == 'name'
-          ? 2
+          ? null
           : 1,
       decoration: InputDecoration(
         labelText: label,
@@ -968,7 +970,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         suffixIconConstraints: date
             ? const BoxConstraints(minWidth: 32, minHeight: 40)
             : null,
-        labelStyle: const TextStyle(fontSize: 13),
+        labelStyle: RelayTypography.label,
       ),
       onTap: !date
           ? null
@@ -1059,55 +1061,12 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         children: [
-          Row(
-            children: [
-              for (int i = 0; i < 3; i++)
-                Expanded(
-                  flex: [11, 15, 10][i],
-                  child: AnimatedContainer(
-                    duration: motionDuration(context),
-                    margin: EdgeInsets.only(right: i < 2 ? 6 : 0),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 11,
-                    ),
-                    decoration: BoxDecoration(
-                      gradient: i == step ? RelayPalette.hero : null,
-                      color: i == step
-                          ? null
-                          : [
-                              const Color(0xffece2ff),
-                              const Color(0xffe0efff),
-                              const Color(0xffd9f5eb),
-                            ][i],
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '${i + 1}. ${['Customer', 'Order & plan', 'Payment'][i]}',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: i == step
-                              ? Colors.white
-                              : const Color(0xff583186),
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+          RelayStepPills(step: step),
           const SizedBox(height: 12),
           if (error != null)
             Text(error!, style: const TextStyle(color: Colors.red)),
           if (step == 0) ...[
-            const Text(
-              'Customer details',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-            ),
+            const Text('Customer details', style: RelayTypography.section),
             const SizedBox(height: 8),
             if (!ref.read(serviceProvider).isPreview &&
                 !hasImage('document_image') &&
@@ -1134,53 +1093,29 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 illustration: false,
                 document: 'Customer details',
               ),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () {
-                            if (ref.read(serviceProvider).isPreview) {
-                              photo('document_image', false);
-                            } else if (scannerKey.currentState != null) {
-                              scannerKey.currentState!.expand();
-                            } else {
-                              setState(() => data.remove('document_image'));
-                            }
-                          },
-                    icon: const Icon(Icons.document_scanner),
-                    label: const Text('Scan details', maxLines: 1),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () => photo('document_image', true),
-                    icon: const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 18,
-                    ),
-                    label: const Text('Upload photo', maxLines: 1),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      minimumSize: const Size.fromHeight(48),
-                      backgroundColor: const Color(0xffffedf5),
-                      foregroundColor: const Color(0xff912a58),
-                      side: const BorderSide(color: Color(0xffd890b4)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(13),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            RelayPair(
+              first: FilledButton.icon(
+                onPressed: busy
+                    ? null
+                    : () {
+                        if (ref.read(serviceProvider).isPreview) {
+                          photo('document_image', false);
+                        } else if (scannerKey.currentState != null) {
+                          scannerKey.currentState!.expand();
+                        } else {
+                          setState(() => data.remove('document_image'));
+                        }
+                      },
+                icon: const Icon(Icons.document_scanner),
+                label: const Text('Scan details', textAlign: TextAlign.center),
+                style: RelayCaptureStyles.scan,
+              ),
+              second: OutlinedButton.icon(
+                onPressed: busy ? null : () => photo('document_image', true),
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                label: const Text('Upload photo', textAlign: TextAlign.center),
+                style: RelayCaptureStyles.upload,
+              ),
             ),
             const SizedBox(height: 12),
             ...[
@@ -1196,34 +1131,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               field('name', 'Full name'),
               field('document_number', 'Document number'),
               field('nationality', 'Nationality'),
-              LayoutBuilder(
-                builder: (context, constraints) => constraints.maxWidth < 320
-                    ? Column(
-                        children: [
-                          field('birth_date', 'Date of birth', date: true),
-                          field('expiry_date', 'Expiry date', date: true),
-                        ],
-                      )
-                    : Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: field(
-                              'birth_date',
-                              'Date of birth',
-                              date: true,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: field(
-                              'expiry_date',
-                              'Expiry date',
-                              date: true,
-                            ),
-                          ),
-                        ],
-                      ),
+              RelayPair(
+                minimumWidth: 320,
+                rowGap: 0,
+                first: field('birth_date', 'Date of birth', date: true),
+                second: field('expiry_date', 'Expiry date', date: true),
               ),
               OutlinedButton.icon(
                 onPressed: busy ? null : () => photo('selfie_image', false),
@@ -1236,10 +1148,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               ),
             ],
           ] else ...[
-            const Text(
-              'Order & plan',
-              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800),
-            ),
+            const Text('Order & plan', style: RelayTypography.section),
             const SizedBox(height: 8),
             if (!ref.read(serviceProvider).isPreview &&
                 !hasImage('order_image') &&
@@ -1264,45 +1173,29 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 illustration: false,
                 document: 'Order details',
               ),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () {
-                            if (ref.read(serviceProvider).isPreview) {
-                              photo('order_image', false);
-                            } else if (scannerKey.currentState != null) {
-                              scannerKey.currentState!.expand();
-                            } else {
-                              setState(() => data.remove('order_image'));
-                            }
-                          },
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    icon: const Icon(Icons.document_scanner, size: 18),
-                    label: const Text('Scan order', maxLines: 1),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: busy ? null : () => photo('order_image', true),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      minimumSize: const Size.fromHeight(48),
-                    ),
-                    icon: const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 18,
-                    ),
-                    label: const Text('Upload photo', maxLines: 1),
-                  ),
-                ),
-              ],
+            RelayPair(
+              first: FilledButton.icon(
+                onPressed: busy
+                    ? null
+                    : () {
+                        if (ref.read(serviceProvider).isPreview) {
+                          photo('order_image', false);
+                        } else if (scannerKey.currentState != null) {
+                          scannerKey.currentState!.expand();
+                        } else {
+                          setState(() => data.remove('order_image'));
+                        }
+                      },
+                style: RelayCaptureStyles.scan,
+                icon: const Icon(Icons.document_scanner, size: 18),
+                label: const Text('Scan order', textAlign: TextAlign.center),
+              ),
+              second: OutlinedButton.icon(
+                onPressed: busy ? null : () => photo('order_image', true),
+                style: RelayCaptureStyles.upload,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+                label: const Text('Upload photo', textAlign: TextAlign.center),
+              ),
             ),
             ...[
               const SizedBox(height: 12),
@@ -1361,37 +1254,15 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               ),
               const SizedBox(height: 12),
               field('package_name', 'Package name', locked: true),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: field('order_reference', 'Request ID', locked: true),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: field('msisdn', 'Phone number', locked: true),
-                  ),
-                ],
+              RelayPair(
+                rowGap: 0,
+                first: field('order_reference', 'Request ID', locked: true),
+                second: field('msisdn', 'Phone number', locked: true),
               ),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: field(
-                      'monthly_cost',
-                      'Monthly charge',
-                      locked: true,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: field(
-                      'prepayment',
-                      'Order prepayment',
-                      locked: true,
-                    ),
-                  ),
-                ],
+              RelayPair(
+                rowGap: 0,
+                first: field('monthly_cost', 'Monthly charge', locked: true),
+                second: field('prepayment', 'Order prepayment', locked: true),
               ),
               DropdownButtonFormField<String>(
                 key: ValueKey('plan-${data['plan_id'] ?? ''}'),
@@ -1443,25 +1314,17 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: field('account_number', 'Account number'),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: field('sim_identifier', 'SIM serial')),
-                    ],
+                  RelayPair(
+                    rowGap: 0,
+                    first: field('account_number', 'Account number'),
+                    second: field('sim_identifier', 'SIM serial'),
                   ),
                   if (data['order_type'] != 'HW')
                     field('router_serial', 'Router serial'),
-                  Row(
-                    children: [
-                      Expanded(child: field('sr_number', 'SR number')),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: field('alternate_number', 'Alternate number'),
-                      ),
-                    ],
+                  RelayPair(
+                    rowGap: 0,
+                    first: field('sr_number', 'SR number'),
+                    second: field('alternate_number', 'Alternate number'),
                   ),
                   field(
                     'advance_transaction_number',

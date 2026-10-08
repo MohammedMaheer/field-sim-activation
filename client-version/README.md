@@ -4,7 +4,7 @@ Independent edition aligned to the final field-sales/KYC/incentives proposal. Th
 
 Admin scope and controls: [audit matrix](docs/ADMIN-CONTROL-AUDIT.md).
 
-Current document alignment: [docs/MODERN-TRADE-STATUS.md](docs/MODERN-TRADE-STATUS.md). Latest release and verification: [docs/DEMO-AND-LAYOUT-UPDATE-2026-10-08.md](docs/DEMO-AND-LAYOUT-UPDATE-2026-10-08.md). Earlier proposal release: [docs/FINAL-PROPOSAL-RELEASE.md](docs/FINAL-PROPOSAL-RELEASE.md).
+Current document alignment: [docs/MODERN-TRADE-STATUS.md](docs/MODERN-TRADE-STATUS.md). Latest typography release and verification: [docs/MOBILE-TYPOGRAPHY-2026-10-08.md](docs/MOBILE-TYPOGRAPHY-2026-10-08.md). Account-picker and previous layout release: [docs/DEMO-AND-LAYOUT-UPDATE-2026-10-08.md](docs/DEMO-AND-LAYOUT-UPDATE-2026-10-08.md). Earlier proposal release: [docs/FINAL-PROPOSAL-RELEASE.md](docs/FINAL-PROPOSAL-RELEASE.md).
 
 Web: https://relay-client.187-127-162-233.sslip.io/
 

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'typography.dart';
 
 Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
   final intake = row['intake'] as Map? ?? {};
@@ -225,65 +226,97 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
     return value;
   }
 
+  TextStyle valueStyle(Map field) {
+    final numeric =
+        field['value'] != 'Not recorded' &&
+        RegExp(
+          r'number|serial|reference|^request id$|phone|charge|prepayment|price|total paid|vat|date|expiry',
+          caseSensitive: false,
+        ).hasMatch(field['label'] as String);
+    return (numeric ? RelayTypography.numeric : RelayTypography.bodyStrong)
+        .copyWith(
+          fontSize: 13,
+          color: field['value'] == 'Not recorded'
+              ? const Color(0xff6a7180)
+              : const Color(0xff25283d),
+        );
+  }
+
   Widget section(Map section) => Container(
-    margin: const EdgeInsets.only(top: 7),
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+    margin: const EdgeInsets.only(top: 9),
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
     decoration: BoxDecoration(
       color: const Color(0xfffafbfe),
       border: Border.all(color: const Color(0xffdce2ed)),
       borderRadius: BorderRadius.circular(9),
     ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          section['title'],
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-            color: Color(0xff762765),
-          ),
-        ),
-        const SizedBox(height: 3),
-        for (final field in section['fields'])
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Color(0xffe7ebf2))),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final textScale = MediaQuery.textScalerOf(context).scale(13) / 13;
+        final stacked = constraints.maxWidth / textScale < 205;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              section['title'],
+              style: RelayTypography.section.copyWith(
+                fontSize: 15,
+                color: Color(0xff762765),
+              ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    field['label'],
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: Color(0xff596675),
-                    ),
-                  ),
+            const SizedBox(height: 5),
+            for (final field in section['fields'])
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 7),
+                decoration: const BoxDecoration(
+                  border: Border(bottom: BorderSide(color: Color(0xffe7ebf2))),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 6,
-                  child: Text(
-                    displayValue(field),
-                    semanticsLabel: field['value'],
-                    textAlign: TextAlign.right,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: field['value'] == 'Not recorded'
-                          ? const Color(0xff6a7180)
-                          : const Color(0xff25283d),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-      ],
+                child: stacked
+                    ? Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Text(
+                            field['label'],
+                            style: RelayTypography.label.copyWith(
+                              color: const Color(0xff596675),
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            displayValue(field),
+                            semanticsLabel: field['value'],
+                            style: valueStyle(field),
+                          ),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 4,
+                            child: Text(
+                              field['label'],
+                              style: RelayTypography.label.copyWith(
+                                color: Color(0xff596675),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            flex: 6,
+                            child: Text(
+                              displayValue(field),
+                              semanticsLabel: field['value'],
+                              textAlign: TextAlign.right,
+                              style: valueStyle(field),
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+          ],
+        );
+      },
     ),
   );
 
@@ -336,10 +369,16 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
         if (extra.isNotEmpty) ...[
           const SizedBox(height: 10),
           OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(48),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              textStyle: RelayTypography.bodyStrong,
+            ),
             onPressed: () => setState(() => expanded = !expanded),
             icon: Icon(expanded ? Icons.expand_less : Icons.expand_more),
             label: Text(
               expanded ? 'Hide supporting details' : 'Show supporting details',
+              textAlign: TextAlign.center,
             ),
           ),
           if (expanded)

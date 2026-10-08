@@ -3,14 +3,20 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
+import 'typography.dart';
 
 bool canRecordCall(Json task, Json? user) {
   if (!['PENDING', 'FAILED'].contains(task['status'])) return false;
   final permissions = (user?['permissions'] as List? ?? []).cast<String>();
   final required = task['stage'] == 'TELE_VERIFICATION'
-      ? 'call.tele.write' : 'call.welcome.write';
+      ? 'call.tele.write'
+      : 'call.welcome.write';
   return permissions.contains(required) ||
-      (['Administrator', 'Operations Manager', 'Compliance Officer'].contains(user?['role']) &&
+      ([
+            'Administrator',
+            'Operations Manager',
+            'Compliance Officer',
+          ].contains(user?['role']) &&
           permissions.contains('compliance.write'));
 }
 
@@ -30,15 +36,41 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   Timer? poll;
   bool fetching = false;
   @override
-  void initState() { super.initState(); load().then((_) {if(mounted && widget.selectedId != null) {final matches=tasks.where((row)=>row['id']==widget.selectedId);if(matches.isNotEmpty) {if(canRecordCall(matches.first, ref.read(serviceProvider).user)) {record(matches.first);} else {setState(() => filter = 'All');}}}}); poll = Timer.periodic(const Duration(seconds: 15), (_) => load(silent: true)); }
+  void initState() {
+    super.initState();
+    load().then((_) {
+      if (mounted && widget.selectedId != null) {
+        final matches = tasks.where((row) => row['id'] == widget.selectedId);
+        if (matches.isNotEmpty) {
+          if (canRecordCall(matches.first, ref.read(serviceProvider).user)) {
+            record(matches.first);
+          } else {
+            setState(() => filter = 'All');
+          }
+        }
+      }
+    });
+    poll = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => load(silent: true),
+    );
+  }
 
   @override
-  void dispose() { poll?.cancel(); super.dispose(); }
+  void dispose() {
+    poll?.cancel();
+    super.dispose();
+  }
 
   Future<void> load({bool silent = false}) async {
     if (fetching || !mounted) return;
     fetching = true;
-    if (!silent) setState(() { loading = true; error = ''; });
+    if (!silent) {
+      setState(() {
+        loading = true;
+        error = '';
+      });
+    }
     try {
       final service = ref.read(serviceProvider);
       final results = await Future.wait([
@@ -48,12 +80,20 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
       if (mounted) {
         setState(() {
           error = '';
-          tasks = (results[0].data as List).map((value) => Map<String, dynamic>.from(value)).toList();
+          tasks = (results[0].data as List)
+              .map((value) => Map<String, dynamic>.from(value))
+              .toList();
           summary = Map<String, dynamic>.from(results[1].data);
         });
       }
-    } catch (_) { if (mounted && !silent) setState(() => error = 'Could not load calls. Try again.'); }
-    finally { fetching = false; if (mounted) setState(() => loading = false); }
+    } catch (_) {
+      if (mounted && !silent) {
+        setState(() => error = 'Could not load calls. Try again.');
+      }
+    } finally {
+      fetching = false;
+      if (mounted) setState(() => loading = false);
+    }
   }
 
   Future<void> record(Json task) async {
@@ -62,88 +102,327 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
     String remark = '';
     final form = GlobalKey<FormState>();
     final submitted = await showModalBottomSheet<bool>(
-      context: context, isScrollControlled: true, showDragHandle: true,
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
       builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(20, 8, 20, MediaQuery.viewInsetsOf(context).bottom + 20),
-        child: SingleChildScrollView(child: Form(key: form, child: Column(
-          mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('${task['customer_name']}', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 6),
-            Text(task['stage'] == 'TELE_VERIFICATION' ? 'Tele-verification' : 'Welcome call'),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<String>(decoration: const InputDecoration(labelText: 'Outcome'),
-              items: const ['PASSED', 'REACHED', 'NO_ANSWER', 'RETRY', 'FAILED'].map((value) => DropdownMenuItem(value: value, child: Text(value.replaceAll('_', ' ')))).toList(),
-              onChanged: (value) => outcome = value ?? '', validator: (value) => value == null ? 'Choose an outcome' : null),
-            TextFormField(initialValue: remark, onChanged: (value) => remark = value, decoration: const InputDecoration(labelText: 'Call remark'),
-              maxLines: 3, validator: (value) => (value ?? '').trim().length < 3 ? 'Enter a remark' : null),
-            const SizedBox(height: 18),
-            FilledButton(onPressed: () { if (form.currentState!.validate()) Navigator.pop(context, true); }, child: const Text('Save outcome')),
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          ],
-        ))),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          8,
+          20,
+          MediaQuery.viewInsetsOf(context).bottom + 20,
+        ),
+        child: SingleChildScrollView(
+          child: Form(
+            key: form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  '${task['customer_name']}',
+                  style: RelayTypography.section,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  task['stage'] == 'TELE_VERIFICATION'
+                      ? 'Tele-verification'
+                      : 'Welcome call',
+                  style: RelayTypography.body,
+                ),
+                const SizedBox(height: 16),
+                DropdownButtonFormField<String>(
+                  isExpanded: true,
+                  style: RelayTypography.body,
+                  decoration: const InputDecoration(labelText: 'Outcome'),
+                  items:
+                      const [
+                            'PASSED',
+                            'REACHED',
+                            'NO_ANSWER',
+                            'RETRY',
+                            'FAILED',
+                          ]
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value.replaceAll('_', ' ')),
+                            ),
+                          )
+                          .toList(),
+                  onChanged: (value) => outcome = value ?? '',
+                  validator: (value) =>
+                      value == null ? 'Choose an outcome' : null,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  initialValue: remark,
+                  onChanged: (value) => remark = value,
+                  decoration: const InputDecoration(labelText: 'Call remark'),
+                  maxLines: 3,
+                  validator: (value) =>
+                      (value ?? '').trim().length < 3 ? 'Enter a remark' : null,
+                ),
+                const SizedBox(height: 18),
+                FilledButton(
+                  onPressed: () {
+                    if (form.currentState!.validate()) {
+                      Navigator.pop(context, true);
+                    }
+                  },
+                  child: const Text('Save outcome'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
     if (submitted != true || !mounted) return;
     try {
-      await ref.read(serviceProvider).dio.post('/sales-management/sales/${task['sale_id']}/calls', data: {
-        'stage': task['stage'], 'outcome': outcome, 'remark': remark.trim(),
-      });
+      await ref
+          .read(serviceProvider)
+          .dio
+          .post(
+            '/sales-management/sales/${task['sale_id']}/calls',
+            data: {
+              'stage': task['stage'],
+              'outcome': outcome,
+              'remark': remark.trim(),
+            },
+          );
       await load();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Outcome saved')));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Outcome saved')));
+      }
     } catch (_) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not save outcome. Try again.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not save outcome. Try again.')),
+        );
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final visible = tasks.where((task) => filter == 'All' ||
-      (filter == 'Ready' && ['PENDING', 'FAILED'].contains(task['status'])) ||
-      (filter == 'Waiting' && task['status'] == 'BLOCKED') ||
-      (filter == 'Done' && ['COMPLETED', 'SKIPPED', 'CANCELLED'].contains(task['status']))).toList();
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    final compact = MediaQuery.sizeOf(context).width < 360 || textScale > 1.2;
+    final visible = tasks
+        .where(
+          (task) =>
+              filter == 'All' ||
+              (filter == 'Ready' &&
+                  ['PENDING', 'FAILED'].contains(task['status'])) ||
+              (filter == 'Waiting' && task['status'] == 'BLOCKED') ||
+              (filter == 'Done' &&
+                  [
+                    'COMPLETED',
+                    'SKIPPED',
+                    'CANCELLED',
+                  ].contains(task['status'])),
+        )
+        .toList();
     if (widget.selectedId != null) {
-      final selected = visible.indexWhere((task) => task['id'] == widget.selectedId);
+      final selected = visible.indexWhere(
+        (task) => task['id'] == widget.selectedId,
+      );
       if (selected > 0) visible.insert(0, visible.removeAt(selected));
     }
     return Scaffold(
-      appBar: AppBar(title: const Text('Call work queue'), actions: [const NotificationBell(),
-        IconButton(onPressed: load, tooltip: 'Refresh', icon: const Icon(Icons.refresh)),
-        IconButton(onPressed: () => ref.read(serviceProvider).logout(), tooltip: 'Sign out', icon: const Icon(Icons.logout)),
-      ]),
-      body: loading ? const Center(child: CircularProgressIndicator()) : error.isNotEmpty
-        ? Center(child: TextButton(onPressed: load, child: Text(error)))
-        : RefreshIndicator(onRefresh: load, child: ListView(padding: const EdgeInsets.all(15), children: [
-            Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18), gradient: const LinearGradient(colors: [Color(0xFF7033BC), Color(0xFFAE2874)])),
-              child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                const Text('Ready to contact', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
-                Text('${summary['actionable'] ?? 0}', style: const TextStyle(color: Colors.white, fontSize: 27, fontWeight: FontWeight.w900)),
-              ])),
-            const SizedBox(height: 14),
-            SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: ['Ready','Waiting','Done','All'].map((value) => Padding(
-              padding: const EdgeInsets.only(right: 6), child: ChoiceChip(label: Text(value), selected: filter == value,
-                onSelected: (_) => setState(() => filter = value)))).toList())),
-            const SizedBox(height: 12),
-            if (visible.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Center(child: Text('No calls in this view'))),
-            ...visible.map((task) => Card(child: Padding(padding: const EdgeInsets.all(13), child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('${task['customer_name']}', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 4),
-                Text(task['stage'] == 'TELE_VERIFICATION' ? 'Tele-verification' : 'Welcome call'),
-                Text('${task['plan_name']} · ${task['request_id']}', style: const TextStyle(color: Color(0xFF626C82))),
-                Text('${task['branch']} · ${task['agent']}', style: const TextStyle(color: Color(0xFF626C82))),
-                SelectableText('Phone: ${task['msisdn'] ?? task['alternate_number'] ?? 'Not recorded'}'),
-                Text('Last outcome: ${task['last_outcome'] ?? 'Not started'}', style: const TextStyle(color: Color(0xFF626C82))),
-                const SizedBox(height: 8),
-                Wrap(alignment: WrapAlignment.spaceBetween, spacing: 8, runSpacing: 8, children: [
-                  Chip(label: Text('${task['status']}'.toLowerCase())),
-                  if (canRecordCall(task, ref.watch(serviceProvider).user)) FilledButton.tonalIcon(
-                    style: FilledButton.styleFrom(minimumSize: const Size(0, 40)),
-                    onPressed: () => record(task), icon: const Icon(Icons.call, size: 17), label: const Text('Record call')),
-                ]),
-              ])))),
-          ])),
+      appBar: AppBar(
+        toolbarHeight: textScale > 1.2 ? 52 * textScale : 64,
+        title: const Text('Call work queue'),
+        actions: [
+          const NotificationBell(),
+          if (compact)
+            PopupMenuButton<String>(
+              tooltip: 'Call actions',
+              onSelected: (action) {
+                if (action == 'refresh') {
+                  load();
+                } else if (action == 'logout') {
+                  ref.read(serviceProvider).logout();
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'refresh', child: Text('Refresh')),
+                PopupMenuItem(value: 'logout', child: Text('Sign out')),
+              ],
+            )
+          else ...[
+            IconButton(
+              onPressed: load,
+              tooltip: 'Refresh',
+              icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              onPressed: () => ref.read(serviceProvider).logout(),
+              tooltip: 'Sign out',
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ],
+      ),
+      body: loading
+          ? const Center(child: CircularProgressIndicator())
+          : error.isNotEmpty
+          ? Center(
+              child: TextButton(onPressed: load, child: Text(error)),
+            )
+          : RefreshIndicator(
+              onRefresh: load,
+              child: ListView(
+                padding: const EdgeInsets.all(15),
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(18),
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF7033BC), Color(0xFFAE2874)],
+                      ),
+                    ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final heading = Text(
+                          'Ready to contact',
+                          style: RelayTypography.bodyStrong.copyWith(
+                            color: Colors.white,
+                          ),
+                        );
+                        final count = Text(
+                          '${summary['actionable'] ?? 0}',
+                          style: RelayTypography.numeric.copyWith(
+                            color: Colors.white,
+                            fontSize: 27,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        );
+                        if (constraints.maxWidth < 280 || textScale > 1.2) {
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              heading,
+                              const SizedBox(height: 8),
+                              count,
+                            ],
+                          );
+                        }
+                        return Row(
+                          children: [
+                            Expanded(child: heading),
+                            const SizedBox(width: 16),
+                            count,
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: ['Ready', 'Waiting', 'Done', 'All']
+                        .map(
+                          (value) => ChoiceChip(
+                            label: Text(value, style: RelayTypography.label),
+                            selected: filter == value,
+                            onSelected: (_) => setState(() => filter = value),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 12),
+                  if (visible.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Center(
+                        child: Text(
+                          'No calls in this view',
+                          style: RelayTypography.body,
+                        ),
+                      ),
+                    ),
+                  ...visible.map(
+                    (task) => Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${task['customer_name']}',
+                              style: RelayTypography.bodyStrong,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              task['stage'] == 'TELE_VERIFICATION'
+                                  ? 'Tele-verification'
+                                  : 'Welcome call',
+                              style: RelayTypography.body,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${task['plan_name']} · ${task['request_id']}',
+                              style: RelayTypography.caption,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              '${task['branch']} · ${task['agent']}',
+                              style: RelayTypography.caption,
+                            ),
+                            const SizedBox(height: 8),
+                            SelectableText(
+                              'Phone: ${task['msisdn'] ?? task['alternate_number'] ?? 'Not recorded'}',
+                              style: RelayTypography.bodyStrong,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              'Last outcome: ${task['last_outcome'] ?? 'Not started'}',
+                              style: RelayTypography.caption,
+                            ),
+                            const SizedBox(height: 12),
+                            Wrap(
+                              alignment: WrapAlignment.spaceBetween,
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                Chip(
+                                  label: Text(
+                                    '${task['status']}'.toLowerCase(),
+                                    style: RelayTypography.label,
+                                  ),
+                                ),
+                                if (canRecordCall(
+                                  task,
+                                  ref.watch(serviceProvider).user,
+                                ))
+                                  FilledButton.tonalIcon(
+                                    style: FilledButton.styleFrom(
+                                      minimumSize: const Size(0, 48),
+                                    ),
+                                    onPressed: () => record(task),
+                                    icon: const Icon(Icons.call, size: 17),
+                                    label: const Text('Record call'),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
     );
   }
 }
