@@ -683,6 +683,21 @@
 
 .commission-workspace {
   margin: 16px 0 20px;
+  min-width: 0;
+  max-width: 100%;
+}
+.commission-workspace .sales-table-wrap {
+  max-width: 100%;
+  min-width: 0;
+}
+.commission-config,
+.commission-config details,
+.commission-config .sales-form,
+.commission-config label {
+  min-width: 0;
+}
+.commission-config summary {
+  overflow-wrap: anywhere;
 }
 .commission-workspace h2 {
   font-size: 20px;

@@ -42,4 +42,10 @@ The release backend passed 286 tests in the packaged Python 3.12 image. Flutter 
 
 The phone-framed browser demo is built with `client-version/mobile/preview/build.py`, which installs its custom host bootstrap and frame. A plain Flutter web build does not include that presentation wrapper.
 
+### Portal stability follow-up — 9 October
+
+Fixed the Live operations render crash caused by an obsolete positional column reference. Named column definitions now keep Activations, Daily target and Stock aligned with their actual fields. A page recovery boundary preserves workspace navigation if a view cannot render. Temporary request limits show an explicit wait-and-retry message. Commission tables and configuration drawers stay contained at narrow widths without removing any information.
+
+The packaged backend passed all 286 tests again. Thirty-four distinct browser checks passed across isolated QA and hosted read-only verification: connected sale/review/SR workflows, role-scoped notifications, ten roles' navigation, Live operations, commission layouts and recovery states. Detailed navigation evidence covers 38 administrator page visits, 17 Operations Manager destinations and 44 administrator subviews. Hosted Live operations and Incentives were visually checked at 1440 and 390 pixels after publication. Available server logs showed no 5xx responses or tracebacks; API and database containers had no restarts or out-of-memory events. This portal-only release preserves the database schema, accounts, API image, phone-framed demo and Android build 68, with a fresh deployment/database backup and an index rollback path.
+
 The PostgreSQL migration was exercised through 015 → 017 → 015 → 017 on a restored deployment copy. Existing operational data compared unchanged, and the live cutover is backed up. No carrier API or payment gateway is invoked. Real email delivery remains unverified until SMTP is configured; incomplete commission eligibility/allocation and the projection formula remain awaiting client input.

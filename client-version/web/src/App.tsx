@@ -11,6 +11,7 @@ import SalesManagement from "./SalesManagement";
 import CallWorkspace from "./CallWorkspace";
 import FieldAssets from "./FieldAssets";
 import { Incentives, Support } from "./ProposalOperations";
+import PageBoundary from "./PageBoundary";
 
 import Dashboard, { BranchFilter } from "./Dashboard";
 import {
@@ -753,64 +754,72 @@ export default function App() {
           </header>
           <main className="content" id="workspace-content" tabIndex={-1}>
             <div className="route-stage" key={location.pathname}>
-              {canVisitPage(location.pathname, user) ? (
-                <Routes>
-                  <Route path="/notifications" element={<Notifications />} />
-                  <Route path="/kyc-capture" element={<KycCapture />} />
-                  <Route path="/sales" element={<SalesManagement />} />
-                  <Route path="/call-work" element={<CallWorkspace />} />
-                  <Route path="/equipment" element={<FieldAssets />} />
-                  <Route path="/screenshot-capture" element={<KycCapture />} />
-                  <Route
-                    path="/incentives"
-                    element={<Incentives user={user} notify={setToast} />}
-                  />
-                  <Route
-                    path="/support"
-                    element={<Support user={user} notify={setToast} />}
-                  />
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/live" element={<LiveOperations />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/plans" element={<PlanManagement />} />
-                  <Route path="/team-leaders" element={<TeamLeaders />} />
-                  <Route path="/administration" element={<Administration />} />
-                  {[
-                    "agents",
-                    "customers",
-                    "branches",
-
-                    "activations",
-
-                    "inventory",
-                    "audit",
-                  ].map((resource) => (
+              <PageBoundary key={location.pathname}>
+                {canVisitPage(location.pathname, user) ? (
+                  <Routes>
+                    <Route path="/notifications" element={<Notifications />} />
+                    <Route path="/kyc-capture" element={<KycCapture />} />
+                    <Route path="/sales" element={<SalesManagement />} />
+                    <Route path="/call-work" element={<CallWorkspace />} />
+                    <Route path="/equipment" element={<FieldAssets />} />
                     <Route
-                      key={resource}
-                      path={"/" + resource}
+                      path="/screenshot-capture"
+                      element={<KycCapture />}
+                    />
+                    <Route
+                      path="/incentives"
+                      element={<Incentives user={user} notify={setToast} />}
+                    />
+                    <Route
+                      path="/support"
+                      element={<Support user={user} notify={setToast} />}
+                    />
+                    <Route path="/" element={<Dashboard />} />
+                    <Route path="/live" element={<LiveOperations />} />
+                    <Route path="/reports" element={<Reports />} />
+                    <Route path="/plans" element={<PlanManagement />} />
+                    <Route path="/team-leaders" element={<TeamLeaders />} />
+                    <Route
+                      path="/administration"
+                      element={<Administration />}
+                    />
+                    {[
+                      "agents",
+                      "customers",
+                      "branches",
+
+                      "activations",
+
+                      "inventory",
+                      "audit",
+                    ].map((resource) => (
+                      <Route
+                        key={resource}
+                        path={"/" + resource}
+                        element={
+                          <ResourcePage key={resource} resource={resource} />
+                        }
+                      />
+                    ))}
+                    <Route
+                      path="*"
                       element={
-                        <ResourcePage key={resource} resource={resource} />
+                        <PageHeader
+                          title="Page not included"
+                          description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
+                        />
                       }
                     />
-                  ))}
-                  <Route
-                    path="*"
-                    element={
-                      <PageHeader
-                        title="Page not included"
-                        description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
-                      />
-                    }
-                  />
-                </Routes>
-              ) : (
-                <div className="panel access-denied">
-                  <h2>This page is not available for your role</h2>
-                  <Link className="button primary" to="/">
-                    Return to overview
-                  </Link>
-                </div>
-              )}
+                  </Routes>
+                ) : (
+                  <div className="panel access-denied">
+                    <h2>This page is not available for your role</h2>
+                    <Link className="button primary" to="/">
+                      Return to overview
+                    </Link>
+                  </div>
+                )}
+              </PageBoundary>
             </div>
             <footer className="page-footer">
               <span>
@@ -945,7 +954,7 @@ function LiveOperations() {
               label: "Status",
               render: (r) => <Badge value={r.status} />,
             },
-            agentColumns[0],
+            agentColumnByKey.name,
             {
               key: "outlet",
               label: "Outlet / branch",
@@ -956,9 +965,9 @@ function LiveOperations() {
                 </>
               ),
             },
-            agentColumns[3],
-            agentColumns[4],
-            agentColumns[7],
+            agentColumnByKey.activations,
+            agentColumnByKey.achievement,
+            agentColumnByKey.stock,
             {
               key: "last_sync",
               label: "Last sync",
@@ -1184,8 +1193,8 @@ const inventoryColumns: Column[] = [
     ),
   },
 ];
-const agentColumns: Column[] = [
-  {
+const agentColumnByKey = {
+  name: {
     key: "name",
     label: "Agent",
     render: (r) => (
@@ -1198,26 +1207,31 @@ const agentColumns: Column[] = [
       </div>
     ),
   },
-  {
+  branch: {
     key: "branch",
     label: "Branch",
   },
-  { key: "activations", label: "Activations" },
-  {
+  activations: { key: "activations", label: "Activations" },
+  achievement: {
     key: "achievement",
     label: "Daily target",
     render: (r) => <Progress value={r.achievement} />,
   },
-  { key: "aht", label: "AHT", render: (r) => r.aht + " min" },
-  { key: "ekyc_rate", label: "eKYC pass", render: (r) => r.ekyc_rate + "%" },
-  {
+  aht: { key: "aht", label: "AHT", render: (r) => r.aht + " min" },
+  ekyc_rate: {
+    key: "ekyc_rate",
+    label: "eKYC pass",
+    render: (r) => r.ekyc_rate + "%",
+  },
+  stock: {
     key: "stock",
     label: "Stock",
     render: (r) => (
       <span className={r.stock < 5 ? "low-stock" : ""}>{r.stock}</span>
     ),
   },
-];
+} satisfies Record<string, Column>;
+const agentColumns: Column[] = Object.values(agentColumnByKey);
 const configs: Record<
   string,
   { title: string; description: string; columns: Column[] }

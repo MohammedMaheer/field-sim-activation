@@ -1739,3 +1739,14 @@ details:not([open]) .receipt-kiosk-assembly .verified-receipt { animation: none;
 @keyframes overview-grow{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @media(max-width:700px){.record-overview{display:block;padding:14px}.record-overview-title{display:flex;justify-content:space-between;margin-bottom:12px}.record-overview-bars{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.leader-confirmation-list>article{align-items:stretch;flex-direction:column}}
 @media(prefers-reduced-motion:reduce){.record-overview-track i{animation:none}}
+.page-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.page-recovery h2 {
+  margin-bottom: 8px;
+}

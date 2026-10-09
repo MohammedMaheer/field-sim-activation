@@ -46,6 +46,8 @@ export async function api(
     }
   }
   if (!r.ok) {
+    if (r.status === 429)
+      throw new Error("Too many requests. Wait a minute and try again.");
     const body = await r
       .json()
       .catch(() => ({ detail: "Request failed. Please try again." }));
@@ -110,7 +112,8 @@ export async function stream(
         buffer += decoder.decode(value, { stream: true });
         const blocks = buffer.split("\n\n");
         buffer = blocks.pop() || "";
-        for (const b of blocks) if (b.startsWith("data:")) onEvent(JSON.parse(b.slice(5)).kind);
+        for (const b of blocks)
+          if (b.startsWith("data:")) onEvent(JSON.parse(b.slice(5)).kind);
       }
     } catch {
       onState(false);
@@ -121,9 +124,23 @@ export async function stream(
   }
 }
 
-export async function receiptImage(path: string, signal: AbortSignal, retry = true): Promise<Blob> {
-  const response = await fetch('/api' + path, {credentials:'include', signal, headers:{Authorization:'Bearer '+access}});
-  if(response.status===401 && retry){await refreshSession();return receiptImage(path,signal,false);}
-  if(!response.ok) throw new Error('Could not load the original receipt. Check access or retry.');
+export async function receiptImage(
+  path: string,
+  signal: AbortSignal,
+  retry = true,
+): Promise<Blob> {
+  const response = await fetch("/api" + path, {
+    credentials: "include",
+    signal,
+    headers: { Authorization: "Bearer " + access },
+  });
+  if (response.status === 401 && retry) {
+    await refreshSession();
+    return receiptImage(path, signal, false);
+  }
+  if (!response.ok)
+    throw new Error(
+      "Could not load the original receipt. Check access or retry.",
+    );
   return response.blob();
 }
