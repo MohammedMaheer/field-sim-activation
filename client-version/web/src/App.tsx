@@ -1452,7 +1452,8 @@ function ResourcePage({ resource }: { resource: string }) {
               {resource === "agents" ? "Add sales agent" : "Add branch"}
             </button>
           )}
-        {resource === "inventory" && user.role === "Administrator" && (
+        {resource === "inventory" && user.role === "Administrator" &&
+          user.permissions.includes("inventory.write") && (
           <>
             <button onClick={() => setManageRecords(true)}>
               <Plus size={16} /> Add SIM

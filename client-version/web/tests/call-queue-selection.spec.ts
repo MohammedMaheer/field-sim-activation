@@ -12,7 +12,7 @@ for (const scenario of cases) {
     await page.locator("input[type=password]").fill(process.env.DEMO_PASSWORD!);
     await page.getByRole("button", {name: "Sign in to workspace"}).click();
     await expect(page.getByRole("heading", {name: "Call work queue", exact: true})).toBeVisible();
-    await page.route("**/api/sales-management/call-tasks", route => route.fulfill({json: [{
+    await page.route(/\/api\/sales-management\/call-tasks(?:\?.*)?$/, route => route.fulfill({json: [{
       id: "selection-guard", sale_id: "selection-guard-sale", customer_name: "Sample customer",
       stage: scenario.stage, status: scenario.status, plan_name: "Sample plan", request_id: "sample-request",
       branch: "Sample branch", agent: "Sample agent", msisdn: "Not recorded", last_outcome: "Not recorded",
@@ -31,7 +31,7 @@ test("cancelling a call notification selection keeps its form closed after refre
   await page.locator("input[type=password]").fill(process.env.DEMO_PASSWORD!);
   await page.getByRole("button", {name: "Sign in to workspace"}).click();
   await expect(page.getByRole("heading", {name: "Call work queue", exact: true})).toBeVisible();
-  await page.route("**/api/sales-management/call-tasks", route => route.fulfill({json: [{
+  await page.route(/\/api\/sales-management\/call-tasks(?:\?.*)?$/, route => route.fulfill({json: [{
     id: "selection-guard", sale_id: "selection-guard-sale", customer_name: "Sample customer",
     stage: "TELE_VERIFICATION", status: "PENDING", plan_name: "Sample plan", request_id: "sample-request",
     branch: "Sample branch", agent: "Sample agent", msisdn: "Not recorded", last_outcome: "Not recorded",

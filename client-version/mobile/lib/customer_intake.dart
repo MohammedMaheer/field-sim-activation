@@ -784,6 +784,11 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               .isEmpty) {
             throw Exception('Screen unreadable');
           }
+          missing.removeWhere(
+            (field) =>
+                (data[field] ?? '').toString().trim().isNotEmpty &&
+                !(field == 'order_type' && data[field] == 'UNSPECIFIED'),
+          );
           revision++;
         } catch (e) {
           data.remove(key);

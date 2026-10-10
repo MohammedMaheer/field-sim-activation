@@ -12,6 +12,41 @@ import 'package:relay_agent/relay_theme.dart';
 import 'package:relay_agent/services.dart';
 
 void main() {
+  testWidgets('a valid scan clears required errors for the fields it fills', (
+    t,
+  ) async {
+    t.view.physicalSize = const Size(390, 900);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.resetPhysicalSize);
+    addTearDown(t.view.resetDevicePixelRatio);
+    final service = PreviewService(
+      jsonDecode(File('assets/demo/workspace.json').readAsStringSync()),
+    );
+    await t.pumpWidget(
+      ProviderScope(
+        overrides: [serviceProvider.overrideWith((ref) => service)],
+        child: MaterialApp(
+          home: CustomerIntakeScreen(
+            initial: const {},
+            onReady: (_) {},
+            onHistory: () {},
+          ),
+        ),
+      ),
+    );
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('Continue'));
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('Required'), findsWidgets);
+    await t.tap(find.text('Upload photo'));
+    await t.pump(const Duration(milliseconds: 300));
+    await t.pump(const Duration(seconds: 2));
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('Document captured'), findsOneWidget);
+    expect(find.text('Required'), findsNothing);
+    expect(t.takeException(), isNull);
+    await t.pumpWidget(const SizedBox());
+  });
   testWidgets('camera recovery fits a narrow scanner and retries', (t) async {
     var retries = 0;
     await t.pumpWidget(

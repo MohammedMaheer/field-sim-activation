@@ -1272,6 +1272,40 @@ def test_excel_sim_import_is_atomic_and_audited(client):
     assert client.get("/api/inventory/bulk-template").status_code == 403
 
 
+def test_excel_sim_import_respects_effective_inventory_permission(client):
+    from app.db import Permission, Role, Sim, Movement
+    from sqlalchemy import func
+
+    login(client)
+    branch = client.get("/api/resources/branches").json()[0]
+    book = Workbook()
+    book.active.append(["ICCID", "SIM Serial", "SIM Type"])
+    book.active.append(["NO-GRANT-ICCID", "NO-GRANT-SERIAL", "Physical"])
+    stream = io.BytesIO()
+    book.save(stream)
+    body = {"branch_id": branch["id"], "reason": "Reduced permission regression",
+            "content_base64": base64.b64encode(stream.getvalue()).decode()}
+    with DB() as db:
+        role_id = db.scalar(select(Role.id).where(Role.name == "Administrator"))
+        grant = db.scalar(select(Permission).where(
+            Permission.role_id == role_id, Permission.name == "inventory.write"))
+        grant_id = grant.id
+        grant.name = "disabled-inventory-write"
+        before = tuple(db.scalar(select(func.count()).select_from(model))
+                       for model in (Sim, Movement, Audit))
+        db.commit()
+    try:
+        assert client.get("/api/inventory/bulk-template").status_code == 403
+        assert client.post("/api/inventory/bulk", json=body).status_code == 403
+        with DB() as db:
+            assert tuple(db.scalar(select(func.count()).select_from(model))
+                         for model in (Sim, Movement, Audit)) == before
+    finally:
+        with DB() as db:
+            db.get(Permission, grant_id).name = "inventory.write"
+            db.commit()
+
+
 def test_demo_refresh_is_opt_in_idempotent_and_preserves_history(monkeypatch):
     from app.demo_refresh import refresh_demo
     from app.db import Sim, Movement

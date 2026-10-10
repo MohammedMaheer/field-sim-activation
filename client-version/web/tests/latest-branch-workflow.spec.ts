@@ -2,6 +2,15 @@ import { expect, Page, test } from "@playwright/test";
 import { previewBuild } from "./preview";
 import path from "node:path";
 
+test("administrator inventory import follows the effective write grant", async ({page}) => {
+  await fixture(page, "Administrator", ["read", "report.read"]);
+  await page.goto("/inventory");
+  await expect(page.getByRole("heading", {name: "SIM inventory", exact: true})).toBeVisible();
+  await expect(page.getByRole("button", {name: "Add SIM", exact: true})).toHaveCount(0);
+  await expect(page.getByRole("button", {name: "Import Excel", exact: true})).toHaveCount(0);
+  await expect(page.getByRole("button", {name: "Refresh", exact: true})).toBeVisible();
+});
+
 const branches = [
   {
     id: "branch-a",

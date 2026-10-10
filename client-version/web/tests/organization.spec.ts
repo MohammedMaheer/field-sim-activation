@@ -23,7 +23,8 @@ test("setup drawer and detail navigation", async ({ page }) => {
   await page.keyboard.press("Escape");
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page
-    .getByRole("button", { name: "View Zayn Mercer", exact: true })
+    .getByRole("button", { name: /^View / })
+    .first()
     .click();
   await expect(page).toHaveURL(/selected=/);
   await expect(d).toBeVisible();
@@ -69,6 +70,7 @@ test("create connected branch leader and agent", async ({ page, request }) => {
   await d.getByLabel("Employee ID").fill("QA-" + suffix);
   await d.getByLabel("Sign-in email").fill("agent." + suffix + "@relay.demo");
   await d.getByLabel("Password", { exact: false }).fill("test-client-password");
+  await d.getByRole("combobox", {name: "Reporting team leader", exact: true}).selectOption({label: "Demo setup leader"});
   await d
     .getByRole("button", { name: "Create sales agent", exact: true })
     .click();

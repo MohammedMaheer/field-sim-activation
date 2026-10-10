@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from .db import Branch, Movement, Outlet, Role, Sim, get_db
-from .security import principal
+from .security import principal, require
 from .services import audit
 from .stock_categories import validate_category
 
@@ -20,6 +20,7 @@ router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
 def admin(db, user):
     if db.get(Role, user.role_id).name != "Administrator":
         raise HTTPException(403, "Only administrators can import SIM stock")
+    require(db, user, "inventory.write")
 
 
 @router.get("/bulk-template")
