@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import 'package:synchronized/synchronized.dart';
+import 'role_access.dart';
 
 typedef Json = Map<String, dynamic>;
 const apiUrl = String.fromEnvironment(
@@ -21,6 +22,7 @@ final serviceProvider = ChangeNotifierProvider((ref) => RelayService());
 // AsyncValue's previous data, while account changes remain dependency reloads.
 RelayService _resourceService(Ref ref) {
   ref.watch(serviceProvider.select((service) => service.user?['id']));
+  ref.watch(serviceProvider.select((service) => service.branchId));
   ref.listen<bool>(serviceProvider.select((service) => service.syncing), (
     previous,
     next,
@@ -137,9 +139,24 @@ class RelayService extends ChangeNotifier {
   );
   final store = OfflineStore();
   Json? user;
+  String? _branchId;
+  String? _branchAccount;
+  // A workspace filter only narrows server-authorized data. It is reset when
+  // accounts change and is also part of every offline cache identity.
+  String? get branchId => _branchAccount == user?['id'] ? _branchId : null;
+  void selectBranch(String? value) {
+    final normalized = value?.trim();
+    _branchId = normalized == null || normalized.isEmpty ? null : normalized;
+    _branchAccount = user?['id'];
+    notifyListeners();
+  }
+
+  Map<String, dynamic> branchQuery([Map<String, dynamic> values = const {}]) =>
+      {...values, if (branchId != null) 'branch_id': branchId};
   bool online = true;
   bool ready = false;
   bool syncing = false;
+  int syncRevision = 0;
   String? syncError;
   int queued = 0;
   String? access;
@@ -154,6 +171,29 @@ class RelayService extends ChangeNotifier {
             options.headers['Authorization'] = 'Bearer $access';
           }
           options.headers['X-Device-ID'] = 'Relay Flutter';
+          if (options.method == 'GET' &&
+              options.extra['allAuthorizedBranches'] != true &&
+              branchId != null &&
+              (options.path == '/dashboard' ||
+                  options.path.startsWith('/resources/') ||
+                  options.path.startsWith('/reports/') ||
+                  options.path == '/kyc-captures' ||
+                  options.path == '/kyc-captures/leader-confirmations' ||
+                  options.path == '/sales-management/sales' ||
+                  options.path == '/sales-management/performance' ||
+                  options.path == '/sales-management/targets' ||
+                  options.path == '/sales-management/feedback' ||
+                  options.path == '/sales-management/call-tasks' ||
+                  options.path == '/sales-management/call-tasks/summary' ||
+                  options.path == '/sales-management/calls' ||
+                  options.path == '/commissions/summary' ||
+                  options.path == '/field-assets' ||
+                  options.path == '/field-assets/requests/list' ||
+                  options.path == '/field-assets/report/summary' ||
+                  options.path == '/incentives' ||
+                  options.path == '/support-tickets')) {
+            options.queryParameters.putIfAbsent('branch_id', () => branchId);
+          }
           handler.next(options);
         },
         onError: (error, handler) async {
@@ -239,20 +279,29 @@ class RelayService extends ChangeNotifier {
     await store.clear();
     access = null;
     user = null;
+    _branchId = null;
+    _branchAccount = null;
     queued = 0;
     notifyListeners();
   }
 
   Future<List<Json>> list(String resource) async {
-    final key = '${user!['id']}:$resource';
+    final key = '${user!['id']}:${branchId ?? 'all'}:$resource';
     try {
-      final r = await dio.get('/resources/$resource');
+      final r = await dio.get(
+        '/resources/$resource',
+        queryParameters: branchQuery(),
+      );
       await store.put(key, {'rows': r.data});
       return (r.data as List).map((v) => Map<String, dynamic>.from(v)).toList();
     } on DioException catch (e) {
       if (e.response != null) rethrow;
       online = false;
-      final cached = await store.get(key);
+      final cached =
+          await store.get(key) ??
+          (branchId == null
+              ? await store.get('${user!['id']}:$resource')
+              : null);
       if (cached == null) rethrow;
       return (cached['rows'] as List)
           .map((v) => Map<String, dynamic>.from(v))
@@ -261,7 +310,7 @@ class RelayService extends ChangeNotifier {
   }
 
   Future<Json> dashboard() async {
-    final key = '${user!['id']}:dashboard';
+    final key = '${user!['id']}:${branchId ?? 'all'}:dashboard';
     try {
       final r = await dio.get('/dashboard');
       final d = Map<String, dynamic>.from(r.data);
@@ -270,14 +319,18 @@ class RelayService extends ChangeNotifier {
     } on DioException catch (e) {
       if (e.response != null) rethrow;
       online = false;
-      final d = await store.get(key);
+      final d =
+          await store.get(key) ??
+          (branchId == null
+              ? await store.get('${user!['id']}:dashboard')
+              : null);
       if (d == null) rethrow;
       return d;
     }
   }
 
   Future<List<Json>> proposalList(String resource) async {
-    final key = '${user!['id']}:$resource';
+    final key = '${user!['id']}:${branchId ?? 'all'}:$resource';
     try {
       final r = await dio.get('/$resource');
       final rows = (r.data as List)
@@ -288,7 +341,11 @@ class RelayService extends ChangeNotifier {
     } on DioException catch (e) {
       if (e.response != null) rethrow;
       online = false;
-      final cached = await store.get(key);
+      final cached =
+          await store.get(key) ??
+          (branchId == null
+              ? await store.get('${user!['id']}:$resource')
+              : null);
       if (cached == null) rethrow;
       return (cached['rows'] as List)
           .map((v) => Map<String, dynamic>.from(v))
@@ -307,8 +364,12 @@ class RelayService extends ChangeNotifier {
         'Tele Verification Officer',
         'Welcome Call Officer',
       ].contains(user?['role'])) {
-        await dio.get('/sales-management/call-tasks');
-        await dio.get('/notifications');
+        if (canVisitMobilePage('/call-work', user)) {
+          await dio.get('/sales-management/call-tasks');
+        }
+        if (canVisitMobilePage('/notifications', user)) {
+          await dio.get('/notifications');
+        }
         online = true;
         return;
       }
@@ -330,6 +391,7 @@ class RelayService extends ChangeNotifier {
       syncError = friendlyError(e);
     } finally {
       syncing = false;
+      syncRevision++;
       notifyListeners();
     }
   }

@@ -14,14 +14,14 @@ from sqlalchemy import select, delete
 
 from test_client_scope import client, database, login  # noqa: F401
 from app import captures
-from app.db import DB, Agent, User, SalesRecord, KycCapture, Audit, Customer, SalesCallTask, CallAttempt, Movement, Sim, Permission, now
+from app.db import DB, Agent, User, SalesRecord, KycCapture, CaptureIdentityClaim, Audit, Customer, SalesCallTask, CallAttempt, Movement, Sim, Permission, now
 from app.sr_verification import SrBatch, SrCheck, SrNotice
 from app.email_delivery import EmailOutbox, deliver_pending
 
 
 @pytest.fixture(autouse=True)
 def cleanup(database):
-    models = (EmailOutbox, SrNotice, SrCheck, SrBatch, CallAttempt, SalesCallTask, Movement, SalesRecord, KycCapture, Customer, Audit, Sim)
+    models = (CaptureIdentityClaim, EmailOutbox, SrNotice, SrCheck, SrBatch, CallAttempt, SalesCallTask, Movement, SalesRecord, KycCapture, Customer, Audit, Sim)
     with DB() as db:
         baseline = {model: set(db.scalars(select(model.id))) for model in models}
     yield
@@ -224,7 +224,13 @@ def test_sr_import_respects_restricted_backend_write_grants(client, account):
 
 def test_duplicate_captured_sr_and_request_mismatch_are_not_false_matches(client):
     make_sale(client, "SR-DUP")
-    make_sale(client, "SR-DUP")
+    # Historical duplicates can predate the global recording guard. Preserve and
+    # reconcile them conservatively while new API submissions refuse duplicates.
+    legacy = make_sale(client, "SR-OLD-DUP")
+    with DB() as db:
+        row = db.get(SalesRecord, legacy)
+        row.details = {**row.details, "sr_number": "SR-DUP"}
+        db.commit()
     make_sale(client, "SR-REQUEST")
     result = apply_report(client, "sr_number,request_id\nSR-DUP,\nSR-REQUEST,WRONG\n")
     assert result["summary"]["matched"] == 0 and result["summary"]["mismatch"] == 3
@@ -371,7 +377,7 @@ def test_sr_excel_accepts_text_identifiers_and_rejects_formulas(client):
 def sale_intake(client, receipt=False):
     person = client.get("/api/auth/me").json()
     output = io.BytesIO()
-    Image.new("RGB", (80, 80), "white").save(output, format="PNG")
+    Image.new("RGB", (80, 80), tuple(uuid4().bytes[:3])).save(output, format="PNG")
     image = base64.b64encode(output.getvalue()).decode()
     intake = {"capture_mode": "SCREENSHOT_SALE", "transaction_id": str(uuid4()),
               "document_type": "Emirates ID", "name": "Synthetic Customer", "document_number": "SAMPLE-ID",

@@ -1,6 +1,9 @@
+import ActivationStatus from "./ActivationStatus";
+import ProductTargetManagement from "./ProductTargets";
+import { useBranchScope } from "./BranchScope";
 import { businessPeriod } from "./businessTime";
 import { useSearchParams } from "react-router-dom";
-import { useContext, useState } from "react";
+import { useContext, useState, useEffect, useRef } from "react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -39,7 +42,14 @@ export default function SalesManagement() {
 
   const queryClient = useQueryClient();
 
-  const [tab, setTab] = useState<Tab>("sales");
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() =>
+    ["sales", "feedback", "targets", "calls", "import", "staff", "sr"].includes(
+      params.get("tab") || "",
+    )
+      ? (params.get("tab") as Tab)
+      : "sales",
+  );
 
   const [period, setPeriod] = useState(month);
 
@@ -54,14 +64,13 @@ export default function SalesManagement() {
 
   const [preview, setPreview] = useState<Row | null>(null);
 
-  const [params] = useSearchParams();
   const [selectedSale, setSelectedSale] = useState<Row | null>(() =>
     params.get("selected") ? { id: params.get("selected") } : null,
   );
 
   const [productFilter, setProductFilter] = useState("");
 
-  const [branchFilter, setBranchFilter] = useState("");
+  const { branch: branchFilter, setBranch: setBranchFilter } = useBranchScope();
 
   const [agentFilter, setAgentFilter] = useState("");
 
@@ -107,20 +116,29 @@ export default function SalesManagement() {
   });
 
   const feedback = useQuery<Row[]>({
-    queryKey: ["sales-management", "feedback"],
-    queryFn: () => api("/sales-management/feedback"),
+    queryKey: ["sales-management", "feedback", branchFilter],
+    queryFn: () =>
+      api(
+        `/sales-management/feedback?branch_id=${encodeURIComponent(branchFilter)}`,
+      ),
     enabled: tab === "feedback",
   });
 
   const targets = useQuery<Row[]>({
-    queryKey: ["sales-management", "targets", period],
-    queryFn: () => api(`/sales-management/targets?period=${period}`),
+    queryKey: ["sales-management", "targets", period, branchFilter],
+    queryFn: () =>
+      api(
+        `/sales-management/targets?period=${period}&branch_id=${encodeURIComponent(branchFilter)}`,
+      ),
     enabled: tab === "targets",
   });
 
   const staff = useQuery<Row[]>({
-    queryKey: ["sales-management", "staff"],
-    queryFn: () => api("/sales-management/staff"),
+    queryKey: ["sales-management", "staff", branchFilter],
+    queryFn: () =>
+      api(
+        `/sales-management/staff?branch_id=${encodeURIComponent(branchFilter)}`,
+      ),
     enabled: tab === "staff",
   });
 
@@ -141,16 +159,23 @@ export default function SalesManagement() {
 
   const canManage = ["Administrator", "Operations Manager"].includes(user.role);
 
-  const canRecord = [
-    "Field Agent",
-    "Administrator",
-    "Operations Manager",
-  ].includes(user.role);
+  const canRecord = ["Field Agent", "Operations Manager"].includes(user.role);
 
   const canSetTargets = canManage || user.role === "Team Leader";
   const canVerifySR = user.permissions?.includes("compliance.write");
 
-  const agentOptions = agents.data || [];
+  const agentOptions = (agents.data || []).filter(
+    (row) => !branchFilter || row.branch_id === branchFilter,
+  );
+  const lastBranch = useRef(branchFilter);
+  useEffect(() => {
+    if (lastBranch.current !== branchFilter) {
+      setAgentFilter("");
+      setLeaderFilter("");
+      setSelectedSale(null);
+      lastBranch.current = branchFilter;
+    }
+  }, [branchFilter]);
 
   async function refresh() {
     await queryClient.invalidateQueries({ queryKey: ["sales-management"] });
@@ -450,7 +475,7 @@ export default function SalesManagement() {
               }
             >
               <label>
-                Agent
+                Sales agent
                 <select
                   name="agent_id"
                   required
@@ -619,7 +644,7 @@ export default function SalesManagement() {
             </label>
 
             <label>
-              Agent
+              Sales agent
               <select
                 value={agentFilter}
                 onChange={(e) => setAgentFilter(e.target.value)}
@@ -640,8 +665,10 @@ export default function SalesManagement() {
                 onChange={(e) => setStatusFilter(e.target.value)}
               >
                 <option value="">All statuses</option>
-                <option value="IN_PROGRESS">In progress</option>
-                <option value="CLOSED">Closed</option>
+                <option value="IN_PROGRESS">
+                  Activated · pending backend review
+                </option>
+                <option value="CLOSED">Backend verified</option>
                 <option value="CANCELLED">Cancelled</option>
               </select>
             </label>
@@ -662,11 +689,15 @@ export default function SalesManagement() {
                   onChange={(e) => setLeaderFilter(e.target.value)}
                 >
                   <option value="">All permitted leaders</option>
-                  {leaders.data?.map((row) => (
-                    <option key={row.id} value={row.leader_id}>
-                      {row.name}
-                    </option>
-                  ))}
+                  {leaders.data
+                    ?.filter(
+                      (row) => !branchFilter || row.branch_id === branchFilter,
+                    )
+                    .map((row) => (
+                      <option key={row.id} value={row.leader_id}>
+                        {row.name}
+                      </option>
+                    ))}
                 </select>
               </label>
               <label>
@@ -735,16 +766,7 @@ export default function SalesManagement() {
                       </td>
                       <td>{row.request_id}</td>
                       <td>
-                        <span
-                          className={`sales-status ${row.status.toLowerCase()}`}
-                        >
-                          {row.status.replace("_", " ")}
-                        </span>
-                        <small
-                          className={`sr-status ${(row.sr_verification?.status || "PENDING_SR_VERIFICATION").toLowerCase()}`}
-                        >
-                          {srStatus(row.sr_verification?.status)}
-                        </small>
+                        <ActivationStatus row={row} />
                       </td>
                       <td>{new Date(row.created_at).toLocaleDateString()}</td>
                       {canManage && (
@@ -820,7 +842,7 @@ export default function SalesManagement() {
               }
             >
               <label>
-                Agent
+                Sales agent
                 <select
                   name="agent_id"
                   required
@@ -875,7 +897,7 @@ export default function SalesManagement() {
                     <th>Product</th>
                     <th>Reason</th>
                     <th>Feedback</th>
-                    <th>Agent</th>
+                    <th>Sales agent</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -906,7 +928,7 @@ export default function SalesManagement() {
               <button
                 onClick={() =>
                   download(
-                    `/sales-management/targets/template?period=${period}&format=xlsx`,
+                    `/sales-management/targets/template?period=${period}&format=xlsx&branch_id=${encodeURIComponent(branchFilter)}`,
                     "sales-targets.xlsx",
                   )
                 }
@@ -969,93 +991,24 @@ export default function SalesManagement() {
             </div>
           )}
 
-          {canSetTargets && (
-            <form
-              className="sales-form compact"
-              onSubmit={(e) =>
-                submitForm(e, "/sales-management/targets", () => {}, "PUT")
-              }
-            >
-              <label>
-                Agent
-                <select name="agent_id" required defaultValue="">
-                  <option value="">Select agent</option>
-                  {agentOptions
-                    .filter((a) => a.employment_status === "ACTIVE")
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <input type="hidden" name="period" value={period} />
-              <label>
-                Product
-                <select name="order_type">
-                  <option value="ALL">All products</option>
-                  {orderTypes.map((t) => (
-                    <option key={t} value={t}>
-                      {labels[t]}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Daily target
-                <input
-                  type="number"
-                  name="daily_target"
-                  min="0"
-                  defaultValue="0"
-                  required
-                />
-              </label>
-              <label>
-                Monthly target
-                <input
-                  type="number"
-                  name="monthly_target"
-                  min="0"
-                  defaultValue="0"
-                  required
-                />
-              </label>
-              <button className="primary" disabled={busy}>
-                Set target
-              </button>
-            </form>
-          )}
-
           {targets.isPending ? (
             <Loading />
           ) : targets.error ? (
             <ErrorState error={targets.error} retry={targets.refetch} />
-          ) : !targets.data?.length ? (
-            <p className="sales-empty">No targets for this period</p>
           ) : (
-            <div className="sales-table-wrap">
-              <table className="sales-table">
-                <thead>
-                  <tr>
-                    <th>Agent</th>
-                    <th>Product</th>
-                    <th>Daily</th>
-                    <th>Monthly</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {targets.data.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.agent}</td>
-                      <td>{labels[row.order_type] || row.order_type}</td>
-                      <td>{row.daily_target}</td>
-                      <td>{row.monthly_target}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ProductTargetManagement
+              agents={agentOptions}
+              rows={targets.data || []}
+              period={period}
+              canEdit={canSetTargets}
+              initialAgent={params.get("agent") || ""}
+              onSaved={async () => {
+                await refresh();
+                await queryClient.invalidateQueries({
+                  queryKey: ["dashboard"],
+                });
+              }}
+            />
           )}
         </section>
       )}
@@ -1272,7 +1225,7 @@ export default function SalesManagement() {
 
                 <dl className="sale-detail-grid">
                   {[
-                    ["agent", "Agent"],
+                    ["agent", "Sales agent"],
                     ["employee_id", "Employee ID"],
                     ["leader", "Team leader"],
                     ["sales_manager", "Sales Manager"],

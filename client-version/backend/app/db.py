@@ -13,6 +13,8 @@ from sqlalchemy import (
     Text,
     Numeric,
     UniqueConstraint,
+    CheckConstraint,
+    Index,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -246,6 +248,7 @@ class Alert(Entity):
 
 class Notification(Entity):
     __tablename__ = "notifications"
+    __table_args__ = (Index("ix_notification_user_created", "user_id", "created_at"),)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
     message: Mapped[str] = mapped_column(String(250))
     read: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -284,6 +287,8 @@ class Event(Entity):
 
 class KycCapture(Entity):
     __tablename__ = "kyc_captures"
+    __table_args__ = (Index("ix_capture_status_created", "status", "created_at"),
+                      Index("ix_capture_branch_created", "branch_id", "created_at"))
     branch_id: Mapped[str | None] = mapped_column(ForeignKey("branches.id"), nullable=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
     creator_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
@@ -356,6 +361,9 @@ class SimProgress(Entity):
 
 class SalesRecord(Entity):
     __tablename__ = "sales_records"
+    __table_args__ = (Index("ix_sale_agent_created", "agent_id", "created_at"),
+                      Index("ix_sale_branch_created", "branch_id", "created_at"),
+                      Index("ix_sale_leader_created", "leader_id", "created_at"))
     capture_id: Mapped[str | None] = mapped_column(ForeignKey("kyc_captures.id"), unique=True, nullable=True)
     agent_id: Mapped[str] = mapped_column(ForeignKey("agents.id"), index=True)
     leader_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
@@ -371,6 +379,18 @@ class SalesRecord(Entity):
     status: Mapped[str] = mapped_column(String(20), default="IN_PROGRESS", index=True)
     details: Mapped[dict] = mapped_column(JSON, default=dict)
     status_updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class CaptureIdentityClaim(Entity):
+    __tablename__ = "capture_identity_claims"
+    __table_args__ = (
+        UniqueConstraint("kind", "fingerprint", name="uq_capture_identity_key"),
+        CheckConstraint("capture_id IS NOT NULL OR sale_id IS NOT NULL", name="ck_capture_identity_owner"),
+    )
+    kind: Mapped[str] = mapped_column(String(16))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    capture_id: Mapped[str | None] = mapped_column(ForeignKey("kyc_captures.id"), nullable=True, index=True)
+    sale_id: Mapped[str | None] = mapped_column(ForeignKey("sales_records.id"), nullable=True, index=True)
 
 
 class NoSaleFeedback(Entity):
@@ -465,7 +485,20 @@ class FieldAssetRequest(Entity):
     fulfilled_asset_id: Mapped[str | None] = mapped_column(ForeignKey("field_assets.id"), nullable=True)
 
 
-engine = create_engine(os.getenv("DATABASE_URL", "sqlite:///./relay.db"), pool_pre_ping=True)
+database_url = os.getenv("DATABASE_URL", "sqlite:///./relay.db")
+pool_options = {}
+if database_url.startswith("postgresql"):
+    # Keep each API process within the configured PostgreSQL connection budget.
+    # Additional load waits briefly rather than opening unbounded connections.
+    pool_options = {
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "3")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "2")),
+        "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "5")),
+        "pool_recycle": 900,
+    }
+    if not 1 <= pool_options["pool_size"] <= 20 or not 0 <= pool_options["max_overflow"] <= 10 or not 1 <= pool_options["pool_timeout"] <= 30:
+        raise ValueError("Database pool settings exceed the supported per-process budget")
+engine = create_engine(database_url, pool_pre_ping=True, hide_parameters=True, **pool_options)
 if engine.dialect.name == "sqlite":
     from sqlalchemy import event
 

@@ -49,7 +49,7 @@ async function liveOperationsFixture(page: Page) {
           id: "sample-admin",
           name: "Sample Administrator",
           role: "Administrator",
-          permissions: [],
+          permissions: ["read"],
         },
       };
     } else if (url.pathname === "/api/notifications") {
@@ -90,7 +90,7 @@ for (const width of [1440, 390]) {
     const table = page.locator(".table-shell");
     await expect(table.locator("thead th")).toHaveText([
       "Status",
-      "Agent",
+      "Sales agent",
       "Outlet / branch",
       "Activations",
       "Daily target",
@@ -130,7 +130,7 @@ for (const width of [1440, 390]) {
     );
     await zayn.getByRole("button", { name: "Zayn Mercer" }).click();
     await expect(
-      page.getByRole("dialog", { name: "Agent workspace" }),
+      page.getByRole("dialog", { name: "Sales agent workspace" }),
     ).toBeVisible();
     await page.getByRole("button", { name: "Close details" }).click();
     await expect(page.getByRole("dialog")).toHaveCount(0);

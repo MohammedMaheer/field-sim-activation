@@ -1,3 +1,4 @@
+import { useBranchScope } from "./BranchScope";
 import IntakeCamera from "./IntakeCamera";
 import { useContext, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +11,7 @@ import RecordOverview from "./RecordOverview";
 
 const sections: Record<string, string> = {
   branches: "Branches",
-  agents: "Agents",
+  agents: "Sales agents",
   customers: "Customers",
   inventory: "SIM stock",
   incentives: "Incentives",
@@ -19,7 +20,14 @@ const fields: Record<string, string[]> = {
   agents: ["name", "email", "employee_id", "target"],
   branches: ["name"],
   customers: ["name", "arabic_name", "mobile", "nationality", "agent_id"],
-  inventory: ["iccid", "serial", "sim_type", "business_category", "outlet_id", "agent_id"],
+  inventory: [
+    "iccid",
+    "serial",
+    "sim_type",
+    "business_category",
+    "outlet_id",
+    "agent_id",
+  ],
   incentives: ["period", "amount", "note", "agent_id"],
 };
 const labels: Record<string, string> = {
@@ -32,7 +40,7 @@ const labels: Record<string, string> = {
   employee_id: "Employee ID",
   branch_id: "Branch",
   outlet_id: "Branch",
-  agent_id: "Agent",
+  agent_id: "Sales agent",
   sim_type: "SIM type",
   business_category: "Business category",
   iccid: "ICCID",
@@ -44,12 +52,21 @@ const labels: Record<string, string> = {
   amount: "Amount (AED)",
   period: "Month",
 };
-export default function Administration() {
+export default function Administration({
+  embedded = false,
+  section,
+}: {
+  embedded?: boolean;
+  section?: string;
+}) {
   const { user, notify } = useContext(Context),
     cache = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
-  const requestedSection = searchParams.get("section") || "branches";
-  const kind = Object.hasOwn(sections, requestedSection) ? requestedSection : "branches";
+  const requestedSection = section || searchParams.get("section") || "branches";
+  const scope = useBranchScope();
+  const kind = Object.hasOwn(sections, requestedSection)
+    ? requestedSection
+    : "branches";
   const setKind = (section: string) => setSearchParams({ section });
   const [editing, setEditing] = useState<Row | null>(null),
     [removing, setRemoving] = useState<Row | null>(null),
@@ -76,18 +93,52 @@ export default function Administration() {
     row.name || row.title || row.iccid || `${row.period} · AED ${row.amount}`;
   const start = (row: Row) => {
     setError("");
-    setEditing(row);
+    const selectedOutlet = dir.data?.outlets?.find(
+      (item: Row) => item.branch_id === scope.branch,
+    );
+    setEditing(
+      kind === "inventory" && !row.id
+        ? { ...row, outlet_id: selectedOutlet?.id || "" }
+        : row,
+    );
+  };
+  const belongsToBranch = (row: Row) => {
+    if (!scope.branch) return true;
+    if (kind === "branches") return row.id === scope.branch;
+    const rowBranch =
+      row.branch_id ||
+      dir.data?.outlets?.find((outlet: Row) => outlet.id === row.outlet_id)
+        ?.branch_id ||
+      agents.data?.find(
+        (agent: Row) =>
+          agent.id === (kind === "agents" ? row.id : row.agent_id),
+      )?.branch_id;
+    return rowBranch === scope.branch;
   };
   const options = (key: string) =>
     key === "branch_id"
       ? dir.data?.branches
       : key === "outlet_id"
-        ? dir.data?.branches?.map((branch: Row) => ({
-            id: dir.data?.outlets?.find((outlet: Row) => outlet.branch_id === branch.id)?.id,
-            name: branch.name,
-          })).filter((branch: Row) => branch.id)
+        ? dir.data?.branches
+            ?.map((branch: Row) => ({
+              id: dir.data?.outlets?.find(
+                (outlet: Row) => outlet.branch_id === branch.id,
+              )?.id,
+              name: branch.name,
+            }))
+            .filter((branch: Row) => branch.id)
         : key === "agent_id"
-          ? kind === "inventory" ? agents.data?.filter(agent => agent.employment_status !== "EXITED") : agents.data
+          ? kind === "inventory"
+            ? agents.data?.filter(
+                (agent) =>
+                  agent.employment_status !== "EXITED" &&
+                  (!editing?.outlet_id ||
+                    agent.branch_id ===
+                      dir.data?.outlets?.find(
+                        (outlet: Row) => outlet.id === editing.outlet_id,
+                      )?.branch_id),
+              )
+            : agents.data
           : null;
   async function save(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -117,59 +168,117 @@ export default function Administration() {
     }
   }
   if (!allowed)
-    return <section className="panel">Staff management access required.</section>;
+    return (
+      <section className="panel">Staff management access required.</section>
+    );
   return (
     <>
-      <header className="page-header">
-        <div>
-          <span className="eyebrow">ADMINISTRATION</span>
-          <h1>Manage workspace</h1>
+      {!embedded && (
+        <header className="page-header">
+          <div>
+            <span className="eyebrow">ADMINISTRATION</span>
+            <h1>{sections[kind]} management</h1>
+          </div>
+          <Link className="button" to="/kyc-capture">
+            Backend verification
+          </Link>
+        </header>
+      )}
+      {!embedded && (
+        <div className="admin-groups">
+          {[
+            {
+              title: "Field network",
+              items: ["branches", "agents"],
+            },
+            { title: "Customer & stock", items: ["customers", "inventory"] },
+            { title: "Sales", items: ["incentives"] },
+          ].map((group) => (
+            <section key={group.title}>
+              <h2>{group.title}</h2>
+              <div
+                className="admin-sections"
+                role="group"
+                aria-label={group.title}
+              >
+                {group.items.map((id) => (
+                  <button
+                    key={id}
+                    aria-pressed={id === kind}
+                    onClick={() => setKind(id)}
+                  >
+                    {sections[id]}
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+          <Link className="button" to="/plans">
+            Subscriber plans →
+          </Link>
         </div>
-        <Link className="button" to="/kyc-capture">
-          Backend verification
-        </Link>
-      </header>
-      <div className="admin-groups">
-        {[
-          {
-            title: "Field network",
-            items: ["branches", "agents"],
-          },
-          { title: "Customer & stock", items: ["customers", "inventory"] },
-          { title: "Sales", items: ["incentives"] },
-        ].map((group) => (
-          <section key={group.title}>
-            <h2>{group.title}</h2>
-            <div
-              className="admin-sections"
-              role="group"
-              aria-label={group.title}
-            >
-              {group.items.map((id) => (
-                <button
-                  key={id}
-                  aria-pressed={id === kind}
-                  onClick={() => setKind(id)}
-                >
-                  {sections[id]}
-                </button>
-              ))}
-            </div>
-          </section>
-        ))}
-        <Link className="button" to="/plans">
-          Subscriber plans →
-        </Link>
-      </div>
-      {!q.isPending && !q.error && !(["branches","incentives"].includes(kind) && (agents.isPending || agents.error)) && <RecordOverview rows={(q.data || []).map((row:Row) => kind === "branches" ? {...row,agents:(agents.data || []).filter(agent => agent.branch_id === row.id).length} : kind === "incentives" ? {...row,name:(agents.data || []).find(agent => agent.id === row.agent_id)?.name || "Not recorded"} : row)} field={kind === "branches" ? "agents" : kind === "agents" ? "target" : kind === "customers" ? "nationality" : kind === "incentives" ? "amount" : "status"} numeric={["branches","agents","incentives"].includes(kind)} title={kind === "branches" ? "Agents by branch" : kind === "agents" ? "Daily targets" : kind === "incentives" ? "Recorded incentives (AED)" : "Record breakdown"} />}
+      )}
+      {!q.isPending &&
+        !q.error &&
+        !(
+          ["branches", "incentives"].includes(kind) &&
+          (agents.isPending || agents.error)
+        ) && (
+          <RecordOverview
+            rows={(q.data || []).map((row: Row) =>
+              kind === "branches"
+                ? {
+                    ...row,
+                    agents: (agents.data || []).filter(
+                      (agent) => agent.branch_id === row.id,
+                    ).length,
+                  }
+                : kind === "incentives"
+                  ? {
+                      ...row,
+                      name:
+                        (agents.data || []).find(
+                          (agent) => agent.id === row.agent_id,
+                        )?.name || "Not recorded",
+                    }
+                  : row,
+            )}
+            field={
+              kind === "branches"
+                ? "agents"
+                : kind === "agents"
+                  ? "target"
+                  : kind === "customers"
+                    ? "nationality"
+                    : kind === "incentives"
+                      ? "amount"
+                      : "status"
+            }
+            numeric={["branches", "agents", "incentives"].includes(kind)}
+            title={
+              kind === "branches"
+                ? "Sales agents by branch"
+                : kind === "agents"
+                  ? "Daily targets"
+                  : kind === "incentives"
+                    ? "Recorded incentives (AED)"
+                    : "Record breakdown"
+            }
+          />
+        )}
       <section className="panel">
         <div className="admin-toolbar">
           <h2>{sections[kind]}</h2>
           {["branches", "agents"].includes(kind) ? (
-            <Link className="button primary" to={"/" + kind}>Manage {sections[kind].toLowerCase()}</Link>
+            <Link className="button primary" to={"/" + kind}>
+              Manage {sections[kind].toLowerCase()}
+            </Link>
           ) : (
             <button className="primary" onClick={() => start({})}>
-              <Plus size={17} /> Add {kind === "inventory" ? "SIM" : sections[kind].replace(/s$/, "").toLowerCase()}
+              <Plus size={17} /> Add{" "}
+              {kind === "inventory"
+                ? "SIM"
+                : sections[kind].replace(/s$/, "").toLowerCase()}
             </button>
           )}
         </div>
@@ -179,7 +288,7 @@ export default function Administration() {
           <ErrorState error={q.error} retry={q.refetch} />
         ) : (
           <DataTable
-            rows={q.data}
+            rows={(q.data || []).filter(belongsToBranch)}
             columns={[
               {
                 key: "name",
@@ -221,7 +330,11 @@ export default function Administration() {
                 label: "Actions",
                 render: (r) => (
                   <div className="admin-row-actions">
-                    {kind === "branches" && <Link to={`/equipment?tab=checklist&branch=${r.id}`}>Stock return checklist</Link>}
+                    {kind === "branches" && (
+                      <Link to={`/equipment?tab=checklist&branch=${r.id}`}>
+                        Stock return checklist
+                      </Link>
+                    )}
                     {kind === "agents" && (
                       <button onClick={() => start(r)}>
                         <Pencil size={16} /> Edit profile
@@ -236,17 +349,18 @@ export default function Administration() {
                         <Pencil size={16} /> Edit
                       </button>
                     )}
-                    {user.role === "Administrator" && !["tasks", "incentives", "inventory"].includes(kind) && (
-                      <button
-                        aria-label={`Delete ${label(r)}`}
-                        onClick={() => {
-                          setRemoving(r);
-                          setError("");
-                        }}
-                      >
-                        <Trash2 size={16} /> Delete
-                      </button>
-                    )}
+                    {user.role === "Administrator" &&
+                      !["tasks", "incentives", "inventory"].includes(kind) && (
+                        <button
+                          aria-label={`Delete ${label(r)}`}
+                          onClick={() => {
+                            setRemoving(r);
+                            setError("");
+                          }}
+                        >
+                          <Trash2 size={16} /> Delete
+                        </button>
+                      )}
                   </div>
                 ),
               },
@@ -259,11 +373,37 @@ export default function Administration() {
           title={`${editing.id ? "Edit" : "Add"} ${kind === "inventory" ? "SIM" : kind === "branches" ? "branch" : sections[kind].replace(/s$/, "").toLowerCase()}`}
           onClose={() => !busy && setEditing(null)}
         >
-          {kind === "inventory" && <div className="intake-choice"><button onClick={() => setPackScanner(true)}><Plus size={18}/> Scan SIM pack</button></div>}
-          {packScanner && <IntakeCamera barcode onPhoto={() => {}} onClose={() => setPackScanner(false)} onCode={async code => {
-            try { const values = await api('/inventory/parse-pack', {method:'POST',body:JSON.stringify({code})}); setEditing({...editing,...values}); setError(''); } catch(e:any) { setError(e.message); }
-          }}/ >}
-          <form key={editing.iccid || "new-sim"} className="plan-editor" onSubmit={save}>
+          {kind === "inventory" && (
+            <div className="intake-choice">
+              <button onClick={() => setPackScanner(true)}>
+                <Plus size={18} /> Scan SIM pack
+              </button>
+            </div>
+          )}
+          {packScanner && (
+            <IntakeCamera
+              barcode
+              onPhoto={() => {}}
+              onClose={() => setPackScanner(false)}
+              onCode={async (code) => {
+                try {
+                  const values = await api("/inventory/parse-pack", {
+                    method: "POST",
+                    body: JSON.stringify({ code }),
+                  });
+                  setEditing({ ...editing, ...values });
+                  setError("");
+                } catch (e: any) {
+                  setError(e.message);
+                }
+              }}
+            />
+          )}
+          <form
+            key={editing.iccid || "new-sim"}
+            className="plan-editor"
+            onSubmit={save}
+          >
             {(fields[kind] || []).map((key) => (
               <label
                 key={key}
@@ -278,7 +418,14 @@ export default function Administration() {
                   <select
                     name={key}
                     required={key !== "agent_id" || kind !== "inventory"}
-                    defaultValue={editing[key] || ""}
+                    value={editing[key] || ""}
+                    onChange={(event) =>
+                      setEditing({
+                        ...editing,
+                        [key]: event.target.value,
+                        ...(key === "outlet_id" ? { agent_id: "" } : {}),
+                      })
+                    }
                   >
                     <option value="">Select {labels[key]}</option>
                     {options(key)?.map((r: Row) => (
@@ -288,7 +435,20 @@ export default function Administration() {
                     ))}
                   </select>
                 ) : key === "business_category" ? (
-                  <select name={key} defaultValue={editing[key] || "Not recorded"}>{["Not recorded","Wasel / Prepaid","Postpaid","Home Wireless","Visitor"].map(value=><option key={value}>{value}</option>)}</select>
+                  <select
+                    name={key}
+                    defaultValue={editing[key] || "Not recorded"}
+                  >
+                    {[
+                      "Not recorded",
+                      "Wasel / Prepaid",
+                      "Postpaid",
+                      "Home Wireless",
+                      "Visitor",
+                    ].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
                 ) : key === "sim_type" ? (
                   <select name={key} defaultValue={editing[key] || "Physical"}>
                     <option>Physical</option>

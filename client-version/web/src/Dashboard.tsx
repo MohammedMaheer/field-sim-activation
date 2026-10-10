@@ -1,3 +1,5 @@
+import { DailyProductTargets } from "./ProductTargets";
+import { useBranchScope } from "./BranchScope";
 import { useContext, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -30,13 +32,7 @@ import {
 } from "lucide-react";
 import { Context, canVisitPage } from "./App";
 import { api, Row } from "./api";
-import {
-  Badge,
-  Panel,
-  Loading,
-  ErrorState,
-  Empty,
-} from "./components";
+import { Badge, Panel, Loading, ErrorState, Empty } from "./components";
 
 export const palette = [
   "#7541b0",
@@ -67,27 +63,31 @@ export function BranchFilter({
   value: string;
   onChange: (s: string) => void;
 }) {
-  const { data = [], error } = useQuery<Row[]>({
-    queryKey: ["branches"],
-    queryFn: () => api("/resources/branches"),
-  });
+  const {
+    branches: data,
+    branchesLoading,
+    branchesError: error,
+  } = useBranchScope();
   return (
     <label className="branch-filter">
       <Users size={17} />
       <span className="sr-only">Branch</span>
       <select
         aria-label="Branch"
+        disabled={branchesLoading}
         value={value}
         onChange={(e) => onChange(e.target.value)}
       >
-        <option value="">All authorized branches</option>
+        <option value="">
+          {branchesLoading ? "Loading branches…" : "All authorized branches"}
+        </option>
         {data.map((b) => (
           <option key={b.id} value={b.id}>
             {b.name}
           </option>
         ))}
       </select>
-      {error && <span role="alert">Branches unavailable</span>}
+      {!!error && <span role="alert">Branches unavailable</span>}
     </label>
   );
 }
@@ -168,7 +168,7 @@ function Donut({
 
 export default function Dashboard() {
   const { user } = useContext(Context);
-  const [branch, setBranch] = useState("");
+  const { branch } = useBranchScope();
   const navigate = useNavigate();
   const {
     data: d,
@@ -182,9 +182,17 @@ export default function Dashboard() {
   });
   if (isPending) return <Loading />;
   if (error || !d) return <ErrorState error={error} retry={refetch} />;
-  const sales = d.sales_summary || {achievement:0,closed_today:0,target:0,week:0};
+  const sales = d.sales_summary || {
+    achievement: 0,
+    closed_today: 0,
+    target: 0,
+    week: 0,
+  };
   const trend = d.sales_trend || [];
-  const branchSales = [...d.branches].map((b:Row) => ({...b,activations:b.closed_sales || 0})).sort((a:Row,b:Row) => b.activations-a.activations).slice(0,5);
+  const branchSales = [...d.branches]
+    .map((b: Row) => ({ ...b, activations: b.closed_sales || 0 }))
+    .sort((a: Row, b: Row) => b.activations - a.activations)
+    .slice(0, 5);
   const metrics = [
     {
       label: "Transactions captured today",
@@ -203,7 +211,7 @@ export default function Dashboard() {
       path: "kyc-capture",
     },
     {
-      label: "Active field agents",
+      label: "Active field sales agents",
       value: d.active,
       sub: `Across ${d.branches.length} branches`,
       icon: Users,
@@ -220,11 +228,35 @@ export default function Dashboard() {
     },
   ];
   const work = [
-    { label: "Sales in progress", value: d.work_summary?.open_sales ?? 0, path: "sales", icon: ShoppingBag, tone: "violet" },
-    { label: "Calls ready", value: d.work_summary?.ready_calls ?? 0, path: "call-work", icon: Phone, tone: "blue" },
-    { label: "Stock requests", value: d.work_summary?.stock_requests ?? 0, path: "equipment", icon: Package, tone: "teal" },
-    { label: "Open support", value: d.work_summary?.open_support ?? 0, path: "support", icon: LifeBuoy, tone: "amber" },
-  ].filter(item => canVisitPage(item.path, user));
+    {
+      label: "Sales in progress",
+      value: d.work_summary?.open_sales ?? 0,
+      path: "sales",
+      icon: ShoppingBag,
+      tone: "violet",
+    },
+    {
+      label: "Calls ready",
+      value: d.work_summary?.ready_calls ?? 0,
+      path: "call-work",
+      icon: Phone,
+      tone: "blue",
+    },
+    {
+      label: "Stock requests",
+      value: d.work_summary?.stock_requests ?? 0,
+      path: "equipment",
+      icon: Package,
+      tone: "teal",
+    },
+    {
+      label: "Open support",
+      value: d.work_summary?.open_support ?? 0,
+      path: "support",
+      icon: LifeBuoy,
+      tone: "amber",
+    },
+  ].filter((item) => canVisitPage(item.path, user));
   return (
     <div className="premium-dashboard">
       <div className="page-header">
@@ -235,7 +267,6 @@ export default function Dashboard() {
           </h1>
           <p>Transactions, branch performance and work awaiting action.</p>
         </div>
-        <BranchFilter value={branch} onChange={setBranch} />
       </div>
       <section className="pulse-banner" aria-label="Live field summary">
         <div>
@@ -245,12 +276,18 @@ export default function Dashboard() {
           </div>
           <h2>Today’s field performance</h2>
           <p>
-            {d.agents.length} agents · {d.branches.length} branches · one
+            {d.agents.length} sales agents · {d.branches.length} branches · one
             connected workflow.
           </p>
-          <button className="primary" disabled={!canVisitPage("kyc-capture", user)} onClick={() => navigate("/kyc-capture")}>
+          <button
+            className="primary"
+            disabled={!canVisitPage("kyc-capture", user)}
+            onClick={() => navigate("/kyc-capture")}
+          >
             <ScanLine size={17} />
-            Capture transaction
+            {user.role === "Field Agent"
+              ? "Capture transaction"
+              : "Open backend verification"}
             <ArrowUpRight size={16} />
           </button>
         </div>
@@ -281,6 +318,9 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
+      <DailyProductTargets
+        rows={d.sales_performance?.daily_targets_by_product || []}
+      />
       <div className="premium-kpis">
         {metrics.map((m) => (
           <button
@@ -303,9 +343,26 @@ export default function Dashboard() {
         ))}
       </div>
       <div className="dashboard-work-strip" aria-label="Work awaiting action">
-        {work.map(item => <button key={item.path} className={`tone-${item.tone}`} onClick={() => navigate("/" + item.path + (item.path === "equipment" ? "?tab=requests" : ""))}>
-          <item.icon size={20} /><span><b>{item.value}</b><small>{item.label}</small></span><ArrowUpRight size={16} />
-        </button>)}
+        {work.map((item) => (
+          <button
+            key={item.path}
+            className={`tone-${item.tone}`}
+            onClick={() =>
+              navigate(
+                "/" +
+                  item.path +
+                  (item.path === "equipment" ? "?tab=requests" : ""),
+              )
+            }
+          >
+            <item.icon size={20} />
+            <span>
+              <b>{item.value}</b>
+              <small>{item.label}</small>
+            </span>
+            <ArrowUpRight size={16} />
+          </button>
+        ))}
       </div>
       <div className="analytics-main">
         <Panel
@@ -505,14 +562,15 @@ export default function Dashboard() {
             </span>
             <ArrowUpRight size={17} />
           </button>
-          <button disabled={!canVisitPage("activations", user)} onClick={() => navigate("/activations")}>
+          <button
+            disabled={!canVisitPage("activations", user)}
+            onClick={() => navigate("/activations")}
+          >
             <span className="priority-icon amber">
               <Sparkles />
             </span>
             <span>
-              <b>
-                {d.failed} failed activations
-              </b>
+              <b>{d.failed} failed activations</b>
               <small>Follow up with the backend team</small>
             </span>
             <ArrowUpRight size={17} />

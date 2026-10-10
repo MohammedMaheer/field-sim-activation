@@ -6,11 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
-from .db import Base, Agent, Branch, Customer, FieldTask, Incentive, Movement, Outlet, Role, Sim, User, get_db
+from .db import Base, Agent, Branch, Customer, FieldTask, Incentive, Movement, Outlet, Role, Session, Sim, User, get_db
 from .stock_categories import validate_category
 from .organization import administrator
 from .proposal import valid_amount, valid_period
-from .security import active_agent, principal
+from .security import active_agent, lifecycle_row_for_update, principal
 from .services import audit, raw
 
 router = APIRouter(prefix="/api/administration", tags=["Administration"])
@@ -80,12 +80,15 @@ def validated(db, kind, values, row=None):
                 len(str(value)) > (300 if kind == "incentives" and key == "note" else 500 if key == "note" else 180)):
             raise HTTPException(422, "Invalid field value")
     merged = {**(view(row, kind, db) if row else {}), **values}
-    required = {"agents": ["name", "email", "employee_id", "target"], "branches": ["name"], "teams": ["name", "email", "branch_id"],
+    required = {"agents": ["name", "email", "employee_id", "target"], "branches": ["name"], "teams": ["name", "email"],
                 "outlets": ["name", "branch_id"], "customers": ["name", "mobile", "agent_id"],
                 "inventory": ["iccid", "serial", "sim_type", "outlet_id"],
                 "tasks": ["title", "due_date", "agent_id"], "incentives": ["period", "amount", "agent_id"]}
     if any(not merged.get(key) for key in required[kind]):
         raise HTTPException(422, "Complete the required fields")
+    if kind == "teams" and values.get("branch_id") == "":
+        values["branch_id"] = None
+        merged["branch_id"] = None
     if "name" in values and len(values["name"]) < 2:
         raise HTTPException(422, "Name must contain at least two characters")
     limits = {"name": 120, "area": 120, "arabic_name": 120, "nationality": 80,
@@ -133,12 +136,12 @@ def validated(db, kind, values, row=None):
         agents = db.scalars(select(Agent).where(Agent.leader_id == row.id)).all()
         if any(db.get(Outlet, a.outlet_id).branch_id != merged["branch_id"] for a in agents):
             raise HTTPException(409, "Reassign this team's agents before changing its branch")
-        if merged["branch_id"] != row.branch_id:
+        if merged["branch_id"] != row.branch_id and row.branch_id:
+            # Serialize removal from the old roster with branch leader-list edits.
+            lifecycle_row_for_update(db, Branch, row.branch_id)
+        if merged["branch_id"] and merged["branch_id"] != row.branch_id:
             from .branch_lifecycle import active_branch
             active_branch(db, merged["branch_id"])
-            if db.scalar(select(User.id).join(Role).where(Role.name == "Team Leader",
-                    User.branch_id == merged["branch_id"], User.id != row.id)):
-                raise HTTPException(409, "This branch already has a team leader. Use branch leader assignment to replace it.")
     if kind == "outlets" and row and merged["branch_id"] != row.branch_id:
         if db.scalar(select(Agent.id).where(Agent.outlet_id == row.id)) or db.scalar(select(Sim.id).where(Sim.outlet_id == row.id)):
             raise HTTPException(409, "Reassign agents and stock before changing the outlet branch")
@@ -211,6 +214,10 @@ def update(kind: Kind, record_id: str, body: Change, request: Request, user=Depe
     for key, value in values.items():
         destination = db.get(User, row.user_id) if kind == "agents" and key in {"name", "email"} else row
         setattr(destination, key, value)
+    if kind == "teams" and any(before.get(key) != value for key, value in values.items()
+                                if key in {"branch_id", "email"}):
+        for session in db.scalars(select(Session).where(Session.user_id == row.id)):
+            session.revoked = True
     audit(db, user, "Admin " + kind + " updated", row.id, getattr(row, "agent_id", None),
           old=before, new=view(row, kind, db), reason=body.reason, request=request)
     try:

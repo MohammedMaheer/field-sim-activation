@@ -41,10 +41,13 @@ def router_required(order_type, details):
 
 
 @router.get("/staff")
-def staff(user=Depends(principal), db=Depends(get_db)):
+def staff(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only administrators and backend staff can manage sales staff")
-    users = db.scalars(select(User).join(Role).where(Role.name.in_(STAFF_ROLES)).order_by(User.name)).all()
+    query = select(User).join(Role).where(Role.name.in_(STAFF_ROLES))
+    if branch_id:
+        query = query.where(or_(User.branch_id == branch_id, User.branch_id.is_(None), Role.name == "Sales Manager"))
+    users = db.scalars(query.order_by(User.name)).all()
     return [{"id": row.id, "name": row.name, "email": row.email,
              "role": db.get(Role, row.role_id).name,
              "branch_id": row.branch_id,
@@ -138,7 +141,7 @@ def assigned_manager(db, branch_id):
 
 
 def can_record(db, user):
-    if db.get(Role, user.role_id).name not in {"Field Agent", "Administrator", "Operations Manager"}:
+    if db.get(Role, user.role_id).name not in {"Field Agent", "Operations Manager"} or "ekyc.write" not in permissions(db, user):
         raise HTTPException(403, "Only sales agents and backend management can record sales or feedback")
 
 
@@ -169,6 +172,8 @@ def scoped(db, user, model):
         query = query.where(model.leader_id == user.id)
     elif role == "Branch Manager":
         query = query.where(model.branch_id == user.branch_id)
+    elif role in {"Tele Verification Officer", "Welcome Call Officer"} and user.branch_id:
+        query = query.where(model.branch_id == user.branch_id)
     elif "read" not in permissions(db, user):
         raise HTTPException(403, "Your role cannot view sales")
     return query
@@ -176,7 +181,19 @@ def scoped(db, user, model):
 
 def sale_view(db, row):
     from .sr_verification import sale_state
+    from .activation_status import activation_presentation
     sr_state = sale_state(db, row)
+    capture = db.get(KycCapture, row.capture_id) if row.capture_id else None
+    external_recorded = row.details.get("external_activation_status") == "RECORDED"
+    if capture:
+        from .captures import payload
+        capture_data = payload(capture)
+        capture_data = capture_data if isinstance(capture_data, dict) else {}
+        captured_intake = capture_data.get("intake")
+        captured_intake = captured_intake if isinstance(captured_intake, dict) else {}
+        recorded_activation = capture_data.get("activation")
+        recorded_activation = recorded_activation if isinstance(recorded_activation, dict) else {}
+        external_recorded = external_recorded or captured_intake.get("capture_mode") in {"SCREENSHOT_SALE", "SCREENSHOT_ORDER"} or recorded_activation.get("status") == "ACTIVATED"
     agent, outlet = assignment(db, row.agent_id)
     document = cipher.decrypt(row.document_encrypted.encode()).decode() if row.document_encrypted else ""
     return {
@@ -195,6 +212,7 @@ def sale_view(db, row):
         "status": row.status, "status_updated_at": row.status_updated_at,
         **row.details,
         "sr_status": sr_state["status"], "sr_verification": sr_state,
+        **activation_presentation(row.status, sr_state["status"], capture.status if capture else "", external_recorded),
         "payment_record_status": row.details.get("payment_record_status") or "NOT_RECORDED",
         "router_fulfilment": (row.details.get("router_fulfilment") or "ON_SPOT") if row.order_type == "HW" else "",
         "stock_recording_status": "SERIAL_NOT_RECORDED" if not row.details.get("sim_serial") else "CONSUMED" if row.details.get("stock_deducted_sim_id") else "AWAITING_BACKEND_CONFIRMATION",
@@ -238,6 +256,10 @@ def register_capture_sale(db, capture):
     record.details = {**record.details, "payment_record_status": "RECORDED" if intake.get("payment_image") else "NOT_RECORDED"}
     db.add(record)
     db.flush()
+    from .capture_identity import claim_identities, identity_keys
+    claim_identities(db, identity_keys(request_ids=[reference], sr_numbers=[intake.get("sr_number")],
+                     encoded_images=[intake.get("order_image"), intake.get("payment_image")]),
+                     capture_id=capture.id, sale_id=record.id)
     customer = db.scalar(select(Customer).where(Customer.agent_id == agent.id, Customer.mobile == intake.get("msisdn", ""), Customer.name == record.customer_name))
     if not customer:
         customer = Customer(agent_id=agent.id, name=record.customer_name, mobile=intake.get("msisdn") or "", nationality=record.nationality)
@@ -393,7 +415,7 @@ def performance(period: str = "", user=Depends(principal), db=Depends(get_db), o
     product = {name: sum(row.order_type == name for row in closed) for name in ORDER_TYPES}
     today = now().replace(tzinfo=timezone.utc).astimezone(dubai).date()
     today_rows = [row for row in rows if row.created_at.replace(tzinfo=timezone.utc).astimezone(dubai).date() == today]
-    target_rows = targets(period, user, db)
+    target_rows = targets(period, user, db, branch_id)
     target_rows = [item for item in target_rows if
         (not agent_id or item["agent_id"] == agent_id)
         and (not branch_id or db.get(Outlet, db.get(Agent, item["agent_id"]).outlet_id).branch_id == branch_id)
@@ -404,6 +426,12 @@ def performance(period: str = "", user=Depends(principal), db=Depends(get_db), o
         by_agent.setdefault(target_row["agent_id"], []).append(target_row)
     target = sum(next((item["monthly_target"] for item in items if item["order_type"] == "ALL"),
                       sum(item["monthly_target"] for item in items)) for items in by_agent.values())
+    daily_target = sum(next((item["daily_target"] for item in items if item["order_type"] == "ALL"),
+                           sum(item["daily_target"] for item in items)) for items in by_agent.values())
+    def product_targets(field):
+        return [{"order_type": name,
+                 "target": sum(item[field] for item in target_rows if item["order_type"] == name) if any(item["order_type"] == name for item in target_rows) else None,
+                 "configured": any(item["order_type"] == name for item in target_rows)} for name in ORDER_TYPES]
     month_days = calendar.monthrange(year, month)[1]
     month_start, month_end = date(year, month, 1), date(year, month, month_days)
     elapsed_days = 0 if today < month_start else month_days if today > month_end else today.day
@@ -418,7 +446,10 @@ def performance(period: str = "", user=Depends(principal), db=Depends(get_db), o
     return {"period": period, "recorded": len(rows), "closed": len(closed),
             "in_progress": sum(row.status == "IN_PROGRESS" for row in rows),
             "cancelled": sum(row.status == "CANCELLED" for row in rows),
-            "monthly_target": target, "remaining": max(target - len(closed), 0),
+            "monthly_target": target, "daily_target": daily_target,
+            "daily_targets_by_product": product_targets("daily_target"),
+            "monthly_targets_by_product": product_targets("monthly_target"),
+            "remaining": max(target - len(closed), 0),
             "achievement_percent": round(len(closed) * 100 / target, 1) if target else None,
             "daily_by_product": {name: sum(row.order_type == name and row.status == "CLOSED" for row in today_rows) for name in ORDER_TYPES},
             "recorded_today": len(today_rows), "closed_today": sum(row.status == "CLOSED" for row in today_rows),
@@ -438,9 +469,8 @@ def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=
     if db.get(Role, user.role_id).name == "Sales Manager":
         raise HTTPException(403, "Sales Managers have reporting access")
     assert_agent(db, user, body.agent_id)
-    agent, outlet = assignment(db, body.agent_id)
-    from .branch_lifecycle import active_branch
-    active_branch(db, outlet.branch_id)
+    from .organization import capture_assignment
+    agent, outlet = capture_assignment(db, body.agent_id)
     values = body.model_dump()
     reference = values.pop("request_id").strip() or None
     if reference and db.scalar(select(SalesRecord.id).where(SalesRecord.request_id == reference)):
@@ -463,9 +493,12 @@ def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=
     db.add(row)
     try:
         db.flush()
+        from .capture_identity import claim_identities, identity_keys
+        claim_identities(db, identity_keys(request_ids=[reference], sr_numbers=[row.details.get("sr_number")]), sale_id=row.id)
     except IntegrityError:
         db.rollback()
-        raise HTTPException(409, "This request ID is already recorded") from None
+        from .capture_identity import DUPLICATE_MESSAGE
+        raise HTTPException(409, DUPLICATE_MESSAGE) from None
     create_call_tasks(db, row)
     audit(db, user, "Sale Recorded", row.id, row.agent_id, new={"order_type": order_type, "status": row.status}, request=request)
     db.commit()
@@ -514,8 +547,11 @@ class FeedbackCreate(BusinessInput):
 
 
 @router.get("/feedback")
-def feedback(user=Depends(principal), db=Depends(get_db)):
-    rows = db.scalars(scoped(db, user, NoSaleFeedback).order_by(NoSaleFeedback.created_at.desc()).limit(1000)).all()
+def feedback(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    query = scoped(db, user, NoSaleFeedback)
+    if branch_id:
+        query = query.where(NoSaleFeedback.branch_id == branch_id)
+    rows = db.scalars(query.order_by(NoSaleFeedback.created_at.desc()).limit(1000)).all()
     return [{"id": row.id, "created_at": row.created_at,
              "agent_id": row.agent_id, "agent": db.get(User, db.get(Agent, row.agent_id).user_id).name,
              "branch_id": row.branch_id, "customer_name": row.customer_name,
@@ -556,10 +592,11 @@ class TargetWrite(BusinessInput):
 
 
 @router.get("/targets")
-def targets(period: str = "", user=Depends(principal), db=Depends(get_db)):
+def targets(period: str = "", user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     if "read" not in permissions(db, user):
         raise HTTPException(403, "Your role cannot view targets")
-    query = select(SalesTarget)
+    from .security import visible_agents
+    query = select(SalesTarget).where(SalesTarget.agent_id.in_(visible_agents(db, user)))
     role = db.get(Role, user.role_id).name
     if role == "Field Agent":
         agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
@@ -570,6 +607,8 @@ def targets(period: str = "", user=Depends(principal), db=Depends(get_db)):
         query = query.where(SalesTarget.agent_id.in_(select(Agent.id).join(Outlet).where(Outlet.branch_id == user.branch_id)))
     if period:
         query = query.where(SalesTarget.period == period)
+    if branch_id:
+        query = query.where(SalesTarget.agent_id.in_(select(Agent.id).join(Outlet).where(Outlet.branch_id == branch_id)))
     rows = db.scalars(query.order_by(SalesTarget.period.desc(), SalesTarget.created_at.desc())).all()
     return [{"id": row.id, "agent_id": row.agent_id, "agent": db.get(User, db.get(Agent, row.agent_id).user_id).name,
              "period": row.period, "order_type": row.order_type,
@@ -620,7 +659,7 @@ def call_stage_access(db, user, stage):
         raise HTTPException(403, "Your role cannot record this call stage")
 
 
-def visible_call_rows(db, user):
+def visible_call_rows(db, user, branch_id=""):
     role = db.get(Role, user.role_id).name
     if role in {"Tele Verification Officer", "Welcome Call Officer"}:
         required = "call.tele.read" if role == "Tele Verification Officer" else "call.welcome.read"
@@ -631,6 +670,8 @@ def visible_call_rows(db, user):
             query = query.where(SalesRecord.branch_id == user.branch_id)
     else:
         query = scoped(db, user, SalesRecord)
+    if branch_id:
+        query = query.where(SalesRecord.branch_id == branch_id)
     return db.scalars(query.where(SalesRecord.order_type.in_(CALL_ORDER_TYPES)).order_by(SalesRecord.created_at.desc()).limit(1000)).all()
 
 
@@ -676,8 +717,8 @@ def call_task_view(db, row, task, tele):
 
 
 @router.get("/call-tasks")
-def call_tasks(user=Depends(principal), db=Depends(get_db)):
-    rows = visible_call_rows(db, user)
+def call_tasks(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    rows = visible_call_rows(db, user, branch_id)
     sale_ids = [row.id for row in rows]
     if not sale_ids:
         return []
@@ -691,8 +732,8 @@ def call_tasks(user=Depends(principal), db=Depends(get_db)):
 
 
 @router.get("/call-tasks/summary")
-def call_task_summary(user=Depends(principal), db=Depends(get_db)):
-    tasks = call_tasks(user, db)
+def call_task_summary(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    tasks = call_tasks(user, db, branch_id)
     return {"actionable": sum(task["status"] in {"PENDING", "FAILED"} for task in tasks),
             "pending_tele": sum(task["stage"] == "TELE_VERIFICATION" and task["status"] == "PENDING" for task in tasks),
             "pending_welcome": sum(task["stage"] == "WELCOME_CALL" and task["status"] == "PENDING" for task in tasks),
@@ -702,8 +743,8 @@ def call_task_summary(user=Depends(principal), db=Depends(get_db)):
 
 
 @router.get("/calls")
-def call_queue(user=Depends(principal), db=Depends(get_db)):
-    rows = visible_call_rows(db, user)
+def call_queue(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    rows = visible_call_rows(db, user, branch_id)
     attempts = db.scalars(select(CallAttempt).where(CallAttempt.sale_id.in_([r.id for r in rows])).order_by(CallAttempt.created_at)).all()
     restricted = task_stage_filter(db, user)
     by_sale = {}
@@ -900,7 +941,7 @@ def table_download(columns, rows, filename, format="csv"):
 
 
 @router.get("/targets/template")
-def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", user=Depends(principal), db=Depends(get_db)):
+def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager", "Team Leader"}:
         raise HTTPException(403, "Your role cannot upload targets")
     period = period or business_date(now()).strftime("%Y-%m")
@@ -908,7 +949,10 @@ def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", u
         raise HTTPException(422, "Period must use YYYY-MM")
     from .security import visible_agents
     rows = []
-    for agent in db.scalars(select(Agent).where(Agent.id.in_(visible_agents(db, user)), Agent.employment_status == "ACTIVE")):
+    query = select(Agent).where(Agent.id.in_(visible_agents(db, user)), Agent.employment_status == "ACTIVE")
+    if branch_id:
+        query = query.join(Outlet).where(Outlet.branch_id == branch_id)
+    for agent in db.scalars(query):
         existing = db.scalars(select(SalesTarget).where(SalesTarget.agent_id == agent.id, SalesTarget.period == period)).all()
         for row in existing:
             rows.append([agent.employee_id, period, row.order_type, row.daily_target, row.monthly_target, row.daily_target, row.monthly_target])

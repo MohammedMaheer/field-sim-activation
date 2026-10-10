@@ -93,6 +93,7 @@ class SharedPreviewService extends RelayService {
     'Success',
     'Order created successfully',
     'Request Id: ${reference ?? sampleReference ?? "Not recorded"}',
+    'SR Number: SAMPLE-SR-${DateTime.now().microsecondsSinceEpoch}',
     'Customer: Avery Stone',
     'Date: ${DateTime.now().toIso8601String().substring(0, 10)}',
   ]);

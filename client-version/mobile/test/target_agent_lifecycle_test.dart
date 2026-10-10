@@ -69,7 +69,7 @@ void main() {
       await tester.tap(find.text('Set target'));
       await tester.pumpAndSettle();
       await tester.tap(
-        find.widgetWithText(DropdownButtonFormField<String>, 'Agent'),
+        find.widgetWithText(DropdownButtonFormField<String>, 'Sales agent'),
       );
       await tester.pumpAndSettle();
       expect(find.text('Current agent'), findsWidgets);

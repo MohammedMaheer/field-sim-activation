@@ -10,9 +10,16 @@ from .security import principal, permissions, visible_agents
 router = APIRouter(prefix="/api/notifications", tags=["Notifications"])
 
 
+def notification_access(db, user):
+    granted = permissions(db, user)
+    if not granted & {"read", "call.tele.read", "call.welcome.read"}:
+        raise HTTPException(403, "Your role cannot view notifications")
+    return granted
+
+
 def categories(db, user):
     role = db.get(Role, user.role_id).name
-    granted = permissions(db, user)
+    granted = notification_access(db, user)
     result = []
     if role in {"Administrator", "Operations Manager", "Compliance Officer", "Field Agent", "Team Leader", "Branch Manager", "Sales Manager"}:
         result.append("Transactions")
@@ -28,7 +35,7 @@ def categories(db, user):
 
 
 def feed(db, user):
-    granted = permissions(db, user)
+    granted = notification_access(db, user)
     role = db.get(Role, user.role_id).name
     agents = visible_agents(db, user)
     result = []

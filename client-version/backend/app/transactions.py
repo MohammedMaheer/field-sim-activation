@@ -16,7 +16,7 @@ from PIL import Image, ImageDraw
 from .db import Order, OrderEvent, Plan, Sim, Customer, Document, Ekyc, get_db, now, business_date
 from .security import principal, require, assert_agent, visible_agents, cipher
 from .services import audit, order_view, raw, submit
-from .capture_ocr import extractor, inspect_image
+from .capture_ocr import extractor, inspect_image, OcrBusy
 from . import providers
 
 router = APIRouter(prefix="/api/transactions", tags=["Reference transaction journey"])
@@ -95,6 +95,8 @@ def start(body: Start, request: Request, user=Depends(principal), db=Depends(get
         if order.agent_id != body.agent_id or "transaction_data" not in order.draft:
             raise HTTPException(409, "Operation already used")
         return view(db, order)
+    from .organization import capture_assignment
+    capture_assignment(db, body.agent_id)
     ref = secrets.token_hex(5).upper()
     order = Order(
         agent_id=body.agent_id,
@@ -195,6 +197,8 @@ def scan(
         binary = base64.b64decode(body.image_base64, validate=True)
         inspect_image(binary)
         result = extractor.extract(binary)
+    except OcrBusy:
+        raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
     except (ValueError, RuntimeError, OSError, subprocess.TimeoutExpired) as exc:
         raise HTTPException(
             422, "Image could not be extracted. Use a clear PNG/JPEG demo document."

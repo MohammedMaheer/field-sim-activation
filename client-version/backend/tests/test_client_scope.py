@@ -63,7 +63,7 @@ def test_sales_manager_snapshot_and_full_report(client):
     from app.db import Role, User, Outlet
     from app.security import password_hash
     from uuid import uuid4
-    login(client)
+    login(client, "ops")
     agent = client.get('/api/resources/agents').json()[0]
     with DB() as db:
         existing = db.scalars(select(User).join(Role).where(Role.name=='Sales Manager',User.branch_id==agent['branch_id'])).all()
@@ -381,10 +381,10 @@ def database():
 def review_regression_cleanup(database):
     """Keep deliberately malformed review fixtures out of unrelated workflow tests."""
     from sqlalchemy import delete
-    from app.db import (KycCapture, SimProgress, SalesRecord, SalesCallTask, CallAttempt,
+    from app.db import (KycCapture, CaptureIdentityClaim, SimProgress, SalesRecord, SalesCallTask, CallAttempt,
                         Notification, Movement, Customer, Sim)
 
-    models = (CallAttempt, SalesCallTask, SimProgress, SalesRecord, Movement,
+    models = (CaptureIdentityClaim, CallAttempt, SalesCallTask, SimProgress, SalesRecord, Movement,
               KycCapture, Sim, Customer, Notification, Audit)
     with DB() as db:
         existing = {model: set(db.scalars(select(model.id))) for model in models}
@@ -862,11 +862,11 @@ def test_capture_lifecycle_access_and_excel(client, monkeypatch, dynamic):
     login(client, "agent1")
     agent = client.get("/api/auth/me").json()["agent_id"]
     image = io.BytesIO()
-    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    Image.new("RGB", (400, 200), tuple(__import__("uuid").uuid4().bytes[:3])).save(image, format="PNG")
     body = {
         "agent_id": agent,
         "operation_id": str(__import__("uuid").uuid4()),
-        "source_reference": "DEMO-CAPTURE",
+        "source_reference": "DEMO-CAPTURE-" + str(__import__("uuid").uuid4()),
         "image_base64": base64.b64encode(image.getvalue()).decode(),
     }
     created = client.post("/api/kyc-captures", json=body)
@@ -1165,7 +1165,7 @@ def test_organization_setup_is_atomic_scoped_and_audited(client):
     )
 
 
-def test_agent_can_be_assigned_directly_to_a_branch(client):
+def test_new_agent_requires_explicit_designated_branch_leader(client):
     login(client)
     branch = client.post("/api/organization/branches", json={"name": "Direct Agent Branch"})
     assert branch.status_code == 201, branch.text
@@ -1177,11 +1177,18 @@ def test_agent_can_be_assigned_directly_to_a_branch(client):
         "password": "test-client-password",
         "target": 18,
     }
-    created = client.post("/api/organization/agents", json=payload)
+    denied = client.post("/api/organization/agents", json=payload)
+    assert denied.status_code == 422 and "team leader" in denied.text
+    team = client.post("/api/organization/teams", json={"name": "Direct branch leader",
+        "branch_id": branch.json()["id"], "email": "direct.leader@relay.demo",
+        "password": "test-client-password"})
+    assert team.status_code == 201, team.text
+    assert client.post("/api/organization/agents", json=payload).status_code == 422
+    created = client.post("/api/organization/agents", json={**payload, "leader_id": team.json()["id"]})
     assert created.status_code == 201, created.text
     assert created.json()["branch_id"] == branch.json()["id"]
     with DB() as db:
-        assert db.get(Agent, created.json()["id"]).leader_id is None
+        assert db.get(Agent, created.json()["id"]).leader_id == team.json()["id"]
     login(client, "direct.agent")
     assert [a["id"] for a in client.get("/api/resources/agents").json()] == [created.json()["id"]]
 
@@ -1194,7 +1201,7 @@ def test_failed_image_extraction_can_be_completed_manually(client):
     login(client, "agent1")
     agent_id = client.get("/api/auth/me").json()["agent_id"]
     image = io.BytesIO()
-    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    Image.new("RGB", (400, 200), tuple(__import__("uuid").uuid4().bytes[:3])).save(image, format="PNG")
     encoded = base64.b64encode(image.getvalue()).decode()
     plan_id = client.get("/api/resources/plans").json()[0]["id"]
     created = client.post("/api/kyc-captures", json={
@@ -1468,7 +1475,7 @@ def test_intake_draft_and_independent_review_without_payment(client, monkeypatch
     login(client, "agent1")
     agent = client.get("/api/auth/me").json()["agent_id"]
     image = io.BytesIO()
-    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    Image.new("RGB", (400, 200), tuple(__import__("uuid").uuid4().bytes[:3])).save(image, format="PNG")
     encoded = base64.b64encode(image.getvalue()).decode()
     intake = {
         "name": "Sample Customer",
@@ -1784,7 +1791,7 @@ def test_document_readability_proof_rejects_manual_fields_and_image_swaps(client
     from PIL import Image
     login(client, "agent1")
     image = io.BytesIO()
-    Image.new("RGB", (400, 200), "white").save(image, format="PNG")
+    Image.new("RGB", (400, 200), tuple(__import__("uuid").uuid4().bytes[:3])).save(image, format="PNG")
     encoded = base64.b64encode(image.getvalue()).decode()
     monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines": [{"text":"A random holiday photograph"}]})
     unreadable = client.post("/api/kyc-captures/read-document", json={"image_base64":encoded})
@@ -1842,16 +1849,19 @@ def test_sim_pack_parsing_and_claims_are_scoped(client):
     stock=next(s for s in client.get('/api/resources/inventory').json() if s['agent_id'] and s['status']=='AVAILABLE')
     agent_id=stock['agent_id']
     tx=str(uuid4())
+    assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==403
+    login(client,'ops')
     claim=client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx})
     assert claim.status_code==200, claim.text
     assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==200
+    login(client,'admin')
     notification = client.get('/api/inventory/scan-notifications').json()[0]
     assert notification['sim_id'] == stock['id']
     login(client,'agent2')
     if client.get('/api/auth/me').json()['agent_id'] != agent_id:
         assert client.post('/api/inventory/scan',json={'code':stock['iccid'],'agent_id':agent_id,'transaction_id':tx}).status_code==404
         assert client.delete('/api/inventory/scan/'+tx).status_code==404
-    login(client,'admin')
+    login(client,'ops')
     assert client.delete('/api/inventory/scan/'+tx).status_code==200
 
 
@@ -1943,7 +1953,7 @@ def test_customer_order_screen_capture_requires_evidence_and_preserves_amounts(c
 
 def test_backend_confirmation_notifies_scoped_read_only_leader(client):
     from app import captures
-    from app.db import KycCapture, Notification, User
+    from app.db import KycCapture, Notification, Outlet, User
     from uuid import uuid4
 
     login(client, "admin")
@@ -1957,6 +1967,7 @@ def test_backend_confirmation_notifies_scoped_read_only_leader(client):
         agent = db.scalar(select(Agent).where(Agent.leader_id == leader["id"]))
         record = KycCapture(
             id=str(uuid4()),
+            branch_id=db.get(Outlet, agent.outlet_id).branch_id,
             agent_id=agent.id,
             creator_id=agent.user_id,
             operation_id=str(uuid4()),
@@ -2084,10 +2095,10 @@ def test_order_payment_record_has_no_inferred_payment_values():
 
 
 def test_sales_management_scope_targets_and_status_file(client):
-    from app.db import SalesRecord, CallAttempt, SalesCallTask
+    from app.db import SalesRecord, CaptureIdentityClaim, CallAttempt, SalesCallTask
     from sqlalchemy import delete
 
-    login(client, "admin")
+    login(client, "ops")
     agents = client.get("/api/resources/agents").json()
     first = next(row for row in agents if row["employee_id"] == "RLY-1041")
     other_branch = next(row for row in agents if row["employee_id"] == "RLY-1044")
@@ -2139,6 +2150,7 @@ def test_sales_management_scope_targets_and_status_file(client):
     with DB() as db:
         db.execute(delete(CallAttempt).where(CallAttempt.sale_id == sale_id))
         db.execute(delete(SalesCallTask).where(SalesCallTask.sale_id == sale_id))
+        db.execute(delete(CaptureIdentityClaim).where(CaptureIdentityClaim.sale_id == sale_id))
         db.delete(db.get(SalesRecord, sale_id))
         db.commit()
 
@@ -2203,9 +2215,9 @@ def test_field_assets_track_assignment_requests_and_scope(client):
 
 
 def test_call_tasks_roles_and_sequential_release(client):
-    from app.db import SalesRecord, SalesCallTask, CallAttempt, User
+    from app.db import SalesRecord, CaptureIdentityClaim, SalesCallTask, CallAttempt, User
     from sqlalchemy import delete
-    login(client, "admin")
+    login(client, "ops")
     agents = client.get("/api/resources/agents").json()
     first = next(row for row in agents if row["employee_id"] == "RLY-1041")
     other = next(row for row in agents if row["employee_id"] == "RLY-1044")
@@ -2254,6 +2266,7 @@ def test_call_tasks_roles_and_sequential_release(client):
     with DB() as db:
         db.execute(delete(CallAttempt).where(CallAttempt.sale_id == sale_id))
         db.execute(delete(SalesCallTask).where(SalesCallTask.sale_id == sale_id))
+        db.execute(delete(CaptureIdentityClaim).where(CaptureIdentityClaim.sale_id == sale_id))
         db.delete(db.get(SalesRecord, sale_id))
         db.delete(db.get(User, created_staff.json()["id"]))
         db.commit()
@@ -2304,6 +2317,7 @@ def test_agent_transfer_moves_stock_and_exit_requires_returns(client):
         origin_branch = db.scalar(select(Branch).where(Branch.name == "Abu Dhabi Region"))
         origin = db.scalar(select(Outlet).where(Outlet.branch_id == origin_branch.id))
         target = db.scalar(select(Branch.id).where(Branch.name == "Dubai Central"))
+        target_leader = db.scalar(select(User.id).join(Role).where(Role.name == "Team Leader", User.branch_id == target))
         role_id = db.scalar(select(Role.id).where(Role.name == "Field Agent"))
         person = User(name="Transfer Test", email="transfer-test@relay.demo", password_hash=password_hash("test-client-password"), role_id=role_id, branch_id=origin.branch_id)
         db.add(person)
@@ -2318,7 +2332,7 @@ def test_agent_transfer_moves_stock_and_exit_requires_returns(client):
         agent_id, asset_id, sim_id, user_id = agent.id,asset.id,sim.id,person.id
     login(client)
     assert client.post(f"/api/field-assets/agents/{agent_id}/exit", json={"reason":"Employee leaving"}).status_code == 409
-    moved = client.post(f"/api/field-assets/agents/{agent_id}/transfer", json={"branch_id":target,"stock_action":"TRANSFER","reason":"New branch assignment"})
+    moved = client.post(f"/api/field-assets/agents/{agent_id}/transfer", json={"branch_id":target,"leader_id":target_leader,"stock_action":"TRANSFER","reason":"New branch assignment"})
     assert moved.status_code == 200, moved.text
     with DB() as db:
         assert db.get(FieldAsset,asset_id).branch_id == target
@@ -2378,7 +2392,7 @@ def test_stock_request_response_is_visible_only_to_assigned_scope(client):
 def test_target_change_keeps_designated_branch_leader(client):
     login(client)
     agent = next(row for row in client.get("/api/resources/agents").json() if row["employee_id"] == "RLY-1041")
-    response = client.patch(f"/api/agents/{agent['id']}/management", json={"target":agent["target"]+1, "outlet_id":agent["outlet_id"], "leader_id":None, "expected_target":agent["target"], "expected_outlet_id":agent["outlet_id"], "expected_leader_id":agent["leader_id"], "reason":"Change target without changing supervisor"})
+    response = client.patch(f"/api/agents/{agent['id']}/management", json={"target":agent["target"]+1, "outlet_id":agent["outlet_id"], "leader_id":agent["leader_id"], "expected_target":agent["target"], "expected_outlet_id":agent["outlet_id"], "expected_leader_id":agent["leader_id"], "reason":"Change target without changing supervisor"})
     assert response.status_code == 200, response.text
     assert response.json()["leader_id"] == agent["leader_id"]
 
@@ -2386,7 +2400,7 @@ def test_target_change_keeps_designated_branch_leader(client):
 def test_sales_date_filters_use_business_dates_and_export_same_records(client):
     from datetime import datetime
     from app.db import SalesRecord
-    login(client)
+    login(client, "ops")
     agent = next(row for row in client.get('/api/resources/agents').json() if row['employee_id']=='RLY-1041')
     ids=[]
     for day in [31, 30]:
@@ -2684,8 +2698,10 @@ def test_agent_transfer_preserves_consumed_stock_history(client):
     leader = client.post('/api/organization/teams', json={'name': 'Destination Leader', 'branch_id': target,
         'email': f'consumed-leader-{token}@relay.demo', 'password': 'test-client-password'})
     assert leader.status_code == 201, leader.text
+    source_leader = client.post('/api/organization/teams', json={'name': 'Origin Leader', 'branch_id': source,
+        'email': f'consumed-origin-leader-{token}@relay.demo', 'password': 'test-client-password'}).json()['id']
     agent = client.post('/api/organization/agents', json={'name': 'Consumption history agent', 'branch_id': source,
-        'email': f'consumed-agent-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'CONSUMED-' + token}).json()['id']
+        'leader_id': source_leader, 'email': f'consumed-agent-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'CONSUMED-' + token}).json()['id']
     stock = client.post('/api/field-assets', json={'category': 'UNIFORM', 'label': 'Issued uniform', 'quantity': 1, 'branch_id': source}).json()['id']
     endpoint = '/api/field-assets/' + stock
     assert client.patch(endpoint, json={'branch_id': source, 'agent_id': agent, 'status': 'ASSIGNED', 'reason': 'Uniform issued to employee'}).status_code == 200
@@ -2693,7 +2709,7 @@ def test_agent_transfer_preserves_consumed_stock_history(client):
     assert client.get('/api/field-assets/report/checklist?agent_id=' + agent).json()['clear']
     with DB() as db:
         history = list(db.scalars(select(FieldAssetMovement.id).where(FieldAssetMovement.asset_id == stock)))
-    moved = client.post('/api/field-assets/agents/' + agent + '/transfer', json={'branch_id': target, 'stock_action': 'TRANSFER', 'reason': 'Transfer after stock accounted for'})
+    moved = client.post('/api/field-assets/agents/' + agent + '/transfer', json={'branch_id': target, 'leader_id': leader.json()['id'], 'stock_action': 'TRANSFER', 'reason': 'Transfer after stock accounted for'})
     assert moved.status_code == 200, moved.text
     with DB() as db:
         item = db.get(FieldAsset, stock)
@@ -2707,8 +2723,10 @@ def test_exited_agents_cannot_receive_new_stock(client):
     login(client)
     token = str(uuid4())[:8]
     branch = client.post('/api/organization/branches', json={'name': 'Exited stock ' + token}).json()['id']
+    designated_leader = client.post('/api/organization/teams', json={'name': 'Exit stock leader', 'branch_id': branch,
+        'email': f'exited-leader-{token}@relay.demo', 'password': 'test-client-password'}).json()['id']
     agent = client.post('/api/organization/agents', json={'name': 'Closed stock account', 'branch_id': branch,
-        'email': f'exited-stock-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'EXITED-' + token}).json()['id']
+        'leader_id': designated_leader, 'email': f'exited-stock-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'EXITED-' + token}).json()['id']
     outlet = next(row['id'] for row in client.get('/api/resources/outlets').json() if row['branch_id'] == branch)
     assert client.post('/api/field-assets/agents/' + agent + '/exit', json={'reason': 'Employee access closed'}).status_code == 200
     assets = [client.post('/api/field-assets', json={'category': 'UNIFORM', 'label': 'Available stock', 'quantity': 2, 'branch_id': branch}).json()['id'] for _ in range(2)]
@@ -2738,7 +2756,7 @@ def test_exited_agents_cannot_receive_new_stock(client):
 
 
 @pytest.mark.parametrize('destination_state', ['CLOSING', 'HAS_LEADER'])
-def test_team_leader_editor_cannot_bypass_branch_assignment_rules(client, destination_state):
+def test_team_leader_editor_respects_branch_lifecycle_and_allows_multiple_leaders(client, destination_state):
     from app.db import User
     from uuid import uuid4
     login(client)
@@ -2753,9 +2771,9 @@ def test_team_leader_editor_cannot_bypass_branch_assignment_rules(client, destin
             'email': f'leader-rule-destination-{token}@relay.demo', 'password': 'test-client-password'}).status_code == 201
     response = client.patch('/api/administration/teams/' + leader, json={'values': {'branch_id': branches[1]},
         'expected': {'branch_id': branches[0]}, 'reason': 'Cannot bypass branch assignment rules'})
-    assert response.status_code == 409, response.text
+    assert response.status_code == (409 if destination_state == 'CLOSING' else 200), response.text
     with DB() as db:
-        assert db.get(User, leader).branch_id == branches[0]
+        assert db.get(User, leader).branch_id == branches[0 if destination_state == 'CLOSING' else 1]
 
 
 def test_single_target_write_rejects_exited_agents_and_preserves_history(client):
@@ -2763,8 +2781,10 @@ def test_single_target_write_rejects_exited_agents_and_preserves_history(client)
     login(client)
     token = str(uuid4())[:8]
     branch = client.post('/api/organization/branches', json={'name': 'Target history ' + token}).json()['id']
+    designated_leader = client.post('/api/organization/teams', json={'name': 'Target history leader', 'branch_id': branch,
+        'email': f'target-leader-{token}@relay.demo', 'password': 'test-client-password'}).json()['id']
     agent = client.post('/api/organization/agents', json={'name': 'Historic target agent', 'branch_id': branch,
-        'email': f'target-exit-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'TARGET-' + token}).json()['id']
+        'leader_id': designated_leader, 'email': f'target-exit-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'TARGET-' + token}).json()['id']
     original = {'agent_id': agent, 'period': '2030-03', 'order_type': 'ALL', 'daily_target': 2, 'monthly_target': 50}
     assert client.put('/api/sales-management/targets', json=original).status_code == 200
     assert client.post('/api/field-assets/agents/' + agent + '/exit', json={'reason': 'Close employee account'}).status_code == 200
@@ -2814,8 +2834,10 @@ def test_lifecycle_locks_refresh_cached_agent_and_branch(client):
     login(client)
     token = str(uuid4())[:8]
     branch = client.post('/api/organization/branches', json={'name': 'Cached lifecycle ' + token}).json()['id']
+    designated_leader = client.post('/api/organization/teams', json={'name': 'Cached lifecycle leader', 'branch_id': branch,
+        'email': f'cached-leader-{token}@relay.demo', 'password': 'test-client-password'}).json()['id']
     agent = client.post('/api/organization/agents', json={'name': 'Cached lifecycle agent', 'branch_id': branch,
-        'email': f'cached-lifecycle-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'CACHE-' + token}).json()['id']
+        'leader_id': designated_leader, 'email': f'cached-lifecycle-{token}@relay.demo', 'password': 'test-client-password', 'employee_id': 'CACHE-' + token}).json()['id']
     with DB() as cached, DB() as changed:
         previous_agent = cached.get(Agent, agent)
         previous_branch = cached.get(Branch, branch)

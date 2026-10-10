@@ -34,7 +34,7 @@ def smtp_ready():
     return os.getenv("SMTP_ENABLED", "false").casefold() == "true" and bool(os.getenv("SMTP_HOST") and os.getenv("SMTP_FROM"))
 
 
-def queue_sr_email(db, sale, user_id, batch_id, status, reason):
+def queue_sr_email(db, sale, user_id, batch_id, status, reason, *, evaluation=False):
     person = db.get(User, user_id)
     if not person:
         return
@@ -43,6 +43,8 @@ def queue_sr_email(db, sale, user_id, batch_id, status, reason):
     link = f"{base}/sales?selected={sale.id}"
     db.add(EmailOutbox(event_key=f"sr:{batch_id}:{sale.id}", user_id=user_id, sale_id=sale.id,
                        recipient_encrypted=cipher.encrypt(person.email.encode()).decode(),
+                       status="SKIPPED" if evaluation else "QUEUED",
+                       last_error="Synthetic evaluation alert; external delivery disabled" if evaluation else "",
                        subject=f"Relay | {label}",
                        body=f"{label}\n{reason}\nSale reference: {sale.request_id or sale.id}\nReview the sale: {link}\nActivation status: {sale.status}\n"))
 

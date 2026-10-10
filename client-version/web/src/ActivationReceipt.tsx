@@ -1,3 +1,4 @@
+import { activationLabel } from "./ActivationStatus";
 import { Link } from "react-router-dom";
 import { useState } from "react";
 import {
@@ -40,9 +41,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
   const title = saleMode
     ? capture.status === "REJECTED"
       ? "Correction required"
-      : success
-        ? "Sale verified"
-        : "Sale submitted"
+      : activationLabel(capture)
     : payment
       ? capture.invoice?.heading ||
         (orderMode ? "Payment recorded" : "Payment successful")
@@ -69,7 +68,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
       ? ["Request ID", "Plan", "Monthly charge", "Prepayment on order"]
       : ["SIM type", "SIM serial", "Plan", "Plan price"],
     Payment: orderMode
-      ? ["Agent payment record", "Backend confirmation"]
+      ? ["Sales agent payment record", "Backend confirmation"]
       : ["Payment reference", "Total paid"],
     Sale: [
       "Request ID",

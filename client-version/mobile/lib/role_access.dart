@@ -16,21 +16,32 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
   if (user == null || !knownRoles.contains(user['role'])) return false;
   final role = user['role'];
   final permissions = (user['permissions'] as List? ?? []).cast<String>();
-  if (path == '/notifications') return true;
+  if (path == '/notifications') {
+    return permissions.any(
+      (permission) =>
+          ['read', 'call.tele.read', 'call.welcome.read'].contains(permission),
+    );
+  }
   if (['Tele Verification Officer', 'Welcome Call Officer'].contains(role)) {
-    return path == '/call-work';
+    return path == '/call-work' &&
+        permissions.contains(
+          role == 'Tele Verification Officer'
+              ? 'call.tele.read'
+              : 'call.welcome.read',
+        );
   }
   if (role == 'Sales Manager') {
-    return [
-      '/sales-management',
-      '/assets',
-      '/reports',
-      '/incentives',
-      '/stock',
-      '/records',
-      '/customers',
-      '/transactions',
-    ].contains(path);
+    return path.startsWith('/transaction/') ||
+        [
+          '/sales-management',
+          '/assets',
+          '/reports',
+          '/incentives',
+          '/stock',
+          '/records',
+          '/customers',
+          '/transactions',
+        ].contains(path);
   }
   if (role == 'Compliance Officer' &&
       ['/assets', '/stock', '/incentives', '/support'].contains(path)) {
@@ -38,11 +49,7 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
   }
   if (path == '/call-work') return permissions.contains('compliance.write');
   if (['/ekyc', '/screenshot-capture', '/drafts'].contains(path)) {
-    return [
-          'Field Agent',
-          'Administrator',
-          'Operations Manager',
-        ].contains(role) &&
+    return ['Field Agent', 'Operations Manager'].contains(role) &&
         permissions.contains('ekyc.write');
   }
   if (path == '/transactions' || path.startsWith('/transaction/')) {

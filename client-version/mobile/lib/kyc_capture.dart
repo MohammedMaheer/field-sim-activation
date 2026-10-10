@@ -16,6 +16,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'services.dart';
 import 'experience.dart';
+import 'role_access.dart';
+import 'receipt_sr.dart';
 
 class KycCaptureScreen extends ConsumerStatefulWidget {
   final Json initial;
@@ -34,6 +36,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   final historyKey = GlobalKey();
   final receiptScroll = ScrollController();
   Uint8List? bytes;
+  String? receiptOriginalSr;
+  String? receiptSrNotice;
   String operation = const Uuid().v4();
   List<Json> captures = [], rows = [];
   Json? capture;
@@ -194,6 +198,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           source.text = intake['order_reference']?.toString() ?? "";
           pending = false;
         });
+        if (sample != null) await readReceiptSr(sample);
         await saveDraft();
         return;
       }
@@ -214,8 +219,47 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         operation = const Uuid().v4();
         pending = false;
       });
+      await readReceiptSr(data);
       await saveDraft();
     });
+  }
+
+  Future<void> readReceiptSr(Uint8List image) async {
+    if (intake['capture_mode'] != 'SCREENSHOT_SALE') return;
+    receiptOriginalSr ??= (intake['receipt_sr_check'] ?? '').toString().isEmpty
+        ? (intake['sr_number'] ?? '').toString()
+        : '';
+    intake.remove('receipt_sr_check');
+    intake['sr_number'] = receiptOriginalSr;
+    if (mounted) setState(() => receiptSrNotice = 'Reading SR number…');
+    try {
+      final response = await ref
+          .read(serviceProvider)
+          .dio
+          .post(
+            '/kyc-captures/receipt-fields',
+            data: {'image_base64': base64Encode(image)},
+          );
+      final fields = receiptSrFields(
+        Json.from(response.data),
+        fallbackSr: receiptOriginalSr ?? '',
+      );
+      if (!mounted) return;
+      setState(() {
+        intake.addAll(fields);
+        receiptSrNotice =
+            (fields['receipt_sr_check'] ?? '').toString().isNotEmpty
+            ? 'SR number read from receipt'
+            : 'SR number not shown on receipt';
+      });
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => receiptSrNotice =
+              'SR number not read · backend verification pending',
+        );
+      }
+    }
   }
 
   Future<void> upload() async {
@@ -499,9 +543,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         ),
       );
     }
-    final canWrite =
-        (ref.watch(serviceProvider).user?['permissions'] as List? ?? [])
-            .contains('ekyc.write');
+    final canWrite = canVisitMobilePage(
+      '/ekyc',
+      ref.watch(serviceProvider).user,
+    );
     final editable =
         canWrite &&
         capture != null &&
@@ -967,6 +1012,10 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       ),
                       gap(),
                       const Text('Image ready to upload'),
+                      if (saleFlow && receiptSrNotice != null) ...[
+                        const SizedBox(height: 6),
+                        Text(receiptSrNotice!, style: RelayTypography.caption),
+                      ],
                       gap(),
                     ],
                     FilledButton(

@@ -17,13 +17,16 @@ void main() {
       });
       expect(invoice['heading'], 'Payment recorded');
       expect(invoice['status'], 'Pending backend confirmation');
-      expect([for (final section in invoice['sections']) for (final field in section['fields']) field['label']], isNot(contains('Customer signature')));
+      expect([
+        for (final section in invoice['sections'])
+          for (final field in section['fields']) field['label'],
+      ], isNot(contains('Customer signature')));
       final payment = (invoice['sections'] as List).firstWhere(
         (s) => s['title'] == 'Payment',
       );
       expect(
         [for (final f in payment['fields']) f['label']],
-        ['Request ID', 'Agent payment record', 'Backend confirmation'],
+        ['Request ID', 'Sales agent payment record', 'Backend confirmation'],
       );
     },
   );

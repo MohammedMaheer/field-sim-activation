@@ -16,7 +16,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select, delete, or_, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, TimeoutError as DatabasePoolTimeout
+from fastapi.responses import JSONResponse
 from .notifications import router as notifications_router
 from .db import *
 from .security import *
@@ -99,6 +100,14 @@ async def lifespan(app):
 
 
 app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
+
+
+@app.exception_handler(DatabasePoolTimeout)
+async def database_capacity(request: Request, exc: DatabasePoolTimeout):
+    return JSONResponse({"detail": "The service is busy. Try again shortly."}, status_code=503,
+                        headers={"Retry-After": "2", "Cache-Control": "no-store"})
+
+
 app.include_router(notifications_router)
 app.include_router(capture_router)
 app.include_router(inventory_bulk_router)
@@ -364,6 +373,19 @@ def revoke(session_id: str, request: Request, user=Depends(principal), db=Depend
 
 def records(resource, db, user, branch_id=""):
     """All branch filters intersect the authenticated user scope."""
+    call_grants = {"Tele Verification Officer": "call.tele.read",
+                   "Welcome Call Officer": "call.welcome.read"}
+    role_name = db.get(Role, user.role_id).name
+    if resource == "branches" and role_name in call_grants:
+        # Call queues need location labels, not the wider sales/resource surface.
+        require(db, user, call_grants[role_name])
+        branch_query = select(Branch)
+        if user.branch_id:
+            branch_query = branch_query.where(Branch.id == user.branch_id)
+        if branch_id:
+            branch_query = branch_query.where(Branch.id == branch_id)
+        return [{"id": branch.id, "name": branch.name}
+                for branch in db.scalars(branch_query.order_by(Branch.name, Branch.id))]
     require(db, user, "read")
     ids = visible_agents(db, user)
     agents = db.scalars(
@@ -378,8 +400,17 @@ def records(resource, db, user, branch_id=""):
     if resource == "branches":
         agent_branches = {a.id: outlet_branches[a.outlet_id] for a in agents}
         branches = set(agent_branches.values())
+        if db.get(Role, user.role_id).name in {"Team Leader", "Branch Manager"} and user.branch_id:
+            branches.add(user.branch_id)
         if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Inventory Manager", "Compliance Officer", "Sales Manager"}:
             branches = set(db.scalars(select(Branch.id)))
+        historical_query = scoped_sales(db, user, SalesRecord)
+        if branch_id:
+            historical_query = historical_query.where(SalesRecord.branch_id == branch_id)
+        # A sales agent's previous assignments still own their original sales.
+        # Offer those branches for history filters, including pending/cancelled
+        # rows, without granting access to another agent's branch records.
+        branches.update(db.scalars(historical_query.with_only_columns(SalesRecord.branch_id).distinct()))
         completed_query = scoped_sales(db, user, SalesRecord).where(SalesRecord.status == "CLOSED")
         if branch_id:
             completed_query = completed_query.where(SalesRecord.branch_id == branch_id)
@@ -432,7 +463,7 @@ def records(resource, db, user, branch_id=""):
             )
         ]
     if resource == "outlets":
-        if db.get(Role, user.role_id).name in {"Administrator", "Sales Manager"}:
+        if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Sales Manager"}:
             outlet_ids = set(db.scalars(select(Outlet.id).where(Outlet.branch_id == branch_id))) if branch_id else set(db.scalars(select(Outlet.id)))
         return [
             {
@@ -480,7 +511,15 @@ def records(resource, db, user, branch_id=""):
         ]
         result = []
         pairs = {(a.leader_id, db.get(Outlet, a.outlet_id).branch_id) for a in agents if a.leader_id}
-        if db.get(Role, user.role_id).name in {"Administrator", "Sales Manager"}:
+        leader_role = db.get(Role, user.role_id).name
+        if leader_role == "Team Leader" and user.branch_id and (not branch_id or user.branch_id == branch_id):
+            pairs.add((user.id, user.branch_id))
+        leader_sales_query = scoped_sales(db, user, SalesRecord)
+        if branch_id:
+            leader_sales_query = leader_sales_query.where(SalesRecord.branch_id == branch_id)
+        leader_sales = db.scalars(leader_sales_query).all()
+        pairs.update((sale.leader_id, sale.branch_id) for sale in leader_sales if sale.leader_id)
+        if db.get(Role, user.role_id).name in {"Administrator", "Operations Manager", "Sales Manager"}:
             pairs.update(
                 (leader.id, leader.branch_id)
                 for leader in db.scalars(
@@ -505,7 +544,8 @@ def records(resource, db, user, branch_id=""):
                     "name": db.get(User, leader_id).name,
                     "branch": db.get(Branch, team_branch).name,
                     "agents": len(members),
-                    "activations": sum(a["activations"] for a in members),
+                    "activations": sum(sale.status == "CLOSED" and sale.leader_id == leader_id and sale.branch_id == team_branch for sale in leader_sales),
+                    "legacy_activations": sum(a["activations"] for a in members),
                     "target": sum(a["target"] for a in members),
                     "stock": sum(a["stock"] for a in members),
                     "active": sum(a["status"] == "ACTIVE" for a in members),
@@ -533,6 +573,14 @@ def records(resource, db, user, branch_id=""):
         require(db, user, "audit.read")
     model = models[resource]
     query = select(model).where(model.agent_id.in_(ids)).order_by(model.created_at.desc())
+    customer_history_query = None
+    if resource == "customers":
+        customer_history_query = scoped_sales(db, user, SalesRecord)
+        if branch_id:
+            customer_history_query = customer_history_query.where(SalesRecord.branch_id == branch_id)
+        linked_ids = select(SalesRecord.details["customer_id"].as_string()).where(SalesRecord.details["customer_id"].as_string().is_not(None))
+        authorized_ids = customer_history_query.with_only_columns(SalesRecord.details["customer_id"].as_string()).where(SalesRecord.details["customer_id"].as_string().is_not(None))
+        query = select(Customer).where(or_(Customer.id.in_(authorized_ids), Customer.agent_id.in_(ids) & Customer.id.not_in(linked_ids))).order_by(Customer.created_at.desc())
     if resource == "inventory" and ("inventory.write" in permissions(db, user) or db.get(Role, user.role_id).name in {"Sales Manager", "Team Leader", "Branch Manager"}):
         from .field_assets import visible_branches
         stock_branches = visible_branches(db, user)
@@ -563,9 +611,16 @@ def records(resource, db, user, branch_id=""):
         else {}
     )
     documents = {
-        d.customer_id: d for d in db.scalars(select(Document).where(Document.customer_id.in_(customer_names or list(db.scalars(select(Customer.id).where(Customer.agent_id.in_(ids)))))))
+        d.customer_id: d for d in db.scalars(select(Document).where(Document.customer_id.in_(query.with_only_columns(Customer.id))))
     } if resource == "customers" else {}
     progress_by_sim = {p.sim_id: p for p in db.scalars(select(SimProgress).where(SimProgress.agent_id.in_(ids)))} if resource == "inventory" else {}
+    customer_sales = defaultdict(list)
+    if resource == "customers":
+        from .sales_management import sale_detail
+        for sale in db.scalars(customer_history_query.order_by(SalesRecord.created_at.desc())):
+            customer_id = (sale.details or {}).get("customer_id")
+            if customer_id:
+                customer_sales[customer_id].append(sale)
     for row in db.scalars(query):
         if resource == "compliance" and any(
             term in row.title.lower() for term in ("territory", "geofence", "location", "boundary")
@@ -579,13 +634,46 @@ def records(resource, db, user, branch_id=""):
             item["agent"] = agent_names.get(agent.user_id, "System") if agent else "System"
         if resource == "customers":
             document = documents.get(row.id)
-            number = cipher.decrypt(document.encrypted_number.encode()).decode() if document else ""
+            history = customer_sales.get(row.id, [])
+            latest_number = history[0].document_encrypted if history else document.encrypted_number if document else ""
+            number = cipher.decrypt(latest_number.encode()).decode() if latest_number else ""
             item["document"] = "•••• " + number[-4:] if number else "Not recorded"
-            item["mobile"] = "•••• " + row.mobile[-4:] if row.mobile else "Not recorded"
+            customer_mobile = history[0].details.get("msisdn", "") if history else row.mobile
+            item["mobile"] = "•••• " + customer_mobile[-4:] if customer_mobile else "Not recorded"
+            if history:
+                item["name"] = history[0].customer_name
+                item["nationality"] = history[0].nationality or "Not recorded"
+                sales_agent = db.get(Agent, history[0].agent_id)
+                item["agent"] = db.get(User, sales_agent.user_id).name if sales_agent else "Not recorded"
+            history_views = [sale_detail(sale.id, user, db) for sale in history]
+            for history_view in history_views:
+                call_states = {call["stage"]: call["status"] for call in history_view["calls"]}
+                history_view["tele_verification"] = call_states.get("TELE_VERIFICATION", "Not recorded")
+                history_view["welcome_call"] = call_states.get("WELCOME_CALL", "Not recorded")
+            item["sales"] = item["history"] = history_views
+            item["sr_number"] = (history[0].details.get("sr_number") or "Not recorded") if history else "Not recorded"
+            item["request_id"] = history[0].request_id or "Not recorded" if history else "Not recorded"
+            item["details"] = {}
+            for sale in reversed(history):
+                if sale.capture_id:
+                    capture = db.get(KycCapture, sale.capture_id)
+                    intake = (capture_payload(capture).get("intake") or {}) if capture else {}
+                    intake = intake if isinstance(intake, dict) else {}
+                    item["details"].update({key: intake[key] for key in ("arabic_name", "gender", "issue_date", "birth_date", "expiry_date", "document_type", "alternate_number", "account_number", "msisdn") if intake.get(key)})
+                item["details"].update({key: sale.details[key] for key in ("alternate_number", "account_number", "msisdn") if sale.details.get(key)})
+            item["details"]["date_of_birth"] = item["details"].get("birth_date", "Not recorded")
+            item["details"]["sex"] = item["details"].get("gender", "Not recorded")
+            customer_agent = agent_by_id.get(row.agent_id)
+            customer_branch = history[0].branch_id if history else db.get(Outlet, customer_agent.outlet_id).branch_id if customer_agent else ""
+            item["branch_id"] = customer_branch
+            item["branch"] = db.get(Branch, customer_branch).name if customer_branch else "Not recorded"
+            item["sales_count"] = len(history)
         if resource == "ekyc":
             item["customer"] = customer_names.get(row.customer_id, "Unknown")
         if resource == "inventory":
             item["outlet"] = outlet_names.get(row.outlet_id, "Unassigned")
+            item["branch_id"] = db.get(Outlet, row.outlet_id).branch_id if row.outlet_id else ""
+            item["branch"] = db.get(Branch, item["branch_id"]).name if item["branch_id"] else "Unassigned"
             progress = progress_by_sim.get(row.id)
             item["activation_stage"] = progress.stage if progress else "NOT_STARTED"
             item["payment_status"] = progress.payment_status if progress else "NOT_UPLOADED"
@@ -597,7 +685,6 @@ def records(resource, db, user, branch_id=""):
 
 @app.get("/api/resources/{resource}")
 def resource_list(resource: str, branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
-    require(db, user, "read")
     return records(resource, db, user, branch_id)
 
 
@@ -659,8 +746,9 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
     )).all()
     closed_sales = [s for s in sale_rows if s.status == "CLOSED"]
     closed_today = sum(business_date(s.created_at) == today for s in closed_sales)
-    from .sales_management import performance as sales_performance, call_tasks
+    from .sales_management import performance as sales_performance, call_tasks, sale_view
     month_performance = sales_performance(user=user, db=db, branch_id=branch_id)
+    target = month_performance["daily_target"]
     ready_calls = [task for task in call_tasks(user, db) if task["status"] in {"PENDING", "FAILED"} and (not branch_id or task["branch_id"] == branch_id)]
     sales_trend = [{**t, "activations": sum(business_date(s.created_at).isoformat() == t["date"] for s in closed_sales)} for t in trend]
     agent_names = {a["id"]: a["name"] for a in agents}
@@ -681,7 +769,7 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
         "sales_trend": sales_trend,
         "sales_plan_mix": [{"name": name, "value": sum(s.plan_name == name for s in closed_sales)}
                            for name in sorted({s.plan_name for s in closed_sales})],
-        "recent_sales": [{"id": s.id, "customer": s.customer_name, "reference": s.request_id or "Not recorded",
+        "recent_sales": [{**sale_view(db, s), "customer": s.customer_name, "reference": s.request_id or "Not recorded",
                           "plan": s.plan_name or "Not recorded", "agent": agent_names.get(s.agent_id, "Not recorded"),
                           "status": s.status}
                          for s in sorted(sale_rows, key=lambda s: s.created_at, reverse=True)[:6]],
@@ -1463,7 +1551,9 @@ def save_agent_management(
     if any(old[k] != getattr(body, "expected_" + k) for k in old):
         raise HTTPException(409, "Assignment changed. Reopen management before saving.")
     outlet = db.get(Outlet, body.outlet_id)
-    leader = db.get(User, body.leader_id) if body.leader_id else db.scalar(select(User).join(Role).where(Role.name == "Team Leader", User.branch_id == outlet.branch_id)) if outlet else None
+    from .organization import select_agent_leader
+    assignment_changed = body.outlet_id != agent.outlet_id or body.leader_id != agent.leader_id
+    leader = select_agent_leader(db, outlet.branch_id, body.leader_id, required=assignment_changed) if outlet else None
     if outlet and outlet.id != agent.outlet_id:
         from .branch_lifecycle import active_branch
         active_branch(db, outlet.branch_id)
@@ -1471,7 +1561,7 @@ def save_agent_management(
     if not outlet or (leader and db.get(Role, leader.role_id).name != "Team Leader"):
         raise HTTPException(422, "Select a valid branch")
     if leader and leader.branch_id != outlet.branch_id:
-        raise HTTPException(422, "Historical team assignment is in another branch")
+        raise HTTPException(422, "Select a team leader assigned to this branch")
     if len(body.reason.strip()) < 5:
         raise HTTPException(422, "Enter a meaningful reason")
     # Prevent moving stock silently across outlets; use the audited inventory workflow first.
@@ -1659,6 +1749,34 @@ def events(since: str = "", user=Depends(principal), db=Depends(get_db)):
     return [raw(e) for e in db.scalars(query.limit(500))]
 
 
+def event_messages(session_id, user_id, token_expiry, cursor):
+    # Run the whole poll in a worker thread: pool checkout can wait, and must not
+    # block the event loop that releases other requests' database dependencies.
+    with DB() as connection:
+        session = connection.get(Session, session_id)
+        if (
+            not session
+            or session.user_id != user_id
+            or session.revoked
+            or session.expires < now()
+            or time.time() > token_expiry
+        ):
+            return None
+        current = connection.get(User, user_id)
+        if not current or "read" not in permissions(connection, current):
+            return None
+        ids = visible_agents(connection, current)
+        items = connection.scalars(
+            select(Event)
+            .where(
+                Event.created_at > cursor,
+                or_(Event.agent_id.in_(ids), Event.agent_id.is_(None)),
+            )
+            .order_by(Event.created_at)
+        ).all()
+        return [(event.created_at, json.dumps(raw(event))) for event in items]
+
+
 @app.get("/api/events/stream")
 async def event_stream(request: Request, user=Depends(principal), db=Depends(get_db)):
     require(db, user, "read")
@@ -1675,28 +1793,14 @@ async def event_stream(request: Request, user=Depends(principal), db=Depends(get
         cursor = now()
         yield "event: connected\ndata: {}\n\n"
         while not await request.is_disconnected():
-            with DB() as connection:
-                session = connection.get(Session, session_id)
-                if (
-                    not session
-                    or session.revoked
-                    or session.expires < now()
-                    or time.time() > token["exp"]
-                ):
-                    return
-                current = connection.get(User, user_id)
-                if not current or "read" not in permissions(connection, current):
-                    return
-                ids = visible_agents(connection, current)
-                items = connection.scalars(
-                    select(Event)
-                    .where(
-                        Event.created_at > cursor,
-                        or_(Event.agent_id.in_(ids), Event.agent_id.is_(None)),
-                    )
-                    .order_by(Event.created_at)
-                ).all()
-                messages = [(event.created_at, json.dumps(raw(event))) for event in items]
+            try:
+                messages = await asyncio.to_thread(event_messages, session_id, user_id, token["exp"], cursor)
+            except DatabasePoolTimeout:
+                # Headers are already sent. Keep the connection alive and retain
+                # the cursor so the next authorized poll retrieves missed events.
+                messages = []
+            if messages is None:
+                return
             for created_at, payload in messages:
                 cursor = created_at
                 yield f"data: {payload}\n\n"

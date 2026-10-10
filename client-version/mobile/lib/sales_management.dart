@@ -1,4 +1,8 @@
 import 'sr_verification.dart';
+import 'branch_filter.dart';
+import 'sales_presentation.dart';
+import 'product_targets.dart';
+import 'workspace_menu.dart';
 import 'notifications.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -32,6 +36,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
   String error = '';
   bool saving = false;
   bool fetching = false;
+  bool reloadPending = false;
   Timer? poll;
 
   @override
@@ -54,7 +59,10 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
   }
 
   Future<void> load({bool quiet = false}) async {
-    if (fetching) return;
+    if (fetching) {
+      reloadPending = true;
+      return;
+    }
     fetching = true;
     if (!quiet) {
       setState(() {
@@ -65,14 +73,24 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
     try {
       final service = ref.read(serviceProvider);
       final period = salesReportingPeriod(DateTime.now());
+      final requestedBranch = service.branchId;
       final results = await Future.wait([
-        service.dio.get('/sales-management/sales?period=$period'),
+        service.dio.get(
+          '/sales-management/sales',
+          queryParameters: service.branchQuery({'period': period}),
+        ),
         service.dio.get('/sales-management/feedback'),
-        service.dio.get('/sales-management/performance?period=$period'),
-        service.dio.get('/sales-management/targets?period=$period'),
+        service.dio.get(
+          '/sales-management/performance',
+          queryParameters: service.branchQuery({'period': period}),
+        ),
+        service.dio.get(
+          '/sales-management/targets',
+          queryParameters: service.branchQuery({'period': period}),
+        ),
         service.dio.get('/resources/agents'),
       ]);
-      if (!mounted) return;
+      if (!mounted || service.branchId != requestedBranch) return;
       setState(() {
         sales = (results[0].data as List)
             .map((v) => Map<String, dynamic>.from(v))
@@ -98,6 +116,10 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
     } finally {
       fetching = false;
       if (mounted && !quiet) setState(() => loading = false);
+      if (mounted && reloadPending) {
+        reloadPending = false;
+        unawaited(load());
+      }
     }
   }
 
@@ -245,7 +267,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                 const SizedBox(height: 12),
                 for (final entry in const {
                   'status': 'Sale status',
-                  'agent': 'Agent',
+                  'agent': 'Sales agent',
                   'leader': 'Team leader',
                   'sales_manager': 'Sales Manager',
                   'branch': 'Branch',
@@ -266,7 +288,9 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                 }.entries)
                   _detailField(
                     entry.value,
-                    (detail[entry.key] ?? '').toString().isEmpty
+                    entry.key == 'status'
+                        ? activationLabel(detail)
+                        : (detail[entry.key] ?? '').toString().isEmpty
                         ? 'Not recorded'
                         : '${detail[entry.key]}',
                   ),
@@ -358,7 +382,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                   const Text('Set target', style: RelayTypography.section),
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String>(
-                    decoration: const InputDecoration(labelText: 'Agent'),
+                    decoration: const InputDecoration(labelText: 'Sales agent'),
                     isExpanded: true,
                     items: [
                       for (final agent in agents.where(
@@ -370,7 +394,8 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                         ),
                     ],
                     onChanged: (value) => agentId = value,
-                    validator: (value) => value == null ? 'Choose agent' : null,
+                    validator: (value) =>
+                        value == null ? 'Choose sales agent' : null,
                   ),
                   const SizedBox(height: 14),
                   DropdownButtonFormField<String>(
@@ -389,7 +414,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                       ])
                         DropdownMenuItem(
                           value: value,
-                          child: Text(value == 'ALL' ? 'All products' : value),
+                          child: Text(productLabel(value)),
                         ),
                     ],
                     onChanged: (value) => product = value!,
@@ -474,6 +499,12 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(serviceProvider.select((service) => service.branchId), (
+      _,
+      _,
+    ) {
+      load();
+    });
     final isAgent = ref.watch(serviceProvider).user?['agent_id'] != null;
     final canSet = [
       'Administrator',
@@ -488,6 +519,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
         title: const Text('Sales management'),
         actions: [
           const NotificationBell(),
+          const WorkspaceMenu(),
           if (compact)
             PopupMenuButton<String>(
               tooltip: 'Sales actions',
@@ -552,6 +584,10 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
             )
           : Column(
               children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(14, 12, 14, 0),
+                  child: BranchFilter(),
+                ),
                 Container(
                   margin: const EdgeInsets.all(14),
                   padding: const EdgeInsets.all(14),
@@ -652,13 +688,14 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                     onRefresh: load,
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
-                      itemCount:
-                          (tab == 0
-                                  ? sales.length
-                                  : tab == 1
-                                  ? feedback.length
-                                  : targets.length) ==
-                              0
+                      itemCount: tab == 2
+                          ? targets.length + 1
+                          : (tab == 0
+                                    ? sales.length
+                                    : tab == 1
+                                    ? feedback.length
+                                    : targets.length) ==
+                                0
                           ? 1
                           : tab == 0
                           ? sales.length
@@ -666,6 +703,12 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                           ? feedback.length
                           : targets.length,
                       itemBuilder: (context, index) {
+                        if (tab == 2) {
+                          if (index == 0) {
+                            return ProductTargets(performance: performance);
+                          }
+                          index -= 1;
+                        }
                         if ((tab == 0
                                 ? sales
                                 : tab == 1
@@ -704,7 +747,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                                   ),
                                   const SizedBox(height: 6),
                                   Text(
-                                    '${row['period']} · ${row['order_type']}',
+                                    '${row['period']} · ${productLabel(row['order_type'])}',
                                     style: RelayTypography.caption,
                                   ),
                                   const SizedBox(height: 12),
@@ -754,12 +797,12 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                                     ),
                                     const SizedBox(height: 8),
                                     Text(
-                                      '${row['plan_name']} · ${row['order_type']}',
+                                      '${row['plan_name']} · ${productLabel(row['order_type'])}',
                                       style: RelayTypography.body,
                                     ),
                                     const SizedBox(height: 6),
                                     Text(
-                                      '${row['request_id']} · ${row['status']}',
+                                      '${row['request_id']} · ${activationLabel(row)}',
                                       style: RelayTypography.caption,
                                     ),
                                     const SizedBox(height: 6),

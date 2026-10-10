@@ -16,7 +16,7 @@ from pydantic import Field
 from .validation import BusinessInput
 from sqlalchemy import case, select, text
 from openpyxl import load_workbook
-from .db import Agent, FieldTask, Incentive, SupportTicket, User, get_db, now
+from .db import Agent, Outlet, FieldTask, Incentive, SupportTicket, User, get_db, now
 from .security import principal, require, assert_agent, visible_agents
 from .services import audit, raw
 
@@ -67,9 +67,12 @@ def tasks(user=Depends(principal), db=Depends(get_db)):
 
 
 @router.get("/api/support-tickets")
-def tickets(user=Depends(principal), db=Depends(get_db)):
+def tickets(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     require(db, user, "read")
-    rows = db.scalars(select(SupportTicket).where(SupportTicket.agent_id.in_(visible_agents(db, user))).order_by(SupportTicket.created_at.desc())).all()
+    query = select(SupportTicket).where(SupportTicket.agent_id.in_(visible_agents(db, user)))
+    if branch_id:
+        query = query.where(SupportTicket.agent_id.in_(select(Agent.id).join(Outlet).where(Outlet.branch_id == branch_id)))
+    rows = db.scalars(query.order_by(SupportTicket.created_at.desc())).all()
     return [ticket_view(db, row) for row in rows]
 
 
@@ -162,11 +165,13 @@ def update_task(task_id: str, body: TaskUpdate, request: Request, user=Depends(p
 
 
 @router.get("/api/incentives")
-def incentives(user=Depends(principal), db=Depends(get_db), period: str | None = None):
+def incentives(user=Depends(principal), db=Depends(get_db), period: str | None = None, branch_id: str = ""):
     require(db, user, "read")
     query = select(Incentive).where(Incentive.agent_id.in_(visible_agents(db, user)))
     if period:
         query = query.where(Incentive.period == valid_period(period))
+    if branch_id:
+        query = query.where(Incentive.agent_id.in_(select(Agent.id).join(Outlet).where(Outlet.branch_id == branch_id)))
     rows = db.scalars(query.order_by(Incentive.created_at.desc())).all()
     return [incentive_view(db, row) for row in rows]
 
@@ -250,9 +255,9 @@ def import_incentives(body: IncentiveUpload, request: Request, user=Depends(prin
 
 
 @router.get("/api/incentives/export")
-def export_incentives(request: Request, user=Depends(principal), db=Depends(get_db), period: str | None = None):
+def export_incentives(request: Request, user=Depends(principal), db=Depends(get_db), period: str | None = None, branch_id: str = ""):
     require(db, user, "report.read")
-    rows = incentives(user, db, period)
+    rows = incentives(user, db, period, branch_id)
     out = io.StringIO()
     writer = csv.writer(out)
     writer.writerow(["Employee ID", "Agent", "Period", "Amount AED", "Source", "Status", "Note"])

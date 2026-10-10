@@ -1,4 +1,10 @@
 import 'role_access.dart';
+import 'branch_filter.dart';
+import 'sales_presentation.dart';
+import 'reports.dart';
+import 'customer_details.dart';
+import 'product_targets.dart';
+import 'workspace_menu.dart';
 import 'commission_calculations.dart';
 import 'notifications.dart';
 import 'saved_drafts.dart';
@@ -85,7 +91,7 @@ final router = GoRouter(
       builder: (c, s) => Scaffold(
         appBar: AppBar(
           leading: const WorkspaceBackButton(),
-          title: const Text('Sales records'),
+          title: const Text('Historical activations'),
         ),
         body: const OrdersScreen(),
       ),
@@ -125,9 +131,9 @@ final router = GoRouter(
       builder: (c, s) => Scaffold(
         appBar: AppBar(
           leading: const WorkspaceBackButton(),
-          title: const Text('Daily report'),
+          title: const Text('Reports'),
         ),
-        body: const DailyReportScreen(),
+        body: const ReportsScreen(),
       ),
     ),
   ],
@@ -248,7 +254,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
 
   String accountLabel(Json account) {
     final role = switch (account['role']) {
-      'Field Agent' => 'Agent',
+      'Field Agent' => 'Sales agent',
       'Team Leader' => 'Branch leader',
       'Tele Verification Officer' => 'Tele verification',
       'Welcome Call Officer' => 'Welcome calls',
@@ -527,7 +533,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
                               ? const LeaderConfirmationsScreen()
                               : const HomeScreen(),
                           const SizedBox.shrink(),
-                          const OrdersScreen(),
+                          const SalesManagementScreen(),
                           const StockScreen(),
                           const ProfileScreen(),
                         ][i],
@@ -573,7 +579,7 @@ class _FieldShellState extends ConsumerState<FieldShell>
             NavigationDestination(
               icon: Icon(Icons.receipt_long_outlined, color: Color(0xFF98610F)),
               selectedIcon: Icon(Icons.receipt_long, color: Color(0xFF98610F)),
-              label: 'Orders',
+              label: 'Activations',
             ),
             NavigationDestination(
               icon: Icon(Icons.sim_card_outlined, color: RelayPalette.teal),
@@ -658,6 +664,7 @@ class _LeaderConfirmationsState
               ),
             ),
             NotificationBell(),
+            WorkspaceMenu(),
           ],
         ),
         const SizedBox(height: 12),
@@ -756,6 +763,8 @@ class HomeScreen extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 18),
+              const BranchFilter(),
+              const SizedBox(height: 12),
               Text(
                 'Good ${DateTime.now().hour < 12 ? 'morning' : 'afternoon'},',
                 style: const TextStyle(color: muted),
@@ -903,7 +912,8 @@ class HomeScreen extends ConsumerWidget {
                   Expanded(
                     child: MetricTile(
                       'Daily target',
-                      d['target'].toString(),
+                      (d['sales_performance']?['daily_target'] ?? d['target'])
+                          .toString(),
                       Icons.flag_outlined,
                       onTap: () => context.push('/reports'),
                       accent: const Color(0xFFB47721),
@@ -1044,6 +1054,12 @@ class HomeScreen extends ConsumerWidget {
                 ),
               ),
               const SizedBox(height: 24),
+              ProductTargets(
+                performance: Json.from(
+                  d['sales_performance'] ?? d['sales_summary'] ?? {},
+                ),
+              ),
+              const SizedBox(height: 10),
               WeeklyActivityCard(d),
               const SizedBox(height: 14),
               VerificationCard(d),
@@ -1059,7 +1075,7 @@ class HomeScreen extends ConsumerWidget {
                 second: OutlinedButton.icon(
                   onPressed: () => context.push('/reports'),
                   icon: const Icon(Icons.bar_chart_outlined),
-                  label: const Text('Daily report'),
+                  label: const Text('Reports'),
                 ),
               ),
               const SizedBox(height: 10),
@@ -1151,152 +1167,168 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      leading: const WorkspaceBackButton(),
-      title: const Text('Transactions'),
-    ),
-    body: Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final option in const [
-                  ('all', 'All'),
-                  ('today', 'Today'),
-                  ('awaiting', 'Awaiting review'),
-                ])
-                  ChoiceChip(
-                    label: Text(option.$2),
-                    selected: view == option.$1,
-                    onSelected: (_) => setState(() => view = option.$1),
-                  ),
-              ],
+  Widget build(BuildContext context) {
+    ref.listen<String?>(
+      serviceProvider.select((service) => service.branchId),
+      (_, _) => unawaited(refresh().catchError((_) {})),
+    );
+    return Scaffold(
+      appBar: AppBar(
+        leading: const WorkspaceBackButton(),
+        title: const Text('Transactions'),
+      ),
+      body: Column(
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: BranchFilter(),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final option in const [
+                    ('all', 'All'),
+                    ('today', 'Today'),
+                    ('awaiting', 'Awaiting review'),
+                  ])
+                    ChoiceChip(
+                      label: Text(option.$2),
+                      selected: view == option.$1,
+                      onSelected: (_) => setState(() => view = option.$1),
+                    ),
+                ],
+              ),
             ),
           ),
-        ),
-        Expanded(
-          child: FutureBuilder<List<Json>>(
-            future: history,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState != ConnectionState.done) {
-                return const LoadingCards();
-              }
-              if (snapshot.hasError) {
-                return RetryView(error: snapshot.error!, onRetry: refresh);
-              }
-              final rows = (snapshot.data ?? [])
-                  .where(
-                    (row) =>
-                        view == 'all' ||
-                        (view == 'today' && createdToday(row)) ||
-                        (view == 'awaiting' && row['status'] == 'SUBMITTED'),
-                  )
-                  .toList();
-              return RefreshIndicator(
-                onRefresh: refresh,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                  children: rows.isEmpty
-                      ? [
-                          const SizedBox(height: 120),
-                          EmptyView(
-                            view == 'awaiting'
-                                ? 'No transactions awaiting review'
-                                : view == 'today'
-                                ? 'No transactions today'
-                                : 'No transactions yet',
-                          ),
-                        ]
-                      : rows.map((row) {
-                          final status = row['status']?.toString() ?? 'PENDING';
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: Card(
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(16),
-                                onTap: () => context.push(
-                                  '/transaction/${Uri.encodeComponent(row['id'].toString())}',
-                                ),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16),
-                                  child: Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.receipt_long_outlined,
-                                        color: burgundy,
-                                      ),
-                                      const SizedBox(width: 12),
-                                      Expanded(
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              row['source_reference']
-                                                      ?.toString() ??
-                                                  'Transaction',
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 3),
-                                            Text(
-                                              row['intake']?['capture_mode'] ==
-                                                      'SCREENSHOT_SALE'
-                                                  ? 'Sale submission'
-                                                  : row['document_kind'] ==
-                                                        'PAYMENT_CONFIRMATION'
-                                                  ? 'Payment confirmation'
-                                                  : 'Captured transaction',
-                                              style: const TextStyle(
-                                                color: muted,
-                                                fontSize: 13,
-                                              ),
-                                            ),
-                                            const SizedBox(height: 4),
-                                            Text(
-                                              status == 'SUBMITTED'
-                                                  ? 'Awaiting review'
-                                                  : status == 'VERIFIED'
-                                                  ? 'Verified'
-                                                  : status == 'REJECTED'
-                                                  ? 'Needs correction'
-                                                  : status.replaceAll('_', ' '),
-                                              style: const TextStyle(
-                                                color: burgundy,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                            ),
-                                          ],
+          Expanded(
+            child: FutureBuilder<List<Json>>(
+              future: history,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const LoadingCards();
+                }
+                if (snapshot.hasError) {
+                  return RetryView(error: snapshot.error!, onRetry: refresh);
+                }
+                final rows = (snapshot.data ?? [])
+                    .where(
+                      (row) =>
+                          view == 'all' ||
+                          (view == 'today' && createdToday(row)) ||
+                          (view == 'awaiting' && row['status'] == 'SUBMITTED'),
+                    )
+                    .toList();
+                return RefreshIndicator(
+                  onRefresh: refresh,
+                  child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                    children: rows.isEmpty
+                        ? [
+                            const SizedBox(height: 120),
+                            EmptyView(
+                              view == 'awaiting'
+                                  ? 'No transactions awaiting review'
+                                  : view == 'today'
+                                  ? 'No transactions today'
+                                  : 'No transactions yet',
+                            ),
+                          ]
+                        : rows.map((row) {
+                            final status =
+                                row['status']?.toString() ?? 'PENDING';
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Card(
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: () => context.push(
+                                    '/transaction/${Uri.encodeComponent(row['id'].toString())}',
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.receipt_long_outlined,
+                                          color: burgundy,
                                         ),
-                                      ),
-                                      const Icon(
-                                        Icons.chevron_right,
-                                        color: muted,
-                                      ),
-                                    ],
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                row['source_reference']
+                                                        ?.toString() ??
+                                                    'Transaction',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 3),
+                                              Text(
+                                                row['intake']?['capture_mode'] ==
+                                                        'SCREENSHOT_SALE'
+                                                    ? 'Sale submission'
+                                                    : row['document_kind'] ==
+                                                          'PAYMENT_CONFIRMATION'
+                                                    ? 'Payment confirmation'
+                                                    : 'Captured transaction',
+                                                style: const TextStyle(
+                                                  color: muted,
+                                                  fontSize: 13,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                status == 'SUBMITTED'
+                                                    ? row['activation_label'] ??
+                                                          'Awaiting review'
+                                                    : status == 'VERIFIED'
+                                                    ? row['activation_label'] ??
+                                                          'Verified'
+                                                    : status == 'REJECTED'
+                                                    ? 'Needs correction'
+                                                    : status.replaceAll(
+                                                        '_',
+                                                        ' ',
+                                                      ),
+                                                style: const TextStyle(
+                                                  color: burgundy,
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.chevron_right,
+                                          color: muted,
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                          );
-                        }).toList(),
-                ),
-              );
-            },
+                            );
+                          }).toList(),
+                  ),
+                );
+              },
+            ),
           ),
-        ),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
 
 class IncentivesScreen extends ConsumerWidget {
@@ -1404,6 +1436,8 @@ class _CustomersState extends ConsumerState<CustomersScreen> {
           return ListView(
             padding: const EdgeInsets.all(22),
             children: [
+              const BranchFilter(),
+              const SizedBox(height: 16),
               TextField(
                 onChanged: (value) => setState(() => query = value),
                 decoration: const InputDecoration(
@@ -1428,14 +1462,7 @@ class _CustomersState extends ConsumerState<CustomersScreen> {
                       Icons.chevron_right,
                       color: Color(0xFF35699C),
                     ),
-                    onTap: () =>
-                        showRecordDetails(context, 'Customer details', {
-                          'Name': r['name'],
-                          'Mobile': r['mobile'],
-                          'Document': r['document'],
-                          'Nationality': r['nationality'],
-                          'Agent': r['agent'],
-                        }, accent: const Color(0xFF35699C)),
+                    onTap: () => showCustomerDetails(context, r),
                     leading: const CircleAvatar(
                       backgroundColor: Color(0xFFE3EDFC),
                       child: Icon(
@@ -1466,6 +1493,8 @@ class DailyReportScreen extends ConsumerWidget {
         data: (d) => ListView(
           padding: const EdgeInsets.all(22),
           children: [
+            const BranchFilter(),
+            const SizedBox(height: 16),
             const Text(
               'Today in the field',
               style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
@@ -1664,9 +1693,13 @@ class _OrdersState extends ConsumerState<OrdersScreen> {
         const Padding(
           padding: EdgeInsets.fromLTRB(22, 24, 22, 16),
           child: Text(
-            'Activation records',
+            'Historical activations',
             style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
           ),
+        ),
+        const Padding(
+          padding: EdgeInsets.fromLTRB(22, 0, 22, 12),
+          child: BranchFilter(),
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -1982,6 +2015,8 @@ class _StockState extends ConsumerState<StockScreen> {
         return ListView(
           padding: const EdgeInsets.all(22),
           children: [
+            const BranchFilter(),
+            const SizedBox(height: 16),
             const Text(
               'Branch SIM stock',
               style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
@@ -2124,6 +2159,7 @@ class ProfileScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(serviceProvider),
         data = ref.watch(resourceProvider('agents'));
+    final branches = ref.watch(authorizedBranchesProvider).valueOrNull ?? [];
     return data.when(
       loading: () => const LoadingCards(),
       error: (e, st) => RetryView(
@@ -2131,7 +2167,16 @@ class ProfileScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(resourceProvider('agents')),
       ),
       data: (rows) {
-        final a = rows.isEmpty ? <String, dynamic>{} : rows.first;
+        final ownRows = rows.where((row) => row['id'] == s.user?['agent_id']);
+        final a = ownRows.firstOrNull ?? <String, dynamic>{};
+        final canManageOwnShift =
+            a['id'] != null &&
+            a['id'] == s.user?['agent_id'] &&
+            (s.user?['permissions'] as List? ?? []).contains('shift.write');
+        final ownBranch =
+            s.user?['branch'] ??
+            a['branch'] ??
+            (branches.length == 1 ? branches.single['name'] : 'Not recorded');
         return ListView(
           padding: const EdgeInsets.all(22),
           children: [
@@ -2156,7 +2201,7 @@ class ProfileScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 5),
             Text(
-              s.user!['role'],
+              salesRoleLabel(s.user!['role']),
               textAlign: TextAlign.center,
               style: const TextStyle(color: muted, fontSize: 12),
             ),
@@ -2166,8 +2211,8 @@ class ProfileScreen extends ConsumerWidget {
                 padding: const EdgeInsets.all(18),
                 child: Column(
                   children: [
-                    KeyValue('Employee ID', a['employee_id'] ?? '—'),
-                    KeyValue('Branch', a['branch'] ?? '—'),
+                    KeyValue('Employee ID', a['employee_id'] ?? 'Not recorded'),
+                    KeyValue('Branch', '$ownBranch'),
                     const KeyValue('Device', 'Relay Flutter'),
                     const KeyValue('App version', '1.0.0'),
                   ],
@@ -2175,27 +2220,27 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: s.user!['agent_id'] == null
-                  ? null
-                  : () async {
-                      try {
-                        await s.dio.post(
-                          '/agents/${a['id']}/shift',
-                          data: {
-                            'action': a['on_shift'] == true ? 'end' : 'start',
-                          },
-                        );
-                        ref.invalidate(resourceProvider('agents'));
-                        ref.invalidate(dashboardProvider);
-                      } catch (e) {
-                        if (context.mounted) message(context, friendlyError(e));
-                      }
-                    },
-              icon: const Icon(Icons.access_time),
-              label: Text(a['on_shift'] == true ? 'End shift' : 'Start shift'),
-            ),
-            const SizedBox(height: 12),
+            if (canManageOwnShift) ...[
+              FilledButton.icon(
+                onPressed: () async {
+                  try {
+                    await s.dio.post(
+                      '/agents/${a['id']}/shift',
+                      data: {'action': a['on_shift'] == true ? 'end' : 'start'},
+                    );
+                    ref.invalidate(resourceProvider('agents'));
+                    ref.invalidate(dashboardProvider);
+                  } catch (e) {
+                    if (context.mounted) message(context, friendlyError(e));
+                  }
+                },
+                icon: const Icon(Icons.access_time),
+                label: Text(
+                  a['on_shift'] == true ? 'End shift' : 'Start shift',
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             OutlinedButton.icon(
               onPressed: () async {
                 await s.sync();

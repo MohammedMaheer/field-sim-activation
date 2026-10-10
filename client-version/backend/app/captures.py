@@ -38,7 +38,7 @@ from .db import (
 from .security import principal, permissions, require, assert_agent, visible_agents, cipher
 from .services import audit
 from .invoices import invoice
-from .capture_ocr import extractor, inspect_image
+from .capture_ocr import extractor, inspect_image, OcrBusy
 
 router = APIRouter(prefix="/api/kyc-captures", tags=["KYC transaction captures"])
 SAMPLE_REFERENCE_PREFIXES = (
@@ -87,34 +87,56 @@ def view(row, detail=True):
         "error": row.error,
     }
     content = payload(row)
+    content = dict(content) if isinstance(content, dict) else {}
+    if not isinstance(content.get("intake"), dict):
+        content["intake"] = {}
     result["document_kind"] = content.get("document_kind", "ACTIVATION_RECEIPT")
     result["activation"] = content.get("activation")
     if detail:
         result.update(content)
         if result["document_kind"] in {"PAYMENT_CONFIRMATION", "SALE_SCREENSHOTS"}:
             result["invoice"] = invoice(row, content)
-    if (content.get("intake") or {}).get("capture_mode") == "SCREENSHOT_SALE":
+    if (content.get("intake") or {}).get("capture_mode") in {"SCREENSHOT_SALE", "SCREENSHOT_ORDER"}:
         from sqlalchemy.orm import object_session
         from .sr_verification import sale_state
         db = object_session(row)
         sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == row.id)) if db else None
         result["sr_verification"] = sale_state(db, sale) if sale else {"status": "PENDING_SR_VERIFICATION", "reason": "Daily SR report not checked"}
+        from .activation_status import activation_presentation
+        result.update(activation_presentation(sale.status if sale else "IN_PROGRESS", result["sr_verification"]["status"], row.status, True))
         result["payment_record_status"] = "RECORDED" if (content.get("intake") or {}).get("payment_image") else "NOT_RECORDED"
         if detail:
             result["invoice"]["sr_verification"] = result["sr_verification"]
             result["invoice"]["payment_record_status"] = result["payment_record_status"]
             result["invoice"]["sale_status"] = sale.status if sale else "IN_PROGRESS"
+            result["invoice"].update({key: result[key] for key in ("activation_state", "activation_label", "backend_review_status", "external_activation_recorded")})
             if sale and sale.status == "CANCELLED":
                 result["invoice"]["heading"] = "Sale cancelled"
     return result
 
 
+def capture_branch_scope(branch_id):
+    linked = select(SalesRecord.id).where(SalesRecord.capture_id == KycCapture.id)
+    return or_(linked.where(SalesRecord.branch_id == branch_id).exists(),
+               and_(~linked.exists(), KycCapture.branch_id == branch_id))
+
+
 def capture_scope(db, user):
+    role = db.get(Role, user.role_id).name
+    linked = select(SalesRecord.id).where(SalesRecord.capture_id == KycCapture.id)
+    if role == "Branch Manager":
+        if not user.branch_id:
+            return KycCapture.id == ""
+        # Evidence follows the sale's saved branch, never the agent's current
+        # assignment. Unlinked legacy evidence uses its saved capture branch;
+        # records without either snapshot remain available to their owner/admin.
+        return capture_branch_scope(user.branch_id)
     current = KycCapture.agent_id.in_(visible_agents(db, user))
-    if db.get(Role, user.role_id).name == "Team Leader":
-        linked = select(SalesRecord.id).where(SalesRecord.capture_id == KycCapture.id)
-        return or_(linked.where(SalesRecord.leader_id == user.id).exists(),
-                   and_(~linked.exists(), current))
+    if role == "Team Leader":
+        saved_leader = linked.where(SalesRecord.leader_id == user.id).exists()
+        if not user.branch_id:
+            return saved_leader
+        return or_(saved_leader, and_(~linked.exists(), current, KycCapture.branch_id == user.branch_id))
     return current
 
 
@@ -174,6 +196,7 @@ class Intake(BaseModel):
     router_fulfilment: Literal["", "DELIVERY", "ON_SPOT", "WITHOUT_ROUTER"] = ""
     advance_transaction_number: str = Field(default="", max_length=120)
     sr_number: str = Field(default="", max_length=120)
+    receipt_sr_check: str = Field(default="", max_length=8192)
     alternate_number: str = Field(default="", max_length=40)
     order_fields: list[dict[str, str]] = Field(default_factory=list, max_length=100)
     selfie_image: str = Field(default="", max_length=1_333_336)
@@ -315,6 +338,22 @@ def check_document_evidence(intake, user):
 ORDER_KEYS = ("order_reference", "msisdn")
 
 
+def check_receipt_sr(intake, user):
+    """An OCR SR proof binds the explicitly printed SR to this uploaded receipt."""
+    if not intake.receipt_sr_check:
+        return
+    try:
+        proof = json.loads(cipher.decrypt(intake.receipt_sr_check.encode()))
+        valid = (proof["user"] == user.id and proof["expires"] >= now().timestamp()
+                 and proof["image"] == hashlib.sha256(base64.b64decode(intake.payment_image, validate=True)).hexdigest()
+                 and proof["sr_number"] == intake.sr_number)
+        if valid:
+            return
+    except Exception:
+        pass
+    raise HTTPException(422, "The receipt SR number changed. Upload the receipt again to read it.")
+
+
 def check_order_evidence(intake, user):
     if intake.capture_mode not in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}:
         return
@@ -333,6 +372,8 @@ def check_order_evidence(intake, user):
                 normalize(proof["fields"][key]) == normalize(getattr(intake, key))
                 for key in ORDER_KEYS
             )
+            and (intake.receipt_sr_check or not proof["fields"].get("sr_number")
+                 or normalize(proof["fields"]["sr_number"]) == normalize(intake.sr_number))
         )
         if valid:
             return
@@ -450,6 +491,8 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
     access(db, user, True)
     try:
         result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
+    except OcrBusy:
+        raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
     except Exception:
         raise HTTPException(
             422, "Document wasn't captured clearly. Use a clearer ID or passport photo."
@@ -628,6 +671,11 @@ def order_fields(lines):
         values["order_type"] = category
     else:
         values.pop("order_type", None)
+    sr = receipt_sr_number(lines)
+    if sr:
+        values["sr_number"] = sr
+    else:
+        values.pop("sr_number", None)
     return values
 
 
@@ -636,6 +684,8 @@ def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db))
     access(db, user, True)
     try:
         result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
+    except OcrBusy:
+        raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
     except Exception:
         raise HTTPException(422, "Order screen couldn't be read. Take a clearer photo.")
     lines = result.get("lines", [])
@@ -657,7 +707,7 @@ def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db))
                 "image": hashlib.sha256(
                     base64.b64decode(body.image_base64, validate=True)
                 ).hexdigest(),
-                "fields": {key: fields[key] for key in ORDER_KEYS},
+                "fields": {key: fields[key] for key in (*ORDER_KEYS, "sr_number") if fields.get(key)},
                 "user": user.id,
                 "expires": now().timestamp() + 30 * 86400,
             }
@@ -671,15 +721,47 @@ def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db))
     return fields
 
 
+def receipt_sr_number(lines):
+    """Read a labelled SR only; order/request IDs are different business fields."""
+    texts = [str(line.get("text", "")).strip() for line in lines if isinstance(line, dict)]
+    found = set()
+    for index, text in enumerate(texts):
+        match = re.match(r"^(?:SR\s*(?:number|no\.?|#)|service\s+request\s*(?:number|no\.?|#))\s*[:：-]?\s*(.*)$", text, re.I)
+        if not match:
+            continue
+        value = match.group(1).strip() or (texts[index + 1] if index + 1 < len(texts) else "")
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9\s/-]{3,119}", value) and re.search(r"\d", value):
+            found.add(re.sub(r"\s+", "", value))
+    return next(iter(found)) if len(found) == 1 else ""
+
+
+@router.post("/receipt-fields")
+def read_receipt_fields(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
+    access(db, user, True)
+    try:
+        data = base64.b64decode(body.image_base64, validate=True)
+        inspect_image(data)
+        result = extractor.extract(data)
+    except OcrBusy:
+        raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
+    except Exception:
+        raise HTTPException(422, "The receipt couldn't be read. Try a clearer photo.") from None
+    lines = result.get("lines", [])
+    sr = receipt_sr_number(lines)
+    proof = cipher.encrypt(json.dumps({"image": hashlib.sha256(data).hexdigest(),
+             "sr_number": sr, "user": user.id, "expires": now().timestamp() + 30 * 86400}).encode()).decode() if sr else ""
+    return {"fields": {"sr_number": sr} if sr else {}, "sr_check": proof,
+            "lines": [{"text": str(line.get("text", ""))[:1000]} for line in lines[:200] if isinstance(line, dict)]}
+
+
 @router.get("/leader-confirmations")
-def leader_confirmations(user=Depends(principal), db=Depends(get_db)):
+def leader_confirmations(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     if db.get(Role, user.role_id).name != "Team Leader":
         raise HTTPException(403, "Team leader access required")
-    rows = db.scalars(
-        select(KycCapture)
-        .where(capture_scope(db, user), KycCapture.status == "VERIFIED")
-        .order_by(KycCapture.updated_at.desc())
-    ).all()
+    query = select(KycCapture).where(capture_scope(db, user), KycCapture.status == "VERIFIED")
+    if branch_id:
+        query = query.where(capture_branch_scope(branch_id))
+    rows = db.scalars(query.order_by(KycCapture.updated_at.desc())).all()
     return [view(row) for row in rows]
 
 
@@ -723,31 +805,33 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
     """Store customer/order evidence and submit; a payment receipt is optional."""
     access(db, user, True)
     assert_agent(db, user, body.agent_id)
-    if body.intake.capture_mode != "SCREENSHOT_SALE":
-        raise HTTPException(422, "Use the current sale capture workflow")
-    body.intake.complete()
-    check_document_evidence(body.intake, user)
-    check_order_evidence(body.intake, user)
-    if body.intake.order_type == "UNSPECIFIED":
-        raise HTTPException(422, "Choose the order type before submitting")
-    plan = db.get(Plan, body.intake.plan_id)
-    if not plan or not plan.active:
-        raise HTTPException(422, "Select an available plan")
-    from .branch_lifecycle import active_branch
-    from .security import active_agent
-    from .db import Outlet
-    agent = active_agent(db, body.agent_id)
-    branch = db.get(Outlet, agent.outlet_id).branch_id
-    active_branch(db, branch)
-    content_intake = body.intake.model_dump(mode="json")
-    # The request fingerprint remains tied to supplied values, not mutable catalog labels.
-    fingerprint = hashlib.sha256(json.dumps(body.model_dump(mode="json"), sort_keys=True).encode()).hexdigest()
-    source = body.source_reference.strip() or body.intake.order_reference.strip()
+    # A committed exact retry must survive later catalog changes, reassignment,
+    # or evidence-proof expiry. Fresh submissions still pass all checks below.
+    supplied = body.model_dump(mode="json")
+    if not supplied["intake"].get("receipt_sr_check"):
+        supplied["intake"].pop("receipt_sr_check", None)
+    fingerprint = hashlib.sha256(json.dumps(supplied, sort_keys=True).encode()).hexdigest()
     existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
     if existing:
         if existing.creator_id != user.id or existing.agent_id != body.agent_id or payload(existing).get("submission_hash") != fingerprint:
             raise HTTPException(409, "This submission identifier was already used for another sale")
         return view(existing)
+    if body.intake.capture_mode != "SCREENSHOT_SALE":
+        raise HTTPException(422, "Use the current sale capture workflow")
+    body.intake.complete()
+    check_document_evidence(body.intake, user)
+    check_order_evidence(body.intake, user)
+    check_receipt_sr(body.intake, user)
+    if body.intake.order_type == "UNSPECIFIED":
+        raise HTTPException(422, "Choose the order type before submitting")
+    plan = db.get(Plan, body.intake.plan_id)
+    if not plan or not plan.active:
+        raise HTTPException(422, "Select an available plan")
+    from .organization import capture_assignment
+    agent, outlet = capture_assignment(db, body.agent_id)
+    branch = outlet.branch_id
+    content_intake = body.intake.model_dump(mode="json")
+    source = body.source_reference.strip() or body.intake.order_reference.strip()
     content_intake["plan_name"] = plan.name
     content_intake["transaction_id"] = content_intake["transaction_id"] or body.operation_id
     data = base64.b64decode(body.intake.order_image, validate=True)
@@ -768,6 +852,9 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
     try:
         db.flush()
         store(row, content)
+        from .capture_identity import claim_identities, identity_keys
+        claim_identities(db, identity_keys(request_ids=[body.intake.order_reference], sr_numbers=[body.intake.sr_number],
+                         encoded_images=[body.intake.order_image, body.intake.payment_image]), capture_id=row.id)
         from .sales_management import register_capture_sale
         register_capture_sale(db, row)
         saved_id = body.intake.saved_draft_id
@@ -786,7 +873,8 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
         existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
         if existing and existing.creator_id == user.id and payload(existing).get("submission_hash") == fingerprint:
             return view(existing)
-        raise HTTPException(409, "The request ID or submission is already recorded") from None
+        from .capture_identity import DUPLICATE_MESSAGE
+        raise HTTPException(409, DUPLICATE_MESSAGE) from None
     return view(row)
 
 
@@ -794,8 +882,6 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
 def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
     assert_agent(db, user, body.agent_id)
-    from .branch_lifecycle import active_branch
-    from .db import Agent, Outlet
     try:
         data = base64.b64decode(body.image_base64, validate=True)
         image_type = inspect_image(data)
@@ -807,6 +893,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         body.intake.complete()
         check_document_evidence(body.intake, user)
         check_order_evidence(body.intake, user)
+        check_receipt_sr(body.intake, user)
         plan = db.get(Plan, body.intake.plan_id)
         if not plan or not plan.active:
             raise HTTPException(422, "Select an available plan")
@@ -824,7 +911,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         if saved_intake is not None:
             # Offline uploads made before router fulfilment was introduced keep
             # their original operation identity when retried by the new client.
-            saved_intake = {"router_fulfilment": "", **saved_intake}
+            saved_intake = {"router_fulfilment": "", "receipt_sr_check": "", **saved_intake}
         if (
             row.creator_id != user.id
             or row.image_hash != digest
@@ -839,7 +926,8 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
 
     if existing:
         return replay(existing)
-    active_branch(db, db.get(Outlet, db.get(Agent, body.agent_id).outlet_id).branch_id)
+    from .organization import capture_assignment
+    agent, outlet = capture_assignment(db, body.agent_id)
     if not source:
         raise HTTPException(422, "Enter the source transaction reference")
     queued = db.scalar(
@@ -848,7 +936,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     if queued >= 20:
         raise HTTPException(429, "OCR queue is busy. Keep the image and retry shortly.")
     row = KycCapture(
-        branch_id=db.get(Outlet, db.get(Agent, body.agent_id).outlet_id).branch_id,
+        branch_id=outlet.branch_id,
         agent_id=body.agent_id,
         creator_id=user.id,
         operation_id=body.operation_id,
@@ -862,6 +950,11 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     db.add(row)
     try:
         db.flush()
+        from .capture_identity import claim_identities, identity_keys
+        screenshot = body.intake and body.intake.capture_mode in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}
+        claim_identities(db, identity_keys(references=[] if screenshot else [source],
+                         request_ids=[body.intake.order_reference] if screenshot else [], sr_numbers=[body.intake.sr_number] if screenshot else [], images=[data],
+                         encoded_images=[body.intake.order_image, body.intake.payment_image] if body.intake else []), capture_id=row.id)
         content = {"rows": [], "lines": [], "history": [], "document_kind": body.document_kind}
         if body.document_kind == "PAYMENT_CONFIRMATION":
             content["payment_reference"] = body.source_reference.strip()
@@ -918,9 +1011,11 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
         db.commit()
     except IntegrityError:
         db.rollback()
-        return replay(
-            db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
-        )
+        existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
+        if existing:
+            return replay(existing)
+        from .capture_identity import DUPLICATE_MESSAGE
+        raise HTTPException(409, DUPLICATE_MESSAGE) from None
     return view(row)
 
 
@@ -933,12 +1028,15 @@ def listing(
     search: str = Query("", max_length=120),
     include_samples: bool = False,
     stage: Literal["", "READY", "COMPLETED"] = "",
+    branch_id: str = "",
     status: Literal[
         "", "QUEUED", "OCR_FAILED", "EXTRACTED", "VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"
     ] = "",
 ):
     access(db, user)
     q = select(KycCapture).where(capture_scope(db, user))
+    if branch_id:
+        q = q.where(capture_branch_scope(branch_id))
     if search.strip():
         q = q.where(KycCapture.source_reference.icontains(search.strip(), autoescape=True))
     elif not include_samples:
@@ -950,14 +1048,37 @@ def listing(
         q = q.where(KycCapture.status == status)
     q = q.order_by(KycCapture.created_at.desc(), KycCapture.id.desc())
     if stage:
-        rows = [
-            row
-            for row in db.scalars(q)
-            if payload(row).get("document_kind") == "PAYMENT_CONFIRMATION"
-            and ((payload(row).get("activation") or {}).get("status") == "ACTIVATED")
-            == (stage == "COMPLETED")
-        ]
-        return [view(row, False) for row in rows[offset : offset + limit]]
+        from sqlalchemy.orm import aliased
+        linked_sale = aliased(SalesRecord)
+        q = q.add_columns(linked_sale.status).outerjoin(linked_sale, linked_sale.capture_id == KycCapture.id)
+        q = q.where(or_(linked_sale.id.is_(None), linked_sale.status != "CANCELLED"))
+        matches, skipped = [], 0
+        # Evidence kind lives in the encrypted payload. Stream filtered candidates
+        # and stop after one page rather than loading every historical image.
+        for row, sale_status in db.execute(q.execution_options(yield_per=100)):
+            content = payload(row)
+            content = content if isinstance(content, dict) else {}
+            intake = content.get("intake")
+            intake = intake if isinstance(intake, dict) else {}
+            kind = content.get("document_kind")
+            screenshot_sale = kind == "SALE_SCREENSHOTS" or intake.get("capture_mode") in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}
+            if screenshot_sale:
+                selected = stage == "COMPLETED" and sale_status == "CLOSED"
+            elif kind == "PAYMENT_CONFIRMATION":
+                activation = content.get("activation")
+                activated = isinstance(activation, dict) and activation.get("status") == "ACTIVATED"
+                selected = activated == (stage == "COMPLETED")
+            else:
+                selected = False
+            if not selected:
+                continue
+            if skipped < offset:
+                skipped += 1
+                continue
+            matches.append(view(row, False))
+            if len(matches) == limit:
+                break
+        return matches
     return [view(row, False) for row in db.scalars(q.offset(offset).limit(limit))]
 
 
@@ -1239,7 +1360,17 @@ def review(
     data.pop("leader_confirmation", None)
     if body.outcome == "VERIFIED":
         agent = db.get(Agent, row.agent_id)
-        leader_id = sale.leader_id if sale else agent.leader_id if agent else None
+        # Linked sales retain their original reporting leader after transfers.
+        # An unlinked historical capture has no leader snapshot; only alert a
+        # current leader when its saved branch still makes that evidence readable.
+        leader_id = sale.leader_id if sale else None
+        if sale is None and agent and row.branch_id:
+            from .db import Outlet
+            outlet = db.get(Outlet, agent.outlet_id)
+            leader = db.get(User, agent.leader_id) if agent.leader_id else None
+            if (outlet and outlet.branch_id == row.branch_id and leader
+                    and leader.branch_id == row.branch_id and db.get(Role, leader.role_id).name == "Team Leader"):
+                leader_id = leader.id
         if leader_id:
             db.add(
                 Notification(
@@ -1408,6 +1539,9 @@ def process_capture():
             extracted = extractor.extract(cipher.decrypt(row.image_encrypted.encode()))
             data.update({k: v for k, v in extracted.items() if k != "history"})
             row.status, row.error = "EXTRACTED", ""
+        except OcrBusy:
+            db.rollback()
+            return
         except ValueError:
             row.status, row.error = (
                 "OCR_FAILED",
@@ -1437,7 +1571,8 @@ def complete_activation(
     db=Depends(get_db),
 ):
     require(db, user, "compliance.write")
-    require(db, user, "ekyc.write")
+    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
+        raise HTTPException(403, "Only authorized backend management can record external activation")
     row = get_capture(db, user, capture_id, True)
     version_check(row, body)
     data = payload(row)

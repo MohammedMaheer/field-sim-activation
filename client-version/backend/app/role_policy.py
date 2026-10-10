@@ -29,7 +29,6 @@ ROLE_PERMISSIONS = {'Field Agent': ['read', 'ekyc.write', 'shift.write', 'invent
                    'incentive.write',
                    'inventory.write',
                    'support.write',
-                   'ekyc.write',
                    'report.read',
                    'audit.read',
                    'device.ping',

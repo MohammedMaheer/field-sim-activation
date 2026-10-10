@@ -12,7 +12,7 @@ export default function Notifications() {
   const {user} = useContext(Context), client=useQueryClient(), navigate=useNavigate();
   const [category,setCategory]=useState('All'), [unread,setUnread]=useState(false), [search,setSearch]=useState('');
   const [busy,setBusy]=useState(false), [error,setError]=useState('');
-  const query=useQuery({queryKey:['notifications',user.id],queryFn:()=>api('/notifications'),refetchInterval:20000});
+  const query=useQuery({queryKey:['notifications',user.id],queryFn:()=>api('/notifications'),enabled:canVisitPage('/notifications',user),refetchInterval:20000});
   const categories:string[]=query.data?.categories || [];
   const items:Row[]=(query.data?.items || []).filter((row:Row)=>categories.includes(row.category) && typeof row.web_path==='string' && row.web_path.startsWith('/') && !row.web_path.startsWith('//') && canVisitPage(row.web_path.split('?')[0],user));
   const visible=items.filter(row=>(category==='All'||row.category===category)&&(!unread||!row.read)&&`${row.title} ${row.message}`.toLowerCase().includes(search.toLowerCase()));

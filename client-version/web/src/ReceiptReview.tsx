@@ -198,7 +198,7 @@ export default function ReceiptReview({
           <span className="review-kind">{evidenceLabel}</span>
           <h2>{capture.source_reference}</h2>
           <p>
-            <strong>{agent?.name || "Assigned agent"}</strong> ·{" "}
+            <strong>{agent?.name || "Assigned sales agent"}</strong> ·{" "}
             {agent?.employee_id || "Not recorded"}
             {agent?.branch ? ` · ${agent.branch}` : ""}
           </p>
@@ -271,7 +271,7 @@ export default function ReceiptReview({
                       ? "Customer signature"
                       : evidenceLabel}
               </h3>
-              <small>Original image uploaded by the agent</small>
+              <small>Original image uploaded by the sales agent</small>
             </div>
             <div className="review-image-controls">
               <button
@@ -363,7 +363,7 @@ export default function ReceiptReview({
             ) : image ? (
               <img
                 src={image}
-                alt={`${evidenceLabel} from ${agent?.name || "assigned agent"}`}
+                alt={`${evidenceLabel} from ${agent?.name || "assigned sales agent"}`}
                 style={{ width: `${zoom}%` }}
                 onError={() =>
                   setImageError(
@@ -563,7 +563,7 @@ export default function ReceiptReview({
                   maxLength={300}
                   minLength={5}
                   disabled={busy}
-                  placeholder="Record what you checked or what the agent needs to correct"
+                  placeholder="Record what you checked or what the sales agent needs to correct"
                   onChange={(e) => setNote(e.target.value)}
                 />
               </label>
@@ -611,7 +611,7 @@ export default function ReceiptReview({
                 ? `${capture.review.reviewer}: ${capture.review.reason}`
                 : own
                   ? "Another authorized team member must review your own submission."
-                  : "The agent must check and submit the details before review."}
+                  : "The sales agent must check and submit the details before review."}
             </p>
           </div>
         )}

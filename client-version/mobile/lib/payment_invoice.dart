@@ -158,7 +158,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
             ),
           ] else if (orderMode) ...[
             field('Request ID', intake['order_reference']),
-            field('Agent payment record', 'Uploaded'),
+            field('Sales agent payment record', 'Uploaded'),
             field('Backend confirmation', status),
           ] else ...[
             field(
@@ -358,7 +358,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
       'Payment': [
         'Payment reference',
         'Total paid',
-        'Agent payment record',
+        'Sales agent payment record',
         'Backend confirmation',
       ],
       'Sale': [

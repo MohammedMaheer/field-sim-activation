@@ -1,3 +1,4 @@
+import { useBranchScope, salesAgentRole } from "./BranchScope";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Row } from "./api";
@@ -491,6 +492,7 @@ function Configuration({
 }
 
 export default function CommissionCalculations({ period }: { period: string }) {
+  const { branch } = useBranchScope();
   const cache = useQueryClient(),
     [selected, setSelected] = useState<Row | null>(null),
     [editing, setEditing] = useState<Row | null>(null);
@@ -499,9 +501,11 @@ export default function CommissionCalculations({ period }: { period: string }) {
     queryFn: () => api("/commissions/policies"),
   });
   const summary = useQuery<Row>({
-    queryKey: ["commissions", "summary", period],
+    queryKey: ["commissions", "summary", period, branch],
     queryFn: () =>
-      api(`/commissions/summary?period=${encodeURIComponent(period)}`),
+      api(
+        `/commissions/summary?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`,
+      ),
     refetchInterval: 20000,
   });
   async function refresh() {
@@ -510,6 +514,11 @@ export default function CommissionCalculations({ period }: { period: string }) {
   return (
     <section className="commission-workspace">
       <h2>Commission calculations</h2>
+      {branch && (
+        <p className="muted">
+          Employees in the selected branch · account monthly commission
+        </p>
+      )}
       {summary.isPending ? (
         <Loading />
       ) : summary.error ? (
@@ -531,7 +540,7 @@ export default function CommissionCalculations({ period }: { period: string }) {
                 <tr key={row.user_id}>
                   <td>
                     {row.name}
-                    <small>{row.role}</small>
+                    <small>{salesAgentRole(row.role)}</small>
                   </td>
                   <td>{row.policy_name || "Not configured"}</td>
                   <td>

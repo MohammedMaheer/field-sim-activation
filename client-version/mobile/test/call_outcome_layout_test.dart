@@ -11,12 +11,16 @@ class CallOutcomeService extends RelayService {
     user = {
       'id': 'call-test',
       'role': 'Tele Verification Officer',
-      'permissions': ['call.tele.write'],
+      'permissions': ['call.tele.read', 'call.tele.write'],
     };
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) {
-          final data = options.path.endsWith('/summary')
+          final data = options.path == '/resources/branches'
+              ? [
+                  {'id': 'marina', 'name': 'Marina Branch'},
+                ]
+              : options.path.endsWith('/summary')
               ? {'actionable': 1}
               : <dynamic>[
                   {

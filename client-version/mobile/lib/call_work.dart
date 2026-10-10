@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
+import 'role_access.dart';
+import 'branch_filter.dart';
 import 'typography.dart';
 
 bool canRecordCall(Json task, Json? user) {
@@ -35,6 +37,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   String filter = 'Ready';
   Timer? poll;
   bool fetching = false;
+  bool reloadPending = false;
   @override
   void initState() {
     super.initState();
@@ -63,7 +66,20 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   }
 
   Future<void> load({bool silent = false}) async {
-    if (fetching || !mounted) return;
+    if (!mounted) return;
+    if (!canVisitMobilePage('/call-work', ref.read(serviceProvider).user)) {
+      setState(() {
+        loading = false;
+        tasks = [];
+        summary = {};
+        error = 'Calling access is not available for your role';
+      });
+      return;
+    }
+    if (fetching) {
+      reloadPending = true;
+      return;
+    }
     fetching = true;
     if (!silent) {
       setState(() {
@@ -73,11 +89,18 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
     }
     try {
       final service = ref.read(serviceProvider);
+      final requestedBranch = service.branchId;
       final results = await Future.wait([
-        service.dio.get('/sales-management/call-tasks'),
-        service.dio.get('/sales-management/call-tasks/summary'),
+        service.dio.get(
+          '/sales-management/call-tasks',
+          queryParameters: service.branchQuery(),
+        ),
+        service.dio.get(
+          '/sales-management/call-tasks/summary',
+          queryParameters: service.branchQuery(),
+        ),
       ]);
-      if (mounted) {
+      if (mounted && service.branchId == requestedBranch) {
         setState(() {
           error = '';
           tasks = (results[0].data as List)
@@ -93,6 +116,10 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
     } finally {
       fetching = false;
       if (mounted) setState(() => loading = false);
+      if (mounted && reloadPending) {
+        reloadPending = false;
+        unawaited(load());
+      }
     }
   }
 
@@ -288,6 +315,27 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!canVisitMobilePage('/call-work', ref.watch(serviceProvider).user)) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Call work queue'),
+          actions: [
+            IconButton(
+              onPressed: () => ref.read(serviceProvider).logout(),
+              tooltip: 'Sign out',
+              icon: const Icon(Icons.logout),
+            ),
+          ],
+        ),
+        body: const Center(
+          child: Text('Calling access is not available for your role'),
+        ),
+      );
+    }
+    ref.listen<String?>(
+      serviceProvider.select((service) => service.branchId),
+      (_, _) => load(),
+    );
     final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
     final compact = MediaQuery.sizeOf(context).width < 360 || textScale > 1.2;
     final visible = tasks
@@ -357,6 +405,8 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(15),
                 children: [
+                  const BranchFilter(),
+                  const SizedBox(height: 14),
                   Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(

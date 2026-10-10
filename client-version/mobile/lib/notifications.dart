@@ -8,10 +8,15 @@ import 'typography.dart';
 
 final notificationsProvider = FutureProvider.autoDispose<Json>((ref) async {
   final userId = ref.watch(serviceProvider.select((s) => s.user?['id']));
+  final canRead = ref.watch(
+    serviceProvider.select((s) => canVisitMobilePage('/notifications', s.user)),
+  );
   final service = ref.read(serviceProvider);
+  if (userId == null || !canRead) {
+    return {'items': [], 'unread': 0, 'categories': []};
+  }
   final timer = Timer(const Duration(seconds: 20), ref.invalidateSelf);
   ref.onDispose(timer.cancel);
-  if (userId == null) return {'items': [], 'unread': 0};
   return Map<String, dynamic>.from(
     (await service.dio.get('/notifications')).data,
   );
@@ -21,6 +26,12 @@ class NotificationBell extends ConsumerWidget {
   const NotificationBell({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (!canVisitMobilePage(
+      '/notifications',
+      ref.watch(serviceProvider).user,
+    )) {
+      return const SizedBox.shrink();
+    }
     final count =
         ref.watch(notificationsProvider).valueOrNull?['unread'] as int? ?? 0;
     return IconButton(
@@ -94,6 +105,17 @@ class _NotificationsState extends ConsumerState<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (!canVisitMobilePage(
+      '/notifications',
+      ref.watch(serviceProvider).user,
+    )) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Notifications')),
+        body: const Center(
+          child: Text('Notifications are not available for your role'),
+        ),
+      );
+    }
     final data = ref.watch(notificationsProvider);
     final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
     return Scaffold(

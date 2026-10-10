@@ -55,7 +55,9 @@ export function Badge({ value }: { value: string }) {
   return (
     <span className={"badge " + tone}>
       <i />
-      {value === "OCR_FAILED" ? "Needs another image" : value?.replaceAll("_", " ").toLowerCase()}
+      {value === "OCR_FAILED"
+        ? "Needs another image"
+        : value?.replaceAll("_", " ").toLowerCase()}
     </span>
   );
 }
@@ -480,9 +482,23 @@ export function DetailList({ data }: { data: Row }) {
       {Object.entries(data)
         .filter(([, v]) => typeof v !== "object")
         .map(([k, v]) => (
-          <div key={k}>
-            <dt>{k.replaceAll("_", " ")}</dt>
-            <dd>{String(v ?? "—")}</dd>
+          <div key={k} data-field={k}>
+            <dt>
+              {(
+                {
+                  agent: "Sales agent",
+                  agents: "Sales agents",
+                  daily_target: "Total daily target",
+                  sr_number: "SR number",
+                  latest_request_id: "Latest request ID",
+                } as Record<string, string>
+              )[k] || k.replaceAll("_", " ")}
+            </dt>
+            <dd>
+              {v === "Field Agent"
+                ? "Sales Agent"
+                : String(v ?? "Not recorded")}
+            </dd>
           </div>
         ))}
     </dl>

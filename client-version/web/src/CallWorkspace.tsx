@@ -1,5 +1,6 @@
+import { useBranchScope } from "./BranchScope";
 import { useSearchParams } from "react-router-dom";
-import { useContext, useState, useEffect } from "react";
+import { useContext, useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BellRing,
@@ -22,27 +23,43 @@ export default function CallWorkspace({
 }) {
   const { user, notify } = useContext(Context);
   const client = useQueryClient();
+  const { branch } = useBranchScope();
+  const branchQuery = `branch_id=${encodeURIComponent(branch)}`;
   const [filter, setFilter] = useState<Filter>("ready");
   const [selected, setSelected] = useState<Row | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [historySale, setHistorySale] = useState<Row | null>(null);
   const tasks = useQuery<Row[]>({
-    queryKey: ["sales-management", "call-tasks"],
-    queryFn: () => api("/sales-management/call-tasks"),
+    queryKey: ["sales-management", "call-tasks", branch],
+    queryFn: () => api(`/sales-management/call-tasks?${branchQuery}`),
     refetchInterval: 15000,
   });
   const [params, setParams] = useSearchParams();
   const summary = useQuery<Row>({
-    queryKey: ["sales-management", "call-summary"],
-    queryFn: () => api("/sales-management/call-tasks/summary"),
+    queryKey: ["sales-management", "call-summary", branch],
+    queryFn: () => api(`/sales-management/call-tasks/summary?${branchQuery}`),
     refetchInterval: 15000,
   });
   const history = useQuery<Row[]>({
-    queryKey: ["sales-management", "calls"],
-    queryFn: () => api("/sales-management/calls"),
+    queryKey: ["sales-management", "calls", branch],
+    queryFn: () => api(`/sales-management/calls?${branchQuery}`),
     enabled: !!historySale,
   });
+  const previousBranch = useRef(branch);
+  useEffect(() => {
+    if (previousBranch.current !== branch) {
+      previousBranch.current = branch;
+      setSelected(null);
+      setHistorySale(null);
+      setError("");
+      if (params.has("selected")) {
+        const next = new URLSearchParams(params);
+        next.delete("selected");
+        setParams(next, { replace: true });
+      }
+    }
+  }, [branch, params, setParams]);
   const canTele =
     user.permissions?.includes("call.tele.write") ||
     user.permissions?.includes("compliance.write");

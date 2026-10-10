@@ -17,7 +17,7 @@ from sqlalchemy import ForeignKey, Integer, JSON, String, UniqueConstraint, sele
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.exc import IntegrityError
 
-from .db import Agent, Branch, Entity, Role, SalesRecord, User, business_date, get_db, now
+from .db import Agent, Branch, Outlet, Entity, Role, SalesRecord, User, business_date, get_db, now
 from .security import permissions, principal
 from .services import audit
 from .validation import BusinessInput
@@ -196,6 +196,15 @@ def subject_sales(db, subject, start, end):
     else:
         return []
     return list(db.scalars(query))
+
+
+def subjects_in_branch(db, people, branch_id, start=None, end=None):
+    """Filter allowed accounts, preserving monthly policy and payout boundaries."""
+    if not branch_id:
+        return people
+    agent_users = set(db.scalars(select(Agent.user_id).join(Outlet).where(Outlet.branch_id == branch_id)))
+    return [person for person in people if person.branch_id == branch_id or person.id in agent_users
+            or (start is not None and any(sale.branch_id == branch_id for sale in subject_sales(db, person, start, end)))]
 
 
 def money(value):
@@ -446,14 +455,14 @@ def policies(user=Depends(principal), db=Depends(get_db)):
 
 
 @router.get("/subjects")
-def subjects(user=Depends(principal), db=Depends(get_db)):
-    return [{"id": row.id, "name": row.name, "role": role_name(db, row), "branch_id": row.branch_id} for row in allowed_subjects(db, user)]
+def subjects(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    return [{"id": row.id, "name": row.name, "role": role_name(db, row), "branch_id": row.branch_id} for row in subjects_in_branch(db, allowed_subjects(db, user), branch_id)]
 
 
 @router.get("/configurations")
-def configurations(period: str, user=Depends(principal), db=Depends(get_db)):
-    period_bounds(period)
-    ids = [row.id for row in allowed_subjects(db, user)]
+def configurations(period: str, user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    start, end = period_bounds(period)
+    ids = [row.id for row in subjects_in_branch(db, allowed_subjects(db, user), branch_id, start, end)]
     return [configuration_view(row) for row in db.scalars(select(CommissionConfiguration).where(CommissionConfiguration.period == period, CommissionConfiguration.user_id.in_(ids)))]
 
 
@@ -500,10 +509,11 @@ def write_configuration(user_id: str, period: str, body: ConfigurationWrite, req
 
 
 @router.get("/summary")
-def summary(period: str = "", user_id: str = "", user=Depends(principal), db=Depends(get_db)):
+def summary(period: str = "", user_id: str = "", user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     period = period or business_date().strftime("%Y-%m")
     start, end = period_bounds(period)
     people = [subject_for(db, user, user_id)] if user_id else allowed_subjects(db, user)
+    people = subjects_in_branch(db, people, branch_id, start, end)
     output = []
     for subject in people:
         rows = subject_sales(db, subject, start, end)
@@ -529,9 +539,11 @@ def summary(period: str = "", user_id: str = "", user=Depends(principal), db=Dep
                        "policy_id": policy.id if policy else None, "policy_name": policy.name if policy else "Not configured",
                        "net_sales": len(closed), "cancelled": sum(row.status == "CANCELLED" for row in rows),
                        "in_progress": sum(row.status == "IN_PROGRESS" for row in rows), "status": "CONFIGURATION_REQUIRED" if missing else "CALCULATED",
+                       "branch_net_sales": sum(row.status == "CLOSED" and row.branch_id == branch_id for row in rows) if branch_id else len(closed),
+                       "branch_cancelled": sum(row.status == "CANCELLED" and (not branch_id or row.branch_id == branch_id) for row in rows),
                        "amount": None if missing else money(amount), "currency": "AED", "missing_inputs": missing, "components": components,
                        "configuration": configuration_view(cfg)})
-    return {"period": period, "recomputed_at": now().isoformat(), "rows": output, "can_configure": role_name(db, user) in WRITERS and "incentive.write" in permissions(db, user),
+    return {"period": period, "branch_id": branch_id, "calculation_scope": "ACCOUNT_MONTH", "recomputed_at": now().isoformat(), "rows": output, "can_configure": role_name(db, user) in WRITERS and "incentive.write" in permissions(db, user),
             "method": "Net closed sales, attributed to their original sale date; cancelled records are excluded"}
 
 

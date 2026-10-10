@@ -283,9 +283,9 @@ export default function TransactionJourney() {
             >
               <div>
                 <label>
-                  Assigned agent
+                  Assigned sales agent
                   <select
-                    aria-label="Assigned agent"
+                    aria-label="Assigned sales agent"
                     value={record?.agent_id || aid}
                     disabled={!!record || busy}
                     onChange={(e) => setAgent(e.target.value)}
@@ -689,7 +689,7 @@ export default function TransactionJourney() {
                   ["SIM", identity.iccid],
                   ["Plan", record.plan],
                   ["Request", record.request_id],
-                  ["Agent", record.agent],
+                  ["Sales agent", record.agent],
                   ["Outlet", record.outlet],
                 ].map(([k, v]) => (
                   <div key={k}>

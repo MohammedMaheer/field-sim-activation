@@ -3,7 +3,9 @@ import { authenticate } from "./session";
 test("setup drawer and detail navigation", async ({ page }) => {
   await authenticate(page);
   await page.goto("/agents");
-  await page.getByRole("button", { name: "Add agent", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Add sales agent", exact: true })
+    .click();
   const d = page.getByRole("dialog");
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 1000 });
@@ -40,10 +42,7 @@ test("setup drawer and detail navigation", async ({ page }) => {
     animations: "disabled",
   });
 });
-test("create connected branch leader and agent", async ({
-  page,
-  request,
-}) => {
+test("create connected branch leader and agent", async ({ page, request }) => {
   test.skip(!process.env.RELAY_ALLOW_SETUP_TEST, "Isolated QA database only");
   await authenticate(page);
   await page.goto("/branches");
@@ -59,15 +58,21 @@ test("create connected branch leader and agent", async ({
   await d.getByLabel("Team leader name").fill("Demo setup leader");
   await d.getByLabel("Sign-in email").fill("leader." + suffix + "@relay.demo");
   await d.getByLabel("Password", { exact: false }).fill("test-client-password");
-  await d.getByRole("button", { name: "Create team leader", exact: true }).click();
+  await d
+    .getByRole("button", { name: "Create team leader", exact: true })
+    .click();
   await expect(d.getByRole("status")).toContainText("Team leader assigned");
-  await d.getByRole("button", { name: "Agent", exact: true }).click();
-  await d.getByLabel("Agent name", { exact: true }).fill("Demo setup agent");
+  await d.getByRole("button", { name: "Sales agent", exact: true }).click();
+  await d
+    .getByLabel("Sales agent name", { exact: true })
+    .fill("Demo setup agent");
   await d.getByLabel("Employee ID").fill("QA-" + suffix);
   await d.getByLabel("Sign-in email").fill("agent." + suffix + "@relay.demo");
   await d.getByLabel("Password", { exact: false }).fill("test-client-password");
-  await d.getByRole("button", { name: "Create agent", exact: true }).click();
-  await expect(d.getByRole("status")).toContainText("Agent created");
+  await d
+    .getByRole("button", { name: "Create sales agent", exact: true })
+    .click();
+  await expect(d.getByRole("status")).toContainText("Sales agent created");
   const r = await request.post("/api/auth/login", {
     data: {
       email: "agent." + suffix + "@relay.demo",

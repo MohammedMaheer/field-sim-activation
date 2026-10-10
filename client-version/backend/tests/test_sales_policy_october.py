@@ -33,13 +33,13 @@ def policy_records(database):
 
 
 def agents(client):
-    login(client)
+    login(client, "ops")
     rows = client.get("/api/resources/agents").json()
     return next(row for row in rows if row["employee_id"] == "RLY-1041"), next(row for row in rows if row["employee_id"] == "RLY-1044")
 
 
 def new_sale(client, agent, order_type="NEW", **extra):
-    login(client)
+    login(client, "ops")
     response = client.post("/api/sales-management/sales", json={
         "agent_id": agent["id"], "order_type": order_type, "customer_name": "October policy customer",
         "plan_name": "Captured package", "request_id": "POLICY-" + str(uuid4()), **extra})

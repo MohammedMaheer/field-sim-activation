@@ -90,8 +90,11 @@ def view(db, row):
 
 
 @router.get("")
-def assets(user=Depends(principal), db=Depends(get_db)):
-    rows = db.scalars(asset_scope(db, user).order_by(FieldAsset.created_at.desc()).limit(1000)).all()
+def assets(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    query = asset_scope(db, user)
+    if branch_id:
+        query = query.where(FieldAsset.branch_id == branch_id)
+    rows = db.scalars(query.order_by(FieldAsset.created_at.desc()).limit(1000)).all()
     return [view(db, row) for row in rows]
 
 
@@ -267,8 +270,10 @@ def history(asset_id: str, user=Depends(principal), db=Depends(get_db)):
              "quantity_delta": move.quantity_delta, "reason": move.reason} for move in moves]
 
 
-def summary_rows(db, user):
+def summary_rows(db, user, branch_id=""):
     branch_ids = visible_branches(db, user)
+    if branch_id:
+        branch_ids = [value for value in branch_ids if value == branch_id]
     if not branch_ids:
         return []
     balances = {}
@@ -302,8 +307,8 @@ def summary_rows(db, user):
 
 
 @router.get("/report/summary")
-def stock_summary(user=Depends(principal), db=Depends(get_db)):
-    return summary_rows(db, user)
+def stock_summary(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    return summary_rows(db, user, branch_id)
 
 
 @router.get("/report/checklist")
@@ -337,6 +342,7 @@ def return_checklist(agent_id: str = "", branch_id: str = "", user=Depends(princ
 
 class AgentTransfer(BusinessInput):
     branch_id: str
+    leader_id: str = Field(default="", max_length=36)
     stock_action: Literal["RETURN", "TRANSFER"]
     reason: str = Field(min_length=5, max_length=300)
 
@@ -363,9 +369,8 @@ def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=De
         FieldAsset.status.not_in(["CONSUMED", "RETURNED", "RETIRED"])).with_for_update()).all()
     if any(item.status != "ASSIGNED" for item in items):
         raise HTTPException(409, "Return or write off damaged/lost equipment before transferring this agent")
-    leader = db.scalar(select(User).join(Role).where(Role.name == "Team Leader", User.branch_id == body.branch_id))
-    if not leader:
-        raise HTTPException(409, "Assign the destination branch team leader first")
+    from .organization import select_agent_leader
+    leader = select_agent_leader(db, body.branch_id, body.leader_id, required=True)
     for item in items:
         destination = body.branch_id if body.stock_action == "TRANSFER" else item.branch_id
         assignee = agent.id if body.stock_action == "TRANSFER" else None
@@ -558,8 +563,11 @@ class RequestCreate(BusinessInput):
 
 
 @router.get("/requests/list")
-def requests(user=Depends(principal), db=Depends(get_db)):
-    rows = db.scalars(request_scope(db, user).order_by(FieldAssetRequest.created_at.desc()).limit(1000)).all()
+def requests(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    query = request_scope(db, user)
+    if branch_id:
+        query = query.where(FieldAssetRequest.branch_id == branch_id)
+    rows = db.scalars(query.order_by(FieldAssetRequest.created_at.desc()).limit(1000)).all()
     responses = {}
     for event in db.scalars(select(Audit).where(Audit.entity.in_([row.id for row in rows]), Audit.action == "Field Asset Request Updated").order_by(Audit.created_at.desc())):
         responses.setdefault(event.entity, {"response": event.reason, "responded_by": event.actor, "responded_at": event.created_at})

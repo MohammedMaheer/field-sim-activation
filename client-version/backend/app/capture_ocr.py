@@ -6,11 +6,22 @@ import os
 import re
 import subprocess
 import tempfile
+from threading import BoundedSemaphore
 from collections import defaultdict
 from pathlib import Path
 from PIL import Image, ImageOps
 
 Image.MAX_IMAGE_PIXELS = 6_000_000
+
+
+class OcrBusy(Exception):
+    """Transient capacity condition; callers must retry rather than lose evidence."""
+
+
+ocr_slots = int(os.getenv("OCR_CONCURRENCY", "1"))
+if not 1 <= ocr_slots <= 4:
+    raise ValueError("OCR_CONCURRENCY must be between 1 and 4")
+_ocr_capacity = BoundedSemaphore(ocr_slots)
 
 
 def inspect_image(data):
@@ -65,6 +76,14 @@ def organize_lines(lines):
 
 class TesseractExtractor:
     def extract(self, data):
+        if not _ocr_capacity.acquire(blocking=False):
+            raise OcrBusy("Scanner is busy. Try again shortly.")
+        try:
+            return self._extract(data)
+        finally:
+            _ocr_capacity.release()
+
+    def _extract(self, data):
         inspect_image(data)
         with tempfile.TemporaryDirectory(prefix="relay-ocr-") as folder:
             source = Path(folder) / "source.png"

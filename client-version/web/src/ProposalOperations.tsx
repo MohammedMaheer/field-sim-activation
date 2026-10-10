@@ -2,6 +2,7 @@ import { businessPeriod } from "./businessTime";
 import CommissionCalculations from "./CommissionCalculations";
 import { useSearchParams } from "react-router-dom";
 import { useState } from "react";
+import { useBranchScope } from "./BranchScope";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ClipboardCheck,
@@ -117,7 +118,7 @@ export function FieldTasks({ user, notify }: Props) {
       {canAssign && (
         <Panel
           title="Assign a task"
-          subtitle="Choose an agent in your authorized team."
+          subtitle="Choose a sales agent in your authorized team."
         >
           <form
             className="proposal-form"
@@ -139,13 +140,13 @@ export function FieldTasks({ user, notify }: Props) {
             }}
           >
             <label>
-              Agent
+              Sales agent
               <select
                 required
                 value={agentId}
                 onChange={(e) => setAgentId(e.target.value)}
               >
-                <option value="">Select an agent</option>
+                <option value="">Select a sales agent</option>
                 {agents.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name} · {a.employee_id}
@@ -201,7 +202,7 @@ export function FieldTasks({ user, notify }: Props) {
                 setQuery(e.target.value);
                 setLimit(8);
               }}
-              placeholder="Task, agent or employee ID"
+              placeholder="Task, sales agent or employee ID"
             />
           </label>
           <label>
@@ -318,6 +319,7 @@ export function FieldTasks({ user, notify }: Props) {
 }
 
 export function Incentives({ user, notify }: Props) {
+  const { branch } = useBranchScope();
   const [selected, setSelected] = useState<Row | null>(null);
   const cache = useQueryClient();
   const [period, setPeriod] = useState(month());
@@ -333,8 +335,11 @@ export function Incentives({ user, notify }: Props) {
     error,
     refetch,
   } = useQuery<Row[]>({
-    queryKey: ["incentives", period],
-    queryFn: () => api(`/incentives?period=${encodeURIComponent(period)}`),
+    queryKey: ["incentives", period, branch],
+    queryFn: () =>
+      api(
+        `/incentives?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`,
+      ),
   });
   const { data: agents = [] } = useQuery<Row[]>({
     queryKey: ["agents"],
@@ -384,7 +389,7 @@ export function Incentives({ user, notify }: Props) {
           <button
             onClick={() =>
               download(
-                `/incentives/export?period=${encodeURIComponent(period)}`,
+                `/incentives/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`,
                 `incentives-${period}.csv`,
               ).catch((e) => setMessage(e.message))
             }
@@ -423,7 +428,7 @@ export function Incentives({ user, notify }: Props) {
           </div>
           <div>
             <b>{new Set(data.map((x) => x.agent_id)).size}</b>
-            <span>Agents</span>
+            <span>Sales agents</span>
           </div>
         </div>
         <RecordOverview
@@ -436,7 +441,7 @@ export function Incentives({ user, notify }: Props) {
           }))}
           field="amount"
           numeric
-          title="Incentives by agent (AED)"
+          title="Incentives by sales agent (AED)"
         />
         {message && (
           <p role="alert" className="ekyc-feedback">
@@ -479,13 +484,13 @@ export function Incentives({ user, notify }: Props) {
                 }}
               >
                 <label>
-                  Agent
+                  Sales agent
                   <select
                     required
                     value={agentId}
                     onChange={(e) => setAgentId(e.target.value)}
                   >
-                    <option value="">Select an agent</option>
+                    <option value="">Select a sales agent</option>
                     {agents.map((a) => (
                       <option key={a.id} value={a.id}>
                         {a.name} · {a.employee_id}
@@ -551,7 +556,7 @@ export function Incentives({ user, notify }: Props) {
             onRow={setSelected}
             columns={[
               { key: "employee_id", label: "Employee ID" },
-              { key: "agent", label: "Agent" },
+              { key: "agent", label: "Sales agent" },
               { key: "period", label: "Period" },
               { key: "amount", label: "Amount (AED)" },
               {
@@ -584,6 +589,7 @@ export function Incentives({ user, notify }: Props) {
 }
 
 export function Support({ user, notify }: Props) {
+  const { branch } = useBranchScope();
   const [params] = useSearchParams();
   const [selectedId, setSelectedId] = useState(params.get("selected") || "");
   const cache = useQueryClient();
@@ -593,8 +599,9 @@ export function Support({ user, notify }: Props) {
     error,
     refetch,
   } = useQuery<Row[]>({
-    queryKey: ["support-tickets"],
-    queryFn: () => api("/support-tickets"),
+    queryKey: ["support-tickets", branch],
+    queryFn: () =>
+      api(`/support-tickets?branch_id=${encodeURIComponent(branch)}`),
   });
   const [response, setResponse] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -620,7 +627,7 @@ export function Support({ user, notify }: Props) {
         <div>
           <div className="eyebrow">FIELD SUPPORT</div>
           <h1>Support & help</h1>
-          <p>Review requests sent by field agents and respond to them.</p>
+          <p>Review requests sent by sales agents and respond to them.</p>
         </div>
       </div>
       <RecordOverview rows={data} title="Support status" />
@@ -638,7 +645,7 @@ export function Support({ user, notify }: Props) {
           onRow={(t) => setSelectedId(t.id)}
           columns={[
             { key: "subject", label: "Request" },
-            { key: "agent", label: "Agent" },
+            { key: "agent", label: "Sales agent" },
             {
               key: "created_at",
               label: "Created",
@@ -693,7 +700,7 @@ export function Support({ user, notify }: Props) {
                       minLength={5}
                       maxLength={1000}
                       rows={4}
-                      placeholder="Response to agent"
+                      placeholder="Response to sales agent"
                       value={response[t.id] || ""}
                       onChange={(e) =>
                         setResponse({ ...response, [t.id]: e.target.value })

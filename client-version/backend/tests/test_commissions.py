@@ -335,3 +335,27 @@ def test_frozen_migration_rates_match_runtime_policy_tables():
     module=importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     assert module.POLICIES == SOURCE_POLICIES
+
+
+def test_branch_commission_selection_preserves_approved_monthly_entitlement(commission_context):
+    ctx = commission_context
+    original = sales(ctx, 10)
+    # A salesperson's earlier sales remain part of their account-month policy
+    # even when the branch selector is narrowed to their current branch.
+    original[0].branch_id = ctx["branches"][1].id
+    ctx["db"].commit()
+    branch = ctx["branches"][0].id
+    result = ctx["client"].get(f"/api/commissions/summary?period=2026-10&branch_id={branch}")
+    assert result.status_code == 200, result.text
+    assert result.json()["calculation_scope"] == "ACCOUNT_MONTH"
+    own = next(row for row in result.json()["rows"] if row["user_id"] == ctx["people"]["agent1"].id)
+    assert own["net_sales"] == 10 and own["branch_net_sales"] == 9
+    assert ctx["people"]["agent2"].id not in {row["user_id"] for row in result.json()["rows"]}
+
+
+def test_branch_selector_never_exposes_other_accounts_commission(commission_context):
+    ctx = commission_context
+    as_role(ctx, "agent1")
+    foreign = ctx["branches"][1].id
+    assert ctx["client"].get(f"/api/commissions/summary?period=2026-10&branch_id={foreign}").json()["rows"] == []
+    assert ctx["client"].get(f"/api/commissions/subjects?branch_id={foreign}").json() == []

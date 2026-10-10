@@ -1,3 +1,6 @@
+import { useBranchScope } from "./BranchScope";
+import { useContext } from "react";
+import { Context } from "./App";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, Upload } from "lucide-react";
@@ -18,6 +21,13 @@ export function srStatus(value: unknown): string {
 
 export default function SRVerification() {
   const cache = useQueryClient();
+  const { branch } = useBranchScope();
+  const { user } = useContext(Context);
+  const canWrite =
+    user.permissions?.includes("compliance.write") &&
+    ["Administrator", "Operations Manager", "Compliance Officer"].includes(
+      user.role,
+    );
   const [date, setDate] = useState(() =>
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Dubai",
@@ -78,7 +88,10 @@ export default function SRVerification() {
       aria-label="Daily SR verification"
     >
       <div className="sales-section-head">
-        <h2>Daily SR verification</h2>
+        <div>
+          <h2>Daily SR verification</h2>
+          {branch && <small>Daily report · All branches</small>}
+        </div>
         <button
           disabled={busy}
           onClick={() =>
@@ -92,42 +105,45 @@ export default function SRVerification() {
           Excel template
         </button>
       </div>
-      <div className="sales-form compact">
-        <label>
-          Sales date
-          <input
-            type="date"
-            required
-            value={date}
-            onChange={(e) => {
-              setDate(e.target.value);
-              setPreview(null);
-            }}
-          />
-        </label>
-        <label>
-          Etisalat report
-          <input
-            aria-label="Daily SR report"
-            type="file"
-            accept=".xlsx,.csv"
-            disabled={busy}
-            onChange={(e) => {
-              setFile(e.target.files?.[0] || null);
-              setPreview(null);
-              setError("");
-            }}
-          />
-        </label>
-        <button
-          className="primary"
-          disabled={busy || !file || !date}
-          onClick={() => process(false)}
-        >
-          <FileSpreadsheet size={16} />
-          {busy ? "Checking…" : "Preview matches"}
-        </button>
-      </div>
+      {canWrite && (
+        <div className="sales-form compact">
+          <label>
+            Sales date
+            <input
+              type="date"
+              required
+              value={date}
+              onChange={(e) => {
+                setDate(e.target.value);
+                setPreview(null);
+              }}
+            />
+          </label>
+          <label>
+            Etisalat report
+            <input
+              aria-label="Daily SR report"
+              type="file"
+              accept=".xlsx,.csv"
+              disabled={busy}
+              onChange={(e) => {
+                setFile(e.target.files?.[0] || null);
+                setPreview(null);
+                setError("");
+              }}
+            />
+          </label>
+          <button
+            className="primary"
+            disabled={busy || !file || !date}
+            onClick={() => process(false)}
+          >
+            <FileSpreadsheet size={16} />
+            {busy ? "Checking…" : "Preview matches"}
+          </button>
+        </div>
+      )}
+      {!canWrite && <p className="muted">Read-only verification history</p>}
       {error && (
         <p className="sales-error" role="alert">
           {error}
@@ -194,7 +210,7 @@ export default function SRVerification() {
             !(preview.errors || []).length && (
               <button
                 className="primary"
-                disabled={busy || !preview.preview_token}
+                disabled={!canWrite || busy || !preview.preview_token}
                 onClick={() => process(true)}
               >
                 <Upload size={16} />

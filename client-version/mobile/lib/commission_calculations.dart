@@ -2,6 +2,8 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
+import 'branch_filter.dart';
+import 'sales_presentation.dart';
 import 'typography.dart';
 
 String commissionPeriod(DateTime instant) => instant
@@ -48,6 +50,7 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
   List<Json> rows = [], policies = [];
   String error = '';
   bool loading = true, fetching = false;
+  bool reloadPending = false;
   Timer? poll;
   @override
   void initState() {
@@ -66,7 +69,10 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
   }
 
   Future<void> load({bool quiet = false}) async {
-    if (fetching) return;
+    if (fetching) {
+      reloadPending = true;
+      return;
+    }
     fetching = true;
     final requested = period;
     if (!quiet) {
@@ -77,11 +83,19 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
     }
     try {
       final api = ref.read(serviceProvider).dio;
+      final branch = ref.read(serviceProvider).branchId;
       final result = await Future.wait([
-        api.get('/commissions/summary', queryParameters: {'period': requested}),
+        api.get(
+          '/commissions/summary',
+          queryParameters: ref.read(serviceProvider).branchQuery({
+            'period': requested,
+          }),
+        ),
         api.get('/commissions/policies'),
       ]);
-      if (mounted && requested == period) {
+      if (mounted &&
+          requested == period &&
+          ref.read(serviceProvider).branchId == branch) {
         setState(() {
           rows = (result[0].data['rows'] as List)
               .map((v) => Json.from(v))
@@ -95,6 +109,10 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
     } finally {
       fetching = false;
       if (mounted && !quiet) setState(() => loading = false);
+      if (mounted && reloadPending) {
+        reloadPending = false;
+        unawaited(load());
+      }
     }
   }
 
@@ -113,6 +131,8 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
     child: ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        const BranchFilter(),
+        const SizedBox(height: 12),
         Row(
           children: [
             IconButton(
@@ -155,7 +175,7 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
                   Text('${row['name']}', style: RelayTypography.section),
                   const SizedBox(height: 4),
                   Text(
-                    '${row['role']} · ${row['policy_name']}',
+                    '${salesRoleLabel(row['role'])} · ${row['policy_name']}',
                     style: RelayTypography.caption,
                   ),
                   const SizedBox(height: 12),
@@ -378,21 +398,27 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
   }
 
   @override
-  Widget build(BuildContext context) => DefaultTabController(
-    length: 3,
-    child: Column(
-      children: [
-        const TabBar(
-          tabs: [
-            Tab(text: 'Calculated'),
-            Tab(text: 'Rate tables'),
-            Tab(text: 'History'),
-          ],
-        ),
-        Expanded(
-          child: TabBarView(children: [summary(), rates(), widget.history]),
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context) {
+    ref.listen<String?>(
+      serviceProvider.select((service) => service.branchId),
+      (_, _) => load(),
+    );
+    return DefaultTabController(
+      length: 3,
+      child: Column(
+        children: [
+          const TabBar(
+            tabs: [
+              Tab(text: 'Calculated'),
+              Tab(text: 'Rate tables'),
+              Tab(text: 'History'),
+            ],
+          ),
+          Expanded(
+            child: TabBarView(children: [summary(), rates(), widget.history]),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -9,7 +9,7 @@ from fastapi import Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
-from .db import User, Role, Permission, Session, Agent, Outlet, now, get_db
+from .db import User, Role, Permission, Session, Agent, Outlet, Branch, now, get_db
 from .role_policy import ROLE_PERMISSIONS
 
 SECRET = os.getenv("JWT_SECRET") or secrets.token_hex(48)
@@ -35,7 +35,7 @@ def password_hash(value):
 
 KNOWN_ROLES = set(ROLE_PERMISSIONS)
 GLOBAL_AGENT_ROLES = {"Administrator", "Operations Manager", "Compliance Officer", "Inventory Manager", "Sales Manager"}
-CAPTURE_WRITERS = {"Administrator", "Operations Manager", "Field Agent"}
+CAPTURE_WRITERS = {"Operations Manager", "Field Agent"}
 
 
 def permissions(db, user):
@@ -146,6 +146,9 @@ def active_agent(db, agent_id):
 
 def user_view(db, user):
     agent = db.scalar(select(Agent).where(Agent.user_id == user.id))
+    outlet = db.get(Outlet, agent.outlet_id) if agent else None
+    branch_id = outlet.branch_id if outlet else user.branch_id
+    branch = db.get(Branch, branch_id) if branch_id else None
     return {
         "id": user.id,
         "name": user.name,
@@ -153,4 +156,6 @@ def user_view(db, user):
         "role": db.get(Role, user.role_id).name,
         "permissions": sorted(permissions(db, user)),
         "agent_id": agent.id if agent else None,
+        "branch_id": branch.id if branch else None,
+        "branch": branch.name if branch else "All branches",
     }

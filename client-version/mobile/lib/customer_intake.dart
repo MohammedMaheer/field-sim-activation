@@ -1342,7 +1342,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 if (data['router_fulfilment'] == 'ON_SPOT')
                   field('router_serial', 'Router serial'),
               ],
-              field('sr_number', 'SR number'),
+              field('sr_number', 'SR number', locked: true),
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: const Text(

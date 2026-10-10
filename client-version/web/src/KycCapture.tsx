@@ -1,9 +1,10 @@
+import { useBranchScope } from "./BranchScope";
 import ActivationReceipt from "./ActivationReceipt";
 import CustomerIntake from "./CustomerIntake";
 import ReceiptReview from "./ReceiptReview";
 import KycJourney from "./KycJourney";
 import RecordOverview from "./RecordOverview";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Camera,
@@ -22,17 +23,22 @@ export default function KycCapture() {
   const { user } = useContext(Context),
     agents = useResource("agents"),
     client = useQueryClient();
-  const canWrite = user.permissions.some((p: string) =>
-    ["activation.write", "ekyc.write"].includes(p),
-  );
+  const { branch } = useBranchScope();
+  const canWrite =
+    user.role !== "Administrator" &&
+    user.permissions.some((p: string) =>
+      ["activation.write", "ekyc.write"].includes(p),
+    );
   const canReview = user.permissions.includes("compliance.write");
   const activity = useQuery<Row[]>({
-    queryKey: ["kyc-captures", "overview"],
-    queryFn: () => api("/kyc-captures?limit=100"),
+    queryKey: ["kyc-captures", "overview", branch],
+    queryFn: () =>
+      api(`/kyc-captures?limit=100&branch_id=${encodeURIComponent(branch)}`),
     enabled: canReview,
     refetchInterval: 8000,
   });
   const [intake, setIntake] = useState<Row>({});
+  const capturedOrderSR = useRef("");
   const [intakeReady, setIntakeReady] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const drafts = useQuery({
@@ -46,6 +52,8 @@ export default function KycCapture() {
     [agent, setAgent] = useState(""),
     [source, setSource] = useState(""),
     [file, setFile] = useState<File | null>(null);
+  const [receiptReading, setReceiptReading] = useState(false);
+  const [receiptMessage, setReceiptMessage] = useState("");
   const [operation, setOperation] = useState(() => crypto.randomUUID()),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -65,6 +73,7 @@ export default function KycCapture() {
   const list = useQuery({
     queryKey: [
       "kyc-captures",
+      branch,
       historySearch,
       historyStatus,
       historyPage,
@@ -72,7 +81,7 @@ export default function KycCapture() {
     ],
     queryFn: () =>
       api(
-        `/kyc-captures?limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${["READY", "COMPLETED"].includes(historyStatus) ? "" : historyStatus}&stage=${["READY", "COMPLETED"].includes(historyStatus) ? historyStatus : ""}&include_samples=${showSamples}`,
+        `/kyc-captures?branch_id=${encodeURIComponent(branch)}&limit=20&offset=${historyPage * 20}&search=${encodeURIComponent(historySearch)}&status=${["READY", "COMPLETED"].includes(historyStatus) ? "" : historyStatus}&stage=${["READY", "COMPLETED"].includes(historyStatus) ? historyStatus : ""}&include_samples=${showSamples}`,
       ),
     refetchInterval: 8000,
   });
@@ -92,6 +101,14 @@ export default function KycCapture() {
         capture.status,
       )
     );
+  const lastBranch = useRef(branch);
+  useEffect(() => {
+    if (lastBranch.current !== branch) {
+      setHistoryPage(0);
+      setSelected("");
+      lastBranch.current = branch;
+    }
+  }, [branch]);
   useEffect(() => {
     if (capture && !dirty) setRows(capture.rows || []);
   }, [capture, dirty]);
@@ -103,6 +120,64 @@ export default function KycCapture() {
     const url = URL.createObjectURL(file);
     setPreview(url);
     return () => URL.revokeObjectURL(url);
+  }, [file]);
+  function replaceReceipt(receipt: File | null) {
+    setFile(receipt);
+    setIntake((current) => {
+      if (!current.receipt_sr_check) return current;
+      const next = { ...current };
+      delete next.receipt_sr_check;
+      if (capturedOrderSR.current) next.sr_number = capturedOrderSR.current;
+      else delete next.sr_number;
+      return next;
+    });
+    setOperation(crypto.randomUUID());
+  }
+  useEffect(() => {
+    let current = true;
+    setReceiptMessage("");
+    if (!file) {
+      setReceiptReading(false);
+      return;
+    }
+    setReceiptReading(true);
+    (async () => {
+      if (
+        !["image/png", "image/jpeg"].includes(file.type) ||
+        file.size > 4000000
+      )
+        throw new Error("Choose a PNG or JPEG receipt up to 4 MB.");
+      const image_base64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("Could not read this receipt"));
+        reader.readAsDataURL(file);
+      });
+      const result = await post("/kyc-captures/receipt-fields", {
+        image_base64,
+      });
+      if (!current) return;
+      if (result.fields?.sr_number && result.sr_check) {
+        setIntake((value) => ({
+          ...value,
+          sr_number: result.fields.sr_number,
+          receipt_sr_check: result.sr_check,
+        }));
+        setReceiptMessage("SR number read from receipt");
+      } else setReceiptMessage("Receipt attached · SR number not found");
+    })()
+      .catch((failure: any) => {
+        if (current)
+          setReceiptMessage(
+            failure.message || "Receipt attached · SR could not be read",
+          );
+      })
+      .finally(() => {
+        if (current) setReceiptReading(false);
+      });
+    return () => {
+      current = false;
+    };
   }, [file]);
   async function run(action: () => Promise<any>) {
     setBusy(true);
@@ -222,6 +297,10 @@ export default function KycCapture() {
                     body: JSON.stringify({ version: draft.version, data: {} }),
                   });
                   setIntake({});
+                  capturedOrderSR.current = "";
+                  setFile(null);
+                  setSource("");
+                  setOperation(crypto.randomUUID());
                   setIntakeReady(false);
                   setSelected("");
                   setDirty(false);
@@ -249,6 +328,7 @@ export default function KycCapture() {
                 <button
                   onClick={() => {
                     setIntake(d.data);
+                    capturedOrderSR.current = d.data.sr_number || "";
                     setIntakeReady(false);
                     setSelected("");
                     setShowUpload(true);
@@ -350,10 +430,13 @@ export default function KycCapture() {
                     <small>
                       {agents.data?.find((a: Row) => a.id === r.agent_id)
                         ?.name ||
-                        (agents.isPending ? "Loading agent…" : "Not recorded")}
+                        (agents.isPending
+                          ? "Loading sales agent…"
+                          : "Not recorded")}
                     </small>
                     <small>
-                      {r.intake?.capture_mode === "SCREENSHOT_SALE"
+                      {r.document_kind === "SALE_SCREENSHOTS" ||
+                      r.intake?.capture_mode === "SCREENSHOT_SALE"
                         ? "Sale submission"
                         : r.document_kind === "PAYMENT_CONFIRMATION"
                           ? "Payment confirmation"
@@ -374,7 +457,7 @@ export default function KycCapture() {
             <div className="review-inbox-empty">
               <h3>No submissions in this view</h3>
               <p>
-                New agent submissions will appear here automatically. Try
+                New sales agent submissions will appear here automatically. Try
                 another status or search.
               </p>
             </div>
@@ -415,12 +498,18 @@ export default function KycCapture() {
               <CustomerIntake
                 value={intake}
                 onChange={(v) => {
+                  if (!v.receipt_sr_check)
+                    capturedOrderSR.current = v.sr_number || "";
                   setIntake(v);
                   if (v.agent_id) setAgent(v.agent_id);
                 }}
                 onReady={() => setIntakeReady(true)}
                 onSaved={() => {
                   setIntake({});
+                  capturedOrderSR.current = "";
+                  setFile(null);
+                  setSource("");
+                  setOperation(crypto.randomUUID());
                   setIntakeReady(false);
                   setShowUpload(false);
                   setDraftsOpen(true);
@@ -454,7 +543,7 @@ export default function KycCapture() {
                       ))}
                     </dl>
                     <label>
-                      Assigned agent
+                      Assigned sales agent
                       <select
                         required
                         value={
@@ -493,8 +582,7 @@ export default function KycCapture() {
                             type="file"
                             accept="image/png,image/jpeg"
                             onChange={(e) => {
-                              setFile(e.target.files?.[0] || null);
-                              setOperation(crypto.randomUUID());
+                              replaceReceipt(e.target.files?.[0] || null);
                             }}
                           />
                         </label>
@@ -507,13 +595,19 @@ export default function KycCapture() {
                             accept="image/png,image/jpeg"
                             capture="environment"
                             onChange={(e) => {
-                              setFile(e.target.files?.[0] || null);
-                              setOperation(crypto.randomUUID());
+                              replaceReceipt(e.target.files?.[0] || null);
                             }}
                           />
                         </label>
                       </div>
                     </div>
+                    {(receiptReading || receiptMessage) && (
+                      <p role="status" className="receipt-sr-status">
+                        {receiptReading
+                          ? "Reading receipt SR number…"
+                          : receiptMessage}
+                      </p>
+                    )}
                     {preview && (
                       <img
                         className="capture-preview"
@@ -523,7 +617,7 @@ export default function KycCapture() {
                     )}
                     <button
                       className="primary"
-                      disabled={busy || !agents.data?.length}
+                      disabled={busy || receiptReading || !agents.data?.length}
                     >
                       {busy ? "Submitting…" : "Submit sale"}
                     </button>
