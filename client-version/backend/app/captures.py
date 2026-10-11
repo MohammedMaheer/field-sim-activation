@@ -9,11 +9,12 @@ import uuid
 from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import select, func, and_, or_
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
 from .db import (
     KycCapture,
     CaptureDraft,
@@ -1089,28 +1090,36 @@ def detail(capture_id: str, user=Depends(principal), db=Depends(get_db)):
 
 @router.get("/{capture_id}/original")
 def original(capture_id: str, user=Depends(principal), db=Depends(get_db)):
+    from .exports import filename
     row = get_capture(db, user, capture_id)
     return Response(
         cipher.decrypt(row.image_encrypted.encode()),
         media_type=row.image_type,
         headers={
-            "Content-Disposition": 'attachment; filename="capture-'
-            + row.id
-            + ('.png"' if row.image_type == "image/png" else '.jpg"')
+            "Content-Disposition": f'attachment; filename="{filename("original evidence", "png" if row.image_type == "image/png" else "jpg", row.source_reference or row.id)}"',
+            "Cache-Control": "private, no-store",
         },
     )
 
 
+@router.get("/{capture_id}/print-data")
+def print_data(capture_id: str, user=Depends(principal), db=Depends(get_db)):
+    from .exports import require_scoped_export
+    require_scoped_export(db, user)
+    data = view(get_capture(db, user, capture_id))
+    result = {key: data.get(key) for key in ("id", "created_at", "source_reference", "status", "document_kind", "activation_label", "invoice", "rows")}
+    result["intake"] = {key: (data.get("intake") or {}).get(key) for key in ("capture_mode", "name", "document_number", "msisdn", "plan_name", "sim_identifier", "sim_type")}
+    return JSONResponse(jsonable_encoder(result), headers={"Cache-Control": "private, no-store"})
+
+
 @router.get("/{capture_id}/receipt")
 def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depends(get_db)):
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from xml.sax.saxutils import escape
+    from .exports import receipt_pdf_bytes, filename, require_scoped_export
+
+    require_scoped_export(db, user)
 
     row = get_capture(db, user, capture_id)
-    data = payload(row)
+    data = view(row)
     status = (
         "SUCCESS — RECEIPT VERIFIED"
         if row.status == "VERIFIED"
@@ -1123,14 +1132,13 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
         ("Date", row.created_at.strftime("%d %b %Y %H:%M UTC")),
     ]
     entries += [
-        (label, intake[key])
+        (label, intake.get(key) or "Not recorded")
         for key, label in [
             ("name", "Customer"),
             ("msisdn", "Phone number"),
             ("plan_name", "Plan"),
             ("sim_type", "SIM type"),
         ]
-        if intake.get(key)
     ]
     if intake.get("document_number"):
         entries.append(("ID number", "**** " + str(intake["document_number"])[-4:]))
@@ -1155,40 +1163,14 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
                 value = "**** " + value[-4:]
             entries.append((label, value))
     payment = data.get("document_kind") in {"PAYMENT_CONFIRMATION", "SALE_SCREENSHOTS"}
+    sale_mode = data.get("document_kind") == "SALE_SCREENSHOTS"
+    title = "Sale receipt" if sale_mode else "Payment invoice" if payment else "Activation receipt"
+    sections = [{"title": "Receipt details", "fields": [{"label": key, "value": value} for key, value in entries]}]
     if payment:
-        projected = invoice(row, data)
-        status = projected["heading"] + " — " + projected["status"]
-        entries = [
-            (section["title"] + " / " + f["label"], f["value"])
-            for section in projected["sections"]
-            for f in section["fields"]
-        ]
-    out = io.BytesIO()
-    styles = getSampleStyleSheet()
-    story = [
-        Paragraph(
-            "RELAY | SALE RECORD" if data.get("document_kind") == "SALE_SCREENSHOTS" else "RELAY | PAYMENT INVOICE" if payment else "RELAY | ACTIVATION RECEIPT", styles["Title"]
-        ),
-        Paragraph(escape(status), styles["Heading2"]),
-        Spacer(1, 16),
-    ]
-    cells = [
-        [Paragraph(escape(str(k)), styles["Normal"]), Paragraph(escape(str(v)), styles["Normal"])]
-        for k, v in entries
-    ]
-    table = Table(cells, colWidths=[160, 355])
-    table.setStyle(
-        TableStyle(
-            [
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                ("ROWBACKGROUNDS", (0, 0), (-1, -1), [colors.white, colors.HexColor("#f0f7f5")]),
-                ("TOPPADDING", (0, 0), (-1, -1), 9),
-                ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
-            ]
-        )
-    )
-    story.append(table)
-    SimpleDocTemplate(out, pagesize=A4, leftMargin=40, rightMargin=40).build(story)
+        projected = data["invoice"]
+        status = (data.get("activation_label") or projected["heading"]) + " — " + projected["status"]
+        sections = projected["sections"]
+    document = receipt_pdf_bytes(title.upper(), sections, subtitle=status)
     audit(
         db,
         user,
@@ -1200,10 +1182,12 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
     )
     db.commit()
     return Response(
-        out.getvalue(),
+        document,
         media_type="application/pdf",
         headers={
-            "Content-Disposition": f'attachment; filename="{"invoice" if payment else "receipt"}-{row.id}.pdf"'
+            "Content-Disposition": f'attachment; filename="{filename(title, "pdf", row.source_reference or row.id)}"',
+            "Cache-Control": "no-store",
+            "X-Content-Type-Options": "nosniff",
         },
     )
 
@@ -1417,6 +1401,8 @@ def retry(
 
 @router.get("/{capture_id}/excel")
 def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends(get_db)):
+    from .exports import require_scoped_export
+    require_scoped_export(db, user)
     row = get_capture(db, user, capture_id)
     data = payload(row)
     if row.status not in {"VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"} or not data.get("rows"):
@@ -1485,18 +1471,11 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
                     row.status if row.status in {"VERIFIED", "REJECTED"} else "PENDING",
                 ]
             )
+    from .exports import add_metadata, filename, style_sheet
+    style_sheet(sheet, [cell.value for cell in sheet[1]], machine_headers=True)
     for cells in sheet.iter_rows():
         for cell in cells:
             cell.data_type = "s"
-    sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = sheet.dimensions
-    for cell in sheet[1]:
-        cell.font = Font(color="FFFFFF", bold=True)
-        cell.fill = PatternFill("solid", fgColor="761B3A")
-    from openpyxl.utils import get_column_letter
-
-    for col in range(1, sheet.max_column + 1):
-        sheet.column_dimensions[get_column_letter(col)].width = 48 if col == 3 else 28
     meta = workbook.create_sheet("Provenance")
     for key, value in [
         ("Capture", row.id),
@@ -1511,6 +1490,21 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
         meta.cell(meta.max_row, 2).data_type = "s"
     meta.column_dimensions["A"].width = 24
     meta.column_dimensions["B"].width = 80
+    from openpyxl.styles import Alignment
+    for cells in meta.iter_rows():
+        for cell in cells:
+            cell.alignment = Alignment(wrap_text=True, vertical="top")
+        meta.row_dimensions[cells[0].row].height = 32
+    projected = view(row).get("invoice")
+    if projected:
+        details = workbook.create_sheet("Sale details")
+        details.append(["Section", "Field", "Value"])
+        for section in projected["sections"]:
+            for field in section["fields"]:
+                details.append([section["title"], field["label"], field["value"]])
+        style_sheet(details, ["section", "field", "value"])
+    add_metadata(workbook, "Captured transaction evidence", {"reference": row.source_reference, "backend_review": row.status, "capture_date": row.created_at, "source_image_sha_256": row.image_hash}, ["Recorded values remain evidence-derived. Missing values are Not recorded. Source images are not embedded in this workbook."])
+    workbook.properties.creator = "Qanawat Connect Solutions LLC"
     out = io.BytesIO()
     workbook.save(out)
     audit(db, user, "KYC Excel Exported", row.id, row.agent_id, request=request)
@@ -1518,7 +1512,7 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
     return Response(
         out.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="kyc-{row.id}.xlsx"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename("captured sale details", "xlsx", row.source_reference or row.id)}"', "Cache-Control": "private, no-store"},
     )
 
 

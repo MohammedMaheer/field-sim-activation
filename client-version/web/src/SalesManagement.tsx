@@ -1,4 +1,5 @@
 import ActivationStatus from "./ActivationStatus";
+import ExportActions from "./ExportActions";
 import ProductTargetManagement from "./ProductTargets";
 import { useBranchScope } from "./BranchScope";
 import { businessPeriod } from "./businessTime";
@@ -312,16 +313,13 @@ export default function SalesManagement() {
             onChange={(e) => setPeriod(e.target.value)}
           />
         </label>
-        <button
-          onClick={() =>
-            download(
-              `/sales-management/export?format=xlsx&${filters}`,
-              "sales-records.xlsx",
-            )
-          }
-        >
-          <FileDown size={16} /> Export sales
-        </button>
+        {user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read") && (
+          <ExportActions
+            path={`/sales-management/export?${filters}`}
+            name="qanawat-sales-records"
+            label="Export sales"
+          />
+        )}
       </div>
 
       {performance.data && (
@@ -930,7 +928,7 @@ export default function SalesManagement() {
                   download(
                     `/sales-management/targets/template?period=${period}&format=xlsx&branch_id=${encodeURIComponent(branchFilter)}`,
                     "sales-targets.xlsx",
-                  )
+                  ).catch((failure) => notify(failure.message))
                 }
               >
                 <FileDown size={16} /> Download target file

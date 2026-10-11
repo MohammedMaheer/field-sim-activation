@@ -6,6 +6,7 @@ import {
   salesAgentRole,
 } from "./BranchScope";
 import { businessDate } from "./businessTime";
+import Brand from "./branding";
 import Notifications from "./Notifications";
 import OrganizationSetup, { BranchLeaderEditor } from "./OrganizationSetup";
 import ActivationStatus from "./ActivationStatus";
@@ -307,10 +308,7 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
     <main className="login-page">
       <section className="login-brand">
         <div className="logo light">
-          <span className="logo-mark">
-            <Radio />
-          </span>
-          relay<span className="logo-dot">.</span>
+          <Brand />
         </div>
         <div>
           <span className="eyebrow">
@@ -334,7 +332,7 @@ function Login({ onLogin }: { onLogin: (u: Row) => void }) {
       <section className="login-form">
         <div className="login-form-inner">
           <span className="badge neutral">FIELD OPERATIONS</span>
-          <h2>Welcome to Relay</h2>
+          <h2>Welcome to Qanawat</h2>
           <p className="muted">Sign in to your operations workspace.</p>
           <form
             onSubmit={async (e) => {
@@ -397,6 +395,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [live, setLive] = useState(false);
   const [toast, setToast] = useState("");
+  const [exportsActive, setExportsActive] = useState<string[]>([]);
   const inbox = useQuery({
     queryKey: ["notifications", user?.id],
     queryFn: () => api("/notifications"),
@@ -437,6 +436,20 @@ export default function App() {
   const client = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  useEffect(() => {
+    const exportState = (event: Event) => {
+      const { phase, id, name, error } = (event as CustomEvent).detail;
+      setExportsActive((current) =>
+        phase === "started"
+          ? [...current.filter((item) => item !== id), id]
+          : current.filter((item) => item !== id),
+      );
+      if (phase === "complete") setToast(`${name} downloaded`);
+      if (phase === "failed") setToast(error);
+    };
+    window.addEventListener("export-state", exportState);
+    return () => window.removeEventListener("export-state", exportState);
+  }, []);
   useEffect(() => {
     refreshSession()
       .then((d) => setUser(d.user))
@@ -603,16 +616,14 @@ export default function App() {
               <X size={20} />
             </button>
             <Link className="logo" to="/">
-              <span className="logo-mark">
-                <Radio />
-              </span>
-              relay<span className="logo-dot">.</span>
-              <span className="logo-edition">CLIENT EDITION</span>
+              <Brand compact />
             </Link>
             <button className="workspace-switch" onClick={() => navigate("/")}>
-              <span className="workspace-icon">R</span>
+              <span className="workspace-icon">
+                <img src="/branding/qanawat-mark.png" alt="" />
+              </span>
               <span>
-                <b>Relay Client</b>
+                <b>Qanawat</b>
                 <small>UAE field operations</small>
               </span>
               <ChevronDown size={14} />
@@ -863,14 +874,23 @@ export default function App() {
               </div>
               <footer className="page-footer">
                 <span>
-                  Relay Operations <span>·</span>{" "}
+                  Qanawat Operations <span>·</span>{" "}
                   {live ? "Live updates connected" : "Reconnecting to updates"}
                 </span>
-                <span>Relay · Field operations</span>
+                <span>Qanawat · Field operations</span>
               </footer>
             </main>
           </div>
         </div>
+        {exportsActive.length > 0 && (
+          <div className="export-progress" role="status">
+            <Download size={18} /> Preparing{" "}
+            {exportsActive.length > 1
+              ? `${exportsActive.length} exports`
+              : "export"}
+            …
+          </div>
+        )}
         {toast && (
           <div role="status" className="toast">
             <CheckCheck size={18} />
@@ -1452,17 +1472,18 @@ function ResourcePage({ resource }: { resource: string }) {
               {resource === "agents" ? "Add sales agent" : "Add branch"}
             </button>
           )}
-        {resource === "inventory" && user.role === "Administrator" &&
+        {resource === "inventory" &&
+          user.role === "Administrator" &&
           user.permissions.includes("inventory.write") && (
-          <>
-            <button onClick={() => setManageRecords(true)}>
-              <Plus size={16} /> Add SIM
-            </button>
-            <button className="primary" onClick={() => setImportStock(true)}>
-              <Download size={16} /> Import Excel
-            </button>
-          </>
-        )}
+            <>
+              <button onClick={() => setManageRecords(true)}>
+                <Plus size={16} /> Add SIM
+              </button>
+              <button className="primary" onClick={() => setImportStock(true)}>
+                <Download size={16} /> Import Excel
+              </button>
+            </>
+          )}
         {resource === "customers" &&
           ["Administrator", "Operations Manager"].includes(user.role) && (
             <button onClick={() => setManageRecords(true)}>
@@ -2047,7 +2068,7 @@ function Reports() {
         <h2>Sales, targets &amp; follow-ups</h2>
         <p>Current sales with product, sales agent, branch and call outcomes</p>
         <Link className="primary button-link" to="/sales">
-          Open sales reports &amp; Excel export
+          Open sales reports &amp; exports
         </Link>
       </section>
       <div className="report-filters">
@@ -2095,7 +2116,7 @@ function Reports() {
               <h2>{title}</h2>
               <p>{description}</p>
               <div>
-                {(["csv", "pdf"] as const).map((format) => (
+                {(["xlsx", "csv", "pdf"] as const).map((format) => (
                   <button
                     key={format}
                     disabled={
@@ -2110,7 +2131,7 @@ function Reports() {
                       try {
                         await download(
                           `/reports/${id}?${new URLSearchParams({ format, start, end, q, branch_id: branch })}`,
-                          `relay-${id}.${format}`,
+                          `qanawat-${id}-${start}-${end}.${format}`,
                         );
                         notify(`${title} report downloaded`);
                       } catch (e: any) {

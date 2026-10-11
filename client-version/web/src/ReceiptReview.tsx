@@ -149,7 +149,8 @@ export default function ReceiptReview({
       setBusy(false);
     }
   }
-  const canExcel =
+  const canExport = user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read");
+  const canExcel = canExport &&
     !!capture.rows?.length &&
     ["VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"].includes(capture.status);
   async function downloadOriginal() {
@@ -412,7 +413,7 @@ export default function ReceiptReview({
                     : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
               </small>
             </div>
-            <button
+            {canExport && <button
               disabled={busy || !canExcel}
               onClick={() =>
                 perform(() =>
@@ -425,7 +426,7 @@ export default function ReceiptReview({
             >
               <FileSpreadsheet size={17} />
               Excel
-            </button>
+            </button>}
           </div>
           <div
             className="review-data-tabs"
@@ -747,7 +748,7 @@ export default function ReceiptReview({
               ? "Payment invoice"
               : "Historical receipt"}
         </summary>
-        <ActivationReceipt capture={capture} />
+        <ActivationReceipt capture={capture} canExport={canExport} />
       </details>
       <details className="review-history">
         <summary>Review history</summary>

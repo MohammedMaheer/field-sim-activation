@@ -5,6 +5,7 @@ import 'services.dart';
 import 'branch_filter.dart';
 import 'sales_presentation.dart';
 import 'typography.dart';
+import 'exports.dart';
 
 String commissionPeriod(DateTime instant) => instant
     .toUtc()
@@ -154,6 +155,14 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
             ),
           ],
         ),
+        ExportActions(
+          endpoint: '/commissions/export',
+          filenameStem: 'qanawat-calculated-commissions-$period',
+          label: 'Export calculated incentives',
+          query: {'period': period},
+          enabled: !loading,
+        ),
+        const SizedBox(height: 12),
         if (loading) const LinearProgressIndicator(),
         if (error.isNotEmpty) ...[
           Text(error),

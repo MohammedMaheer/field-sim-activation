@@ -63,27 +63,107 @@ export const post = (path: string, body: unknown = {}) =>
   api(path, { method: "POST", body: JSON.stringify(body) });
 export const patch = (path: string, body: unknown) =>
   api(path, { method: "PATCH", body: JSON.stringify(body) });
-export async function download(path: string, name: string, retry = true) {
-  const r = await fetch("/api" + path, {
-    headers: { Authorization: "Bearer " + access },
-  });
-  if (r.status === 401 && retry) {
+const pendingExports = new Map<string, Promise<void>>();
+export function exportFilename(
+  disposition: string | null,
+  fallback: string,
+): string {
+  const encoded = disposition?.match(/filename\*\s*=\s*UTF-8''([^;]+)/i)?.[1];
+  let supplied =
+    disposition?.match(/filename\s*=\s*"([^"]+)"/i)?.[1] ||
+    disposition?.match(/filename\s*=\s*([^;\s]+)/i)?.[1];
+  if (encoded) {
     try {
-      await refreshSession();
+      supplied = decodeURIComponent(encoded);
     } catch {
-      window.dispatchEvent(new Event("session-expired"));
-      throw new Error("Your session expired. Sign in and retry the export.");
+      /* Use the safe fallback. */
     }
-    return download(path, name, false);
   }
-  if (!r.ok)
-    throw new Error("Export failed. Check your permissions and try again.");
-  const url = URL.createObjectURL(await r.blob());
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const name = (supplied || fallback)
+    .split(/[\\/]/)
+    .pop()!
+    .replace(/[\x00-\x1f<>:"|?*]/g, "-")
+    .trim();
+  return name.toLowerCase().startsWith("qanawat-")
+    ? name
+    : "qanawat-" + name.replace(/^relay[-_]/i, "");
+}
+export function download(path: string, name: string): Promise<void> {
+  const pending = pendingExports.get(path);
+  if (pending) return pending;
+  const id = path;
+  const state = (phase: string, detail = {}) =>
+    window.dispatchEvent(
+      new CustomEvent("export-state", { detail: { phase, id, ...detail } }),
+    );
+  const task = (async () => {
+    state("started");
+    try {
+      const request = () =>
+        fetch("/api" + path, {
+          credentials: "include",
+          headers: { Authorization: "Bearer " + access },
+        });
+      let r = await request();
+      if (r.status === 401) {
+        try {
+          await refreshSession();
+        } catch {
+          window.dispatchEvent(new Event("session-expired"));
+          throw new Error(
+            "Your session expired. Sign in and retry the export.",
+          );
+        }
+        r = await request();
+      }
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(
+          r.status === 429
+            ? "Too many requests. Wait a minute and retry the export."
+            : typeof body.detail === "string"
+              ? body.detail
+              : "Export failed. Check your access and try again.",
+        );
+      }
+      const blob = await r.blob();
+      if (!blob.size)
+        throw new Error(
+          "This export is empty. Refresh the page and try again.",
+        );
+      if (/application\/json|text\/html/.test(blob.type))
+        throw new Error(
+          "The server did not return an export. Please try again.",
+        );
+      const filename = exportFilename(
+        r.headers.get("content-disposition"),
+        name,
+      );
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      // Allow browsers on slower devices to finish consuming large exports.
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      state("complete", { name: filename });
+    } catch (failure) {
+      state("failed", {
+        error:
+          failure instanceof Error
+            ? failure.message
+            : "Could not export. Please try again.",
+      });
+      throw failure;
+    } finally {
+      pendingExports.delete(path);
+    }
+  })();
+  pendingExports.set(path, task);
+  return task;
 }
 export async function stream(
   signal: AbortSignal,

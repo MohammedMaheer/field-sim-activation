@@ -30,13 +30,26 @@ def template(user=Depends(principal), db=Depends(get_db)):
     sheet = workbook.active
     sheet.title = "SIM stock"
     sheet.append(["ICCID", "SIM Serial", "SIM Type", "Business Category"])
-    for col, width in {"A": 28, "B": 25, "C": 20, "D": 25}.items():
-        sheet.column_dimensions[col].width = width
+    from .exports import add_metadata, filename, style_sheet
+    from openpyxl.worksheet.datavalidation import DataValidation
+    style_sheet(sheet, ["iccid", "sim_serial", "sim_type", "business_category"], machine_headers=True)
+    for column in ("A", "B"):
+        sheet.column_dimensions[column].width = 30
+        for index in range(2, 502):
+            sheet[f"{column}{index}"].number_format = "@"
+    for column, choices in (("C", "Physical,eSIM"), ("D", "Not recorded,Wasel / Prepaid,Postpaid,Home Wireless,Visitor")):
+        validation = DataValidation(type="list", formula1='"' + choices + '"', allow_blank=column == "D")
+        validation.errorTitle = "Choose a supported value"
+        validation.error = "Select a value from the list."
+        validation.showErrorMessage = True
+        sheet.add_data_validation(validation)
+        validation.add(f"{column}2:{column}501")
+    add_metadata(workbook, "SIM stock import template", {"maximum_sims": 500}, ["Enter ICCID and SIM Serial as text, preserving every digit. Select the destination branch in the application. No stock is created until the full file passes validation."])
     data = BytesIO()
     workbook.save(data)
     data.seek(0)
     return StreamingResponse(data, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                             headers={"Content-Disposition": 'attachment; filename="sim-stock-template.xlsx"'})
+                             headers={"Content-Disposition": f'attachment; filename="{filename("SIM stock template", "xlsx")}"', "Cache-Control": "private, no-store"})
 
 
 class ImportBody(BaseModel):

@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 import 'typography.dart';
+import 'exports.dart';
 
 // Reporting periods use the same Dubai business time as the API and web panel.
 String salesReportingPeriod(DateTime instant) => instant
@@ -688,21 +689,35 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                     onRefresh: load,
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(14, 14, 14, 90),
-                      itemCount: tab == 2
+                      itemCount: tab == 0
+                          ? sales.isEmpty
+                                ? 2
+                                : sales.length + 1
+                          : tab == 2
                           ? targets.length + 1
-                          : (tab == 0
-                                    ? sales.length
-                                    : tab == 1
-                                    ? feedback.length
-                                    : targets.length) ==
-                                0
+                          : feedback.isEmpty
                           ? 1
-                          : tab == 0
-                          ? sales.length
-                          : tab == 1
-                          ? feedback.length
-                          : targets.length,
+                          : feedback.length,
                       itemBuilder: (context, index) {
+                        if (tab == 0) {
+                          if (index == 0) {
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: ExportActions(
+                                endpoint: '/sales-management/export',
+                                filenameStem:
+                                    'qanawat-sales-${salesReportingPeriod(DateTime.now())}',
+                                label: 'Export sales',
+                                query: {
+                                  'period': salesReportingPeriod(
+                                    DateTime.now(),
+                                  ),
+                                },
+                              ),
+                            );
+                          }
+                          index -= 1;
+                        }
                         if (tab == 2) {
                           if (index == 0) {
                             return ProductTargets(performance: performance);

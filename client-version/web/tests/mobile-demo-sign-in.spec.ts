@@ -57,7 +57,7 @@ async function mockPreviewApi(page: Page) {
 test('mobile demo starts with a prefilled account and signs in without a password', async ({page}) => {
   const loginBodies = await mockPreviewApi(page);
   await page.goto(previewUrl);
-  await expect(page.getByRole('button', {name: 'Sign in to Relay', exact: true})).toBeEnabled({timeout: 60000});
+  await expect(page.getByRole('button', {name: 'Sign in to Qanawat', exact: true})).toBeEnabled({timeout: 60000});
   await expect(page.getByText('agent1@relay.demo', {exact: true})).toBeVisible();
   await expect(page.getByRole('textbox', {name: 'Work email'})).toHaveCount(0);
   await expect(page.getByRole('textbox', {name: 'Password'})).toHaveCount(0);
@@ -69,7 +69,7 @@ test('mobile demo starts with a prefilled account and signs in without a passwor
   await page.screenshot({path: '../output/qa/mobile-demo-account-options.png'});
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu', {name: 'Popup menu'})).toBeHidden();
-  await page.getByRole('button', {name: 'Sign in to Relay', exact: true}).click();
+  await page.getByRole('button', {name: 'Sign in to Qanawat', exact: true}).click();
   await expect(page.getByRole('button', {name: 'Start transaction', exact: true})).toBeVisible({timeout: 30000});
   expect(loginBodies).toEqual([{email: 'agent1@relay.demo'}]);
 });

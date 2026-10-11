@@ -1,10 +1,11 @@
 import { useBranchScope } from "./BranchScope";
+import ExportActions from "./ExportActions";
 import { useContext, useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { FileDown, Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { Context } from "./App";
-import { api, download, post, Row } from "./api";
+import { api, post, Row } from "./api";
 import { ErrorState, Loading } from "./components";
 import "./sales-management.css";
 
@@ -155,12 +156,14 @@ export default function FieldAssets() {
       (!filter.start || row.created_at >= filter.start) &&
       (!filter.end || row.created_at <= `${filter.end}T23:59:59`),
   );
-  function exportReport(kind: string) {
-    download(
-      `/field-assets/report/export?kind=${kind}&format=xlsx&${params}`,
-      `stock-${kind}.xlsx`,
+  const exportReport = (kind: string) =>
+    user.permissions.includes("report.read") && (
+      <ExportActions
+        path={`/field-assets/report/export?kind=${kind}&${params}`}
+        name={`qanawat-stock-${kind}`}
+        label="Export"
+      />
     );
-  }
   async function refresh() {
     await client.invalidateQueries({ queryKey: ["field-assets"] });
     await client.invalidateQueries({ queryKey: ["branches"] });
@@ -391,9 +394,7 @@ export default function FieldAssets() {
         <section className="panel sales-section">
           <div className="sales-section-head">
             <h2>Asset register</h2>
-            <button onClick={() => exportReport("stock")}>
-              <FileDown size={15} /> Excel
-            </button>
+            {exportReport("stock")}
             {canManage && (
               <button className="primary" onClick={() => setAdd(!add)}>
                 <Plus size={15} /> Add asset
@@ -674,9 +675,7 @@ export default function FieldAssets() {
         <section className="panel sales-section">
           <div className="sales-section-head">
             <h2>Asset requests</h2>
-            <button onClick={() => exportReport("requests")}>
-              <FileDown size={15} /> Excel
-            </button>
+            {exportReport("requests")}
           </div>
           {agentId && (
             <form
@@ -835,9 +834,7 @@ export default function FieldAssets() {
         <section className="panel sales-section">
           <div className="sales-section-head">
             <h2>Balances & shortage alerts</h2>
-            <button onClick={() => exportReport("summary")}>
-              <FileDown size={15} /> Export
-            </button>
+            {exportReport("summary")}
           </div>
           {canManage && (
             <form
@@ -951,9 +948,7 @@ export default function FieldAssets() {
         <section className="panel sales-section">
           <div className="sales-section-head">
             <h2>Stock movements</h2>
-            <button onClick={() => exportReport("movements")}>
-              <FileDown size={15} /> Export
-            </button>
+            {exportReport("movements")}
           </div>
           {movements.isPending ? (
             <Loading />

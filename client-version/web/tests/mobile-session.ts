@@ -37,7 +37,7 @@ export async function mobileSignIn(page: Page, email = 'agent1@relay.demo') {
     await page.waitForTimeout(250);
   }
 
-  const signIn = page.getByRole('button', {name: 'Sign in to Relay', exact: true});
+  const signIn = page.getByRole('button', {name: 'Sign in to Qanawat', exact: true});
   await signIn.click();
   await expect(emailBox.or(accountPicker).first()).toBeHidden({timeout: 30000});
   await expect(signIn).toBeHidden({timeout: 30000});

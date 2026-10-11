@@ -30,6 +30,7 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
               : 'call.welcome.read',
         );
   }
+  if (path == '/reports') return permissions.contains('report.read');
   if (role == 'Sales Manager') {
     return path.startsWith('/transaction/') ||
         [

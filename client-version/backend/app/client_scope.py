@@ -72,7 +72,7 @@ def configure(app):
             )
         )
     ]
-    app.title = "Relay Client — Field Operations Concept"
+    app.title = "Qanawat — Field Operations"
 
     @app.middleware("http")
     async def boundary(request: Request, call_next):

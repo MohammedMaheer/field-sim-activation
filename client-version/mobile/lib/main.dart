@@ -22,6 +22,8 @@ import 'services.dart';
 import 'experience.dart';
 import 'relay_theme.dart';
 import 'typography.dart';
+import 'branding.dart';
+import 'exports.dart';
 
 const burgundy = RelayPalette.brand,
     ink = RelayPalette.ink,
@@ -151,7 +153,7 @@ class RelayApp extends ConsumerWidget {
       },
     );
     return MaterialApp.router(
-      title: 'Relay Client',
+      title: appName,
       debugShowCheckedModeBanner: false,
       routerConfig: router,
       theme: relayTheme(),
@@ -281,22 +283,8 @@ class _LoginState extends ConsumerState<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Row(
-                  children: [
-                    Icon(Icons.sensors, size: 38, color: burgundy),
-                    SizedBox(width: 10),
-                    Text(
-                      'relay.',
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w800,
-                        color: burgundy,
-                        letterSpacing: -2,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 45),
+                const QanawatBrand(width: 230),
+                const SizedBox(height: 32),
                 const Text(
                   'Your next connection\nstarts here.',
                   style: TextStyle(
@@ -436,7 +424,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                             if (mounted) setState(() => busy = false);
                           }
                         },
-                  child: Text(busy ? 'Signing in…' : 'Sign in to Relay'),
+                  child: Text(busy ? 'Signing in…' : 'Sign in to Qanawat'),
                 ),
                 const SizedBox(height: 28),
                 const InfoCard(
@@ -745,15 +733,13 @@ class HomeScreen extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'relay.',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.w800,
-                      color: burgundy,
-                      letterSpacing: -1.5,
+                  const Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: QanawatBrand(width: 146, height: 44),
                     ),
                   ),
+                  const SizedBox(width: 8),
                   Row(
                     children: [
                       StatusPill(onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT'),
@@ -1363,6 +1349,14 @@ class IncentiveHistory extends ConsumerWidget {
         child: ListView(
           padding: const EdgeInsets.all(22),
           children: [
+            const BranchFilter(),
+            const SizedBox(height: 12),
+            const ExportActions(
+              endpoint: '/incentives/export',
+              filenameStem: 'qanawat-recorded-incentives',
+              label: 'Export recorded incentives',
+            ),
+            const SizedBox(height: 16),
             Text(
               'AED ${rows.fold<double>(0, (sum, row) => sum + (double.tryParse(row['amount'].toString()) ?? 0)).toStringAsFixed(2)}',
               style: const TextStyle(
@@ -2054,6 +2048,13 @@ class _StockState extends ConsumerState<StockScreen> {
                 prefixIcon: const Icon(Icons.search),
               ),
             ),
+            const SizedBox(height: 12),
+            ExportActions(
+              endpoint: '/reports/inventory',
+              filenameStem: 'qanawat-branch-sim-inventory',
+              label: 'Export SIM inventory',
+              query: {'q': search},
+            ),
             const SizedBox(height: 22),
             ...rows
                 .where(
@@ -2213,7 +2214,7 @@ class ProfileScreen extends ConsumerWidget {
                   children: [
                     KeyValue('Employee ID', a['employee_id'] ?? 'Not recorded'),
                     KeyValue('Branch', '$ownBranch'),
-                    const KeyValue('Device', 'Relay Flutter'),
+                    const KeyValue('Device', 'Qanawat app'),
                     const KeyValue('App version', '1.0.0'),
                   ],
                 ),

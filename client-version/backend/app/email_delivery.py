@@ -45,7 +45,7 @@ def queue_sr_email(db, sale, user_id, batch_id, status, reason, *, evaluation=Fa
                        recipient_encrypted=cipher.encrypt(person.email.encode()).decode(),
                        status="SKIPPED" if evaluation else "QUEUED",
                        last_error="Synthetic evaluation alert; external delivery disabled" if evaluation else "",
-                       subject=f"Relay | {label}",
+                       subject=f"Qanawat | {label}",
                        body=f"{label}\n{reason}\nSale reference: {sale.request_id or sale.id}\nReview the sale: {link}\nActivation status: {sale.status}\n"))
 
 
@@ -54,7 +54,7 @@ def smtp_send(recipient, subject, body, event_key):
     if any("\n" in value or "\r" in value for value in (sender, recipient, subject)):
         raise ValueError("Invalid mail header")
     message = EmailMessage()
-    message["From"] = formataddr((os.getenv("SMTP_FROM_NAME", "Relay"), sender))
+    message["From"] = formataddr((os.getenv("SMTP_FROM_NAME", "Qanawat"), sender))
     message["To"] = recipient
     message["Subject"] = subject
     message["Message-ID"] = f"<{event_key.replace(':', '.')}@relay-notifications>"

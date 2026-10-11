@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 import 'branch_filter.dart';
+import 'exports.dart';
 
 class FieldAssetsScreen extends ConsumerStatefulWidget {
   const FieldAssetsScreen({super.key});
@@ -253,6 +254,14 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                     'Branch assets',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
+                  const SizedBox(height: 8),
+                  const ExportActions(
+                    endpoint: '/field-assets/report/export',
+                    filenameStem: 'qanawat-branch-assets',
+                    label: 'Export branch assets',
+                    query: {'kind': 'stock'},
+                  ),
+                  const SizedBox(height: 8),
                   if (stock.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16),
@@ -276,6 +285,14 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                     'Requests',
                     style: Theme.of(context).textTheme.titleLarge,
                   ),
+                  const SizedBox(height: 8),
+                  const ExportActions(
+                    endpoint: '/field-assets/report/export',
+                    filenameStem: 'qanawat-stock-requests',
+                    label: 'Export stock requests',
+                    query: {'kind': 'requests'},
+                  ),
+                  const SizedBox(height: 8),
                   if (requests.isEmpty)
                     const Padding(
                       padding: EdgeInsets.all(16),

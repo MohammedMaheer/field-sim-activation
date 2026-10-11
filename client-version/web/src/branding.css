@@ -1,0 +1,93 @@
+.qanawat-brand {
+  display: block;
+  width: 244px;
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  background: #f7f7f7;
+  padding: 5px 8px;
+  object-fit: contain;
+}
+.qanawat-brand.compact {
+  width: 210px;
+}
+.sidebar .logo {
+  padding: 12px 20px;
+  height: 80px;
+}
+.login-brand .logo {
+  width: min(320px, 100%);
+}
+.login-brand .qanawat-brand {
+  width: 312px;
+  padding: 9px 12px;
+  border-radius: 12px;
+}
+.workspace-icon img {
+  width: 27px;
+  height: 27px;
+  object-fit: contain;
+  border-radius: 5px;
+}
+.export-progress {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 14px 18px;
+  color: #612638;
+  background: #fff;
+  border: 1px solid #ead7de;
+  border-radius: 12px;
+  box-shadow: 0 6px 28px #311d2826;
+  font-size: 14px;
+  font-weight: 600;
+}
+.export-progress svg {
+  animation: export-pulse 1.2s ease-in-out infinite;
+}
+.export-actions {
+  min-width: 0;
+}
+.export-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.export-controls select {
+  width: 96px;
+  min-height: 40px;
+  padding: 8px 10px;
+  margin: 0;
+  border: 1px solid var(--line, #ddd);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  color: inherit;
+}
+.export-actions .form-error {
+  display: block;
+  max-width: 320px;
+  margin-top: 6px;
+}
+@keyframes export-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .export-progress svg {
+    animation: none;
+  }
+}
+@media (max-width: 600px) {
+  .export-progress {
+    bottom: 16px;
+    right: 16px;
+  }
+}

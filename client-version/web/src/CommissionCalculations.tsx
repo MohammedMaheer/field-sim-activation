@@ -1,5 +1,7 @@
 import { useBranchScope, salesAgentRole } from "./BranchScope";
-import { useState } from "react";
+import { useContext, useState } from "react";
+import { Context } from "./App";
+import ExportActions from "./ExportActions";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, Row } from "./api";
 import { Drawer, ErrorState, Loading } from "./components";
@@ -492,6 +494,7 @@ function Configuration({
 }
 
 export default function CommissionCalculations({ period }: { period: string }) {
+  const { user } = useContext(Context);
   const { branch } = useBranchScope();
   const cache = useQueryClient(),
     [selected, setSelected] = useState<Row | null>(null),
@@ -513,7 +516,16 @@ export default function CommissionCalculations({ period }: { period: string }) {
   }
   return (
     <section className="commission-workspace">
-      <h2>Commission calculations</h2>
+      <div className="sales-section-head">
+        <h2>Commission calculations</h2>
+        {user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read") && (
+          <ExportActions
+            path={`/commissions/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`}
+            name={`qanawat-commission-calculations-${period}`}
+            label="Export calculations"
+          />
+        )}
+      </div>
       {branch && (
         <p className="muted">
           Employees in the selected branch · account monthly commission

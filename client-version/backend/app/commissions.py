@@ -5,6 +5,8 @@ results are recomputed from CLOSED sales attributed to their original sale date.
 """
 import calendar
 import copy
+import io
+import json
 import re
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -545,6 +547,52 @@ def summary(period: str = "", user_id: str = "", user=Depends(principal), db=Dep
                        "configuration": configuration_view(cfg)})
     return {"period": period, "branch_id": branch_id, "calculation_scope": "ACCOUNT_MONTH", "recomputed_at": now().isoformat(), "rows": output, "can_configure": role_name(db, user) in WRITERS and "incentive.write" in permissions(db, user),
             "method": "Net closed sales, attributed to their original sale date; cancelled records are excluded"}
+
+
+@router.get("/export")
+def export_calculations(period: str = "", user_id: str = "", branch_id: str = "", format: Literal["csv", "xlsx", "pdf"] = "xlsx", request: Request = None, user=Depends(principal), db=Depends(get_db)):
+    """Export current calculations, separately from the recorded commission ledger."""
+    from fastapi.responses import Response
+    from openpyxl import load_workbook
+    from .exports import filename, label, receipt_pdf_bytes, require_scoped_export, style_sheet, table_download, workbook_bytes, XLSX_MEDIA
+    require_scoped_export(db, user)
+    result = summary(period, user_id, user, db, branch_id)
+    columns = ["name", "role", "period", "policy_name", "net_sales", "cancelled", "in_progress", "branch_net_sales", "branch_cancelled", "status", "amount", "currency", "missing_inputs", "components"]
+    rows = [{**row, "role": "Sales agent" if row["role"] == "Field Agent" else row["role"],
+             "amount": row["amount"] if row["amount"] is not None else "Awaiting configuration",
+             "missing_inputs": "\n".join(row["missing_inputs"]) or "None",
+             "components": json.dumps(row["components"], ensure_ascii=False, indent=2)} for row in result["rows"]]
+    metadata = {"period": result["period"], "calculation_scope": "Account month", "selected_branch": "Selected branch" if branch_id else "All authorized branches", "method": result["method"]}
+    notes = ["Branch filters select authorized accounts. Their earnings remain based on the complete account month; branch net sales are shown separately.", "Awaiting configuration means required approved policy inputs are missing; it is not zero earnings."]
+    if format == "xlsx":
+        binary = workbook_bytes(columns[:-1], rows, "Commission calculations", metadata=metadata, notes=notes, sheet_name="Account summary")
+        book = load_workbook(io.BytesIO(binary))
+        sheet = book.create_sheet("Calculation components")
+        detail_columns = ["name", "period", "component", "component_status", "component_amount", "missing_inputs", "reason", "details"]
+        sheet.append([label(column) for column in detail_columns])
+        for row in result["rows"]:
+            for item in row["components"]:
+                sheet.append([row["name"], row["period"], item["name"], item["status"], float(item["amount"]) if item["amount"] is not None else "Awaiting configuration", "\n".join(item["missing_inputs"]) or "None", item["reason"], json.dumps(item["details"], ensure_ascii=False, indent=2)])
+        style_sheet(sheet, detail_columns)
+        output = io.BytesIO()
+        book.save(output)
+        response = Response(output.getvalue(), media_type=XLSX_MEDIA, headers={"Content-Disposition": f'attachment; filename="{filename("commission calculations", "xlsx")}"', "Cache-Control": "private, no-store"})
+    elif format == "pdf":
+        sections = []
+        for source, row in zip(result["rows"], rows):
+            sections.append({"title": row["name"], "fields": [{"label": label(key), "value": row[key]} for key in columns[1:-1]]})
+            for item in source["components"]:
+                fields = [{"label": "Status", "value": item["status"]}, {"label": "Amount (AED)", "value": item["amount"] if item["amount"] is not None else "Awaiting configuration"}, {"label": "Missing inputs", "value": "\n".join(item["missing_inputs"]) or "None"}, {"label": "Reason", "value": item["reason"] or "Not recorded"}]
+                fields.extend({"label": label(key), "value": json.dumps(value, ensure_ascii=False, indent=2) if isinstance(value, (dict, list)) else value} for key, value in item["details"].items())
+                sections.append({"title": row["name"] + " / " + item["name"], "fields": fields})
+        if not sections:
+            sections = [{"title": "Accounts", "fields": [{"label": "Result", "value": "No accounts match the selected filters"}]}]
+        response = Response(receipt_pdf_bytes("Commission calculations", sections, result["period"] + " | Account month | " + " ".join(notes)), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename("commission calculations", "pdf")}"', "Cache-Control": "private, no-store"})
+    else:
+        response = table_download(columns, rows, "commission calculations", format, metadata=metadata, machine_headers=False)
+    audit(db, user, "Commission Calculations Exported", result["period"], new={"format": format, "accounts": len(rows), "branch_id": branch_id}, request=request)
+    db.commit()
+    return response
 
 
 def run_rates(net_sales, target, period, on_date=None):

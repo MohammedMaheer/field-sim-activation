@@ -1,4 +1,3 @@
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +6,8 @@ import 'branch_filter.dart';
 import 'services.dart';
 import 'sales_presentation.dart';
 import 'typography.dart';
+import 'exports.dart';
+import 'role_access.dart';
 
 DateTime reportToday([DateTime? instant]) {
   final day = (instant ?? DateTime.now()).toUtc().add(const Duration(hours: 4));
@@ -14,6 +15,30 @@ DateTime reportToday([DateTime? instant]) {
 }
 
 String reportDate(DateTime day) => day.toIso8601String().substring(0, 10);
+
+Future<ExportDocument> fetchReportExport(
+  RelayService service, {
+  required String report,
+  required String format,
+  required DateTime from,
+  required DateTime to,
+}) async {
+  final response = await service.dio.get<List<int>>(
+    '/reports/$report',
+    queryParameters: service.branchQuery({
+      'format': format,
+      'start': reportDate(from),
+      'end': reportDate(to),
+    }),
+    options: Options(responseType: ResponseType.bytes),
+  );
+  return ExportDocument.fromResponse(
+    response,
+    format: format,
+    fallbackFilename:
+        'qanawat-$report-${reportDate(from)}-${reportDate(to)}.$format',
+  );
+}
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -24,7 +49,7 @@ class ReportsScreen extends ConsumerStatefulWidget {
 class _ReportsState extends ConsumerState<ReportsScreen> {
   DateTime from = reportToday(), to = reportToday();
   String report = 'daily';
-  String? error;
+  String? error, failedFormat, exportNotice, activeFormat;
   bool loading = true, exporting = false;
   List<Json> sales = [];
   int request = 0;
@@ -39,6 +64,8 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
     setState(() {
       loading = true;
       error = null;
+      failedFormat = null;
+      exportNotice = null;
       sales = [];
     });
     try {
@@ -87,55 +114,53 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> export(String format) async {
+    if (exporting) return;
+    final exportRevision = request;
     setState(() {
       exporting = true;
       error = null;
+      failedFormat = null;
+      exportNotice = null;
+      activeFormat = format;
     });
     try {
-      final service = ref.read(serviceProvider);
-      final useExcel = format == 'xlsx';
-      final result = await service.dio.get<List<int>>(
-        useExcel ? '/sales-management/export' : '/reports/$report',
-        queryParameters: service.branchQuery({
-          'format': format,
-          if (useExcel) ...{
-            'from_date': reportDate(from),
-            'to_date': reportDate(to),
-          } else ...{
-            'start': reportDate(from),
-            'end': reportDate(to),
-          },
-        }),
-        options: Options(responseType: ResponseType.bytes),
+      final document = await fetchReportExport(
+        ref.read(serviceProvider),
+        report: report,
+        format: format,
+        from: from,
+        to: to,
       );
-      if (!mounted) return;
-      final filename =
-          'relay-$report-${reportDate(from)}-${reportDate(to)}.$format';
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [
-            XFile.fromData(
-              Uint8List.fromList(result.data!),
-              name: filename,
-              mimeType: format == 'pdf'
-                  ? 'application/pdf'
-                  : useExcel
-                  ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-                  : 'text/csv',
-            ),
-          ],
-          fileNameOverrides: [filename],
-        ),
-      );
+      if (!mounted || exportRevision != request) return;
+      final result = await document.share(context);
+      if (mounted &&
+          exportRevision == request &&
+          result.status != ShareResultStatus.dismissed) {
+        setState(() => exportNotice = '${document.filename} ready');
+      }
     } catch (e) {
-      if (mounted) setState(() => error = friendlyError(e));
+      if (mounted && exportRevision == request) {
+        setState(() {
+          error = exportError(e);
+          failedFormat = format;
+        });
+      }
     } finally {
-      if (mounted) setState(() => exporting = false);
+      if (mounted) {
+        setState(() {
+          exporting = false;
+          activeFormat = null;
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final service = ref.watch(serviceProvider);
+    if (!canVisitMobilePage('/reports', service.user)) {
+      return const Center(child: Text('Report access is unavailable.'));
+    }
     ref.listen<String?>(
       serviceProvider.select((service) => service.branchId),
       (_, _) => load(),
@@ -151,7 +176,7 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => chooseDate(true),
+                  onPressed: exporting ? null : () => chooseDate(true),
                   icon: const Icon(Icons.calendar_today_outlined, size: 18),
                   label: Text(
                     'From\n${reportDate(from)}',
@@ -162,7 +187,7 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => chooseDate(false),
+                  onPressed: exporting ? null : () => chooseDate(false),
                   icon: const Icon(Icons.calendar_today_outlined, size: 18),
                   label: Text(
                     'To\n${reportDate(to)}',
@@ -189,21 +214,29 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
             ],
             onChanged: exporting
                 ? null
-                : (value) => setState(() => report = value!),
+                : (value) => setState(() {
+                    report = value!;
+                    error = null;
+                    failedFormat = null;
+                    exportNotice = null;
+                  }),
           ),
           const SizedBox(height: 14),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
-              for (final format in [
-                'csv',
-                if (report == 'daily') 'xlsx',
-                'pdf',
-              ])
+              for (final format in ['csv', 'xlsx', 'pdf'])
                 OutlinedButton.icon(
                   onPressed: exporting || loading ? null : () => export(format),
-                  icon: const Icon(Icons.download_outlined, size: 18),
+                  icon: Icon(
+                    format == 'pdf'
+                        ? Icons.picture_as_pdf_outlined
+                        : format == 'xlsx'
+                        ? Icons.table_view_outlined
+                        : Icons.download_outlined,
+                    size: 18,
+                  ),
                   label: Text(
                     format == 'xlsx' ? 'Excel' : format.toUpperCase(),
                   ),
@@ -211,13 +244,43 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
             ],
           ),
           if (loading || exporting)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: LinearProgressIndicator(),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (exporting) ...[
+                    Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        'Preparing ${activeFormat == 'xlsx' ? 'Excel' : activeFormat?.toUpperCase()}…',
+                        style: RelayTypography.caption,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  const LinearProgressIndicator(),
+                ],
+              ),
+            ),
+          if (exportNotice != null)
+            Semantics(
+              liveRegion: true,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Text(exportNotice!, style: RelayTypography.caption),
+              ),
             ),
           if (error != null) ...[
             Text(error!, style: const TextStyle(color: Colors.red)),
-            TextButton(onPressed: load, child: const Text('Retry')),
+            TextButton(
+              onPressed: exporting
+                  ? null
+                  : failedFormat == null
+                  ? load
+                  : () => export(failedFormat!),
+              child: Text(failedFormat == null ? 'Retry' : 'Retry export'),
+            ),
           ],
           if (!loading) ...[
             const SizedBox(height: 12),

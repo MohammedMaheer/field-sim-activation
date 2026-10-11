@@ -8,20 +8,34 @@ import {
   Printer,
   RotateCcw,
 } from "lucide-react";
-import { download, Row } from "./api";
+import { api, download, Row } from "./api";
+import { printReceipt } from "./receiptPrinting";
 
-export default function ActivationReceipt({ capture }: { capture: Row }) {
+export default function ActivationReceipt({ capture, canExport }: { capture: Row; canExport: boolean }) {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [printRun, setPrintRun] = useState(0);
+  const [printing, setPrinting] = useState(false);
+  async function printPaper() {
+    setPrinting(true);
+    setError("");
+    try {
+      const current = await api(`/kyc-captures/${capture.id}/print-data`);
+      await printReceipt(current);
+    } catch (failure: any) {
+      setError(failure.message || "Could not print this receipt. Download the PDF and try again.");
+    } finally {
+      setPrinting(false);
+    }
+  }
   async function exportPdf() {
     setExporting(true);
     setError("");
     try {
       await download(
         `/kyc-captures/${capture.id}/receipt`,
-        `${capture.document_kind === "PAYMENT_CONFIRMATION" ? "invoice" : "receipt"}-${capture.id}.pdf`,
+        `qanawat-${capture.document_kind === "PAYMENT_CONFIRMATION" ? "invoice" : "sale-receipt"}-${capture.id}.pdf`,
       );
     } catch {
       setError(
@@ -121,7 +135,7 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
     <div className="receipt-kiosk-assembly">
       <div className="receipt-kiosk-machine">
         <div className="receipt-kiosk-screen">
-          <strong>relay.</strong>
+          <img src="/branding/qanawat-logo.png" alt="Qanawat" style={{width: 126, height: "auto", background: "white", borderRadius: 6, padding: 5}} />
           <span>{saleMode ? "SALE RECEIPT" : "PAYMENT INVOICE"}</span>
           <button
             type="button"
@@ -162,25 +176,25 @@ export default function ActivationReceipt({ capture }: { capture: Row }) {
                     : capture.source_reference}
               </p>
             </div>
-            <button className="receipt-print" onClick={() => window.print()}>
+            {canExport && <button type="button" className="receipt-print" disabled={printing} onClick={printPaper}>
               <Printer size={16} />{" "}
-              {saleMode
+              {printing ? "Preparing…" : saleMode
                 ? "Print receipt"
                 : payment
                   ? "Print invoice"
                   : "Print receipt"}
-            </button>
-            <button
+            </button>}
+            {canExport && <button
               className="receipt-print"
               disabled={exporting}
               onClick={exportPdf}
             >
               <Download size={16} /> PDF
-            </button>
+            </button>}
           </header>
           {error && <p role="alert">{error}</p>}
           <div className="receipt-paper-brand">
-            <strong>relay.</strong>
+            <img src="/branding/qanawat-logo.png" alt="Qanawat Connect Solutions LLC" style={{width: 200, maxWidth: "60%", height: "auto"}} />
             <span>
               {saleMode
                 ? "SALE RECEIPT"

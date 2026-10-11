@@ -170,7 +170,7 @@ class RelayService extends ChangeNotifier {
           if (access != null) {
             options.headers['Authorization'] = 'Bearer $access';
           }
-          options.headers['X-Device-ID'] = 'Relay Flutter';
+          options.headers['X-Device-ID'] = 'Qanawat app';
           if (options.method == 'GET' &&
               options.extra['allAuthorizedBranches'] != true &&
               branchId != null &&

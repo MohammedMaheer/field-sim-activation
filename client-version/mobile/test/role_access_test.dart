@@ -5,7 +5,7 @@ void main() {
   test('administrators retain review visibility but cannot capture sales', () {
     final user = {
       'role': 'Administrator',
-      'permissions': ['read', 'ekyc.write', 'compliance.write'],
+      'permissions': ['read', 'ekyc.write', 'compliance.write', 'report.read'],
     };
     for (final path in ['/ekyc', '/screenshot-capture', '/drafts']) {
       expect(canVisitMobilePage(path, user), isFalse, reason: path);
@@ -18,6 +18,29 @@ void main() {
       '/notifications',
     ]) {
       expect(canVisitMobilePage(path, user), isTrue, reason: path);
+    }
+  });
+  test('reports require the effective report grant for every staff role', () {
+    for (final role in knownRoles.where(
+      (role) =>
+          !['Tele Verification Officer', 'Welcome Call Officer'].contains(role),
+    )) {
+      expect(
+        canVisitMobilePage('/reports', {
+          'role': role,
+          'permissions': ['read'],
+        }),
+        isFalse,
+        reason: role,
+      );
+      expect(
+        canVisitMobilePage('/reports', {
+          'role': role,
+          'permissions': ['read', 'report.read'],
+        }),
+        isTrue,
+        reason: role,
+      );
     }
   });
   test('compliance mobile routes match its web workspace', () {

@@ -1,13 +1,13 @@
 name: relay_agent
-description: "Relay telecom field operations demo application."
+description: "Qanawat telecom sales and field operations application."
 publish_to: 'none'
-version: 1.0.0+71
+version: 1.0.0+72
 
 environment:
   sdk: ^3.11.5
 
 dependencies:
-  archive: ^4.3.0
+  archive: '>=4.0.9 <4.1.0'
   camera: ^0.12.0+2
   connectivity_plus: ^7.3.1
   cryptography: ^2.9.0
@@ -23,6 +23,7 @@ dependencies:
   mobile_scanner: ^7.4.2
   path: ^1.9.1
   path_provider: ^2.1.6
+  printing: 5.14.3
   share_plus: ^13.3.0
   sqflite: ^2.4.2+1
   synchronized: ^3.4.0+1
@@ -39,6 +40,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/demo/
+    - assets/branding/
   fonts:
     - family: DM Sans
       fonts:

@@ -12,12 +12,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:dio/dio.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 import 'services.dart';
 import 'experience.dart';
 import 'role_access.dart';
 import 'receipt_sr.dart';
+import 'receipt_document.dart';
+import 'branding.dart';
+import 'exports.dart';
+import 'sales_presentation.dart';
 
 class KycCaptureScreen extends ConsumerStatefulWidget {
   final Json initial;
@@ -388,20 +391,40 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           : capture!['image_type'] == 'image/jpeg'
           ? 'jpg'
           : 'png';
-      await SharePlus.instance.share(
-        ShareParams(
-          files: [
-            XFile.fromData(
-              Uint8List.fromList(response.data!),
-              name:
-                  '${type == 'receipt' && capture?['document_kind'] == 'PAYMENT_CONFIRMATION' ? 'invoice' : 'receipt'}-$id.$ext',
-            ),
-          ],
-          fileNameOverrides: [
-            '${type == 'receipt' && capture?['document_kind'] == 'PAYMENT_CONFIRMATION' ? 'invoice' : 'receipt'}-$id.$ext',
-          ],
-        ),
+      final file = ExportDocument.fromResponse(
+        response,
+        format: ext,
+        fallbackFilename:
+            'qanawat-${type == 'original'
+                ? 'original-evidence'
+                : type == 'excel'
+                ? 'captured-details'
+                : capture?['document_kind'] == 'PAYMENT_CONFIRMATION'
+                ? 'invoice'
+                : 'sale-receipt'}-$id.$ext',
       );
+      if (mounted) await file.share(context);
+    });
+  }
+
+  Future<void> printReceipt() async {
+    await act(() async {
+      if (capture == null) throw StateError('Submit the sale first.');
+      final service = ref.read(serviceProvider);
+      final latest = await service.dio.get<Json>(
+        '/kyc-captures/${capture!['id']}',
+      );
+      final current = Map<String, dynamic>.from(latest.data!);
+      final response = await service.dio.get<List<int>>(
+        '/kyc-captures/${current['id']}/receipt',
+        options: Options(responseType: ResponseType.bytes),
+      );
+      final file = ExportDocument.fromResponse(
+        response,
+        format: 'pdf',
+        fallbackFilename: 'qanawat-sale-receipt-${current['id']}.pdf',
+      );
+      await printSaleReceipt(file.bytes, current, file.filename);
     });
   }
 
@@ -543,10 +566,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         ),
       );
     }
-    final canWrite = canVisitMobilePage(
-      '/ekyc',
-      ref.watch(serviceProvider).user,
-    );
+    final currentUser = ref.watch(serviceProvider).user;
+    final canWrite = canVisitMobilePage('/ekyc', currentUser);
+    final canExport = (currentUser?['permissions'] as List? ?? []).contains(currentUser?['role'] == 'Field Agent' ? 'read' : 'report.read');
     final editable =
         canWrite &&
         capture != null &&
@@ -746,7 +768,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                           ),
                           SizedBox(height: 3),
                           Text(
-                            payment
+                            saleMode
+                                ? activationLabel(receipt)
+                                : payment
                                 ? invoice!['heading']
                                 : receiptSuccess
                                 ? 'SUCCESS - RECEIPT VERIFIED'
@@ -781,17 +805,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          Wrap(
+                            alignment: WrapAlignment.spaceBetween,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 12,
+                            runSpacing: 8,
                             children: [
-                              Text(
-                                'relay.',
-                                style: TextStyle(
-                                  fontSize: 23,
-                                  fontWeight: FontWeight.w900,
-                                  color: Color(0xff8b2256),
-                                ),
-                              ),
+                              const QanawatBrand(width: 164, height: 47),
                               Text(
                                 saleMode
                                     ? 'SALE RECEIPT'
@@ -868,7 +888,19 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             ],
                           ],
                           const SizedBox(height: 12),
-                          OutlinedButton.icon(
+                          if (canExport) FilledButton.tonalIcon(
+                            onPressed: busy ? null : printReceipt,
+                            icon: const Icon(Icons.print_outlined),
+                            label: Text(
+                              saleMode
+                                  ? 'Print sale receipt'
+                                  : payment
+                                  ? 'Print invoice'
+                                  : 'Print receipt',
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          if (canExport) OutlinedButton.icon(
                             onPressed: busy ? null : () => export('receipt'),
                             icon: const Icon(Icons.picture_as_pdf_outlined),
                             label: Text(
@@ -1269,7 +1301,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     child: const Text('Save details'),
                   ),
                 ],
-                if ((capture!['rows'] as List? ?? []).isNotEmpty &&
+                if (canExport && (capture!['rows'] as List? ?? []).isNotEmpty &&
                     capture!['status'] != 'EXTRACTED') ...[
                   gap(),
                   OutlinedButton(

@@ -160,7 +160,7 @@ def sample(kind: Literal["id", "passport"], user=Depends(principal)):
     image = Image.new("RGB", (1100, 650), "#f0f6fb")
     d = ImageDraw.Draw(image)
     lines = [
-        "RELAY SYNTHETIC DOCUMENT - NOT VALID ID",
+        "QANAWAT SYNTHETIC DOCUMENT - NOT VALID ID",
         "Name: Jordan Demo",
         "Document: DEMO-ID-1001" if kind == "id" else "Document: DEMO-PASS-1001",
         "Nationality: Synthetic UAE resident",
@@ -401,35 +401,23 @@ def dispatch(
 
 @router.get("/{identifier}/receipt")
 def receipt(identifier: str, user=Depends(principal), db=Depends(get_db)):
-    from .main import pdf_bytes
+    from .exports import filename, receipt_pdf_bytes
 
     order = owned(db, user, identifier)
     if order.status != "ACTIVATED":
         raise HTTPException(409, "Receipt available after demo activation completes")
     v = view(db, order)
-    rows = [
-        {"Field": k.replace("_", " ").title(), "Value": v[k]}
-        for k in [
-            "reference",
-            "request_id",
-            "sr_id",
-            "customer",
-            "plan",
-            "msisdn",
-            "agent",
-            "outlet",
-            "status",
-        ]
-    ]
-    rows += [{"Field": k.title(), "Value": value} for k, value in v["receipt"].items()]
+    fields = [{"label": label, "value": v.get(key) or "Not recorded"} for key, label in [
+        ("reference", "Reference"), ("request_id", "Request ID"), ("sr_id", "SR number"),
+        ("customer", "Customer"), ("plan", "Subscriber plan"), ("msisdn", "Phone number"),
+        ("agent", "Sales agent"), ("outlet", "Branch"), ("status", "Recorded status"),
+    ]]
+    sections = [{"title": "Activation record", "fields": fields},
+                {"title": "Receipt details", "fields": [{"label": key.replace("_", " ").title(), "value": value if value is not None and value != "" else "Not recorded"} for key, value in v["receipt"].items()]}]
     return Response(
-        pdf_bytes(
-            "Demo activation receipt",
-            rows,
-            "DEMO ONLY - no payment collected; no carrier or regulatory approval",
-        ),
+        receipt_pdf_bytes("Activation receipt", sections, "Historical activation record"),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{order.reference}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename("activation receipt", "pdf", order.reference)}"', "Cache-Control": "private, no-store"},
     )
 
 

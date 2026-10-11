@@ -232,13 +232,23 @@ def template(business_date: str = "", user=Depends(principal), db=Depends(get_db
     sheet = workbook.active
     sheet.title = "Daily SR report"
     sheet.append(["sr_number", "status", "request_id"])
-    sheet.column_dimensions["A"].width = 28
-    sheet.column_dimensions["B"].width = 22
-    sheet.column_dimensions["C"].width = 30
-    sheet["A2"].number_format = "@"
+    from .exports import add_metadata, filename, style_sheet
+    from openpyxl.worksheet.datavalidation import DataValidation
+    style_sheet(sheet, ["sr_number", "status", "request_id"], machine_headers=True)
+    for column in ("A", "C"):
+        sheet.column_dimensions[column].width = 30
+        for index in range(2, 5002):
+            sheet[f"{column}{index}"].number_format = "@"
+    validation = DataValidation(type="list", formula1='"CLOSED,CANCELLED,IN_PROGRESS"', allow_blank=True)
+    validation.errorTitle = "Choose a supported status"
+    validation.error = "Use CLOSED, CANCELLED or IN_PROGRESS."
+    validation.showErrorMessage = True
+    sheet.add_data_validation(validation)
+    validation.add("B2:B5001")
+    add_metadata(workbook, "Daily SR reconciliation template", {"business_date": day or "Choose report date in the application", "maximum_srs": 5000}, ["Keep SR number and request ID as text, preserving leading zeros. Upload the carrier report for the selected business date. An SR match does not replace independent backend evidence review."])
     output = io.BytesIO()
     workbook.save(output)
-    return Response(output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="sr-report-{day.isoformat() if day else "template"}.xlsx"'})
+    return Response(output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename("SR report template", "xlsx", day.isoformat() if day else "")}"', "Cache-Control": "private, no-store"})
 
 
 @router.get("/batches")

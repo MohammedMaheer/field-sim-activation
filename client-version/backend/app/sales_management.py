@@ -917,31 +917,15 @@ def status_file(body: StatusFile, request: Request, user=Depends(principal), db=
 TARGET_COLUMNS = ("employee_id", "period", "order_type", "current_daily", "current_monthly", "daily_target", "monthly_target")
 
 
-def table_download(columns, rows, filename, format="csv"):
-    from fastapi.responses import Response
-    safe = [["'" + str(value) if str(value).startswith(("=", "+", "-", "@")) else value for value in row] for row in rows]
-    if format == "xlsx":
-        from openpyxl import Workbook
-        book = Workbook()
-        book.active.append(list(columns))
-        for row in safe:
-            book.active.append(row)
-        book.active.freeze_panes = "A2"
-        book.active.auto_filter.ref = book.active.dimensions
-        out = io.BytesIO()
-        book.save(out)
-        content, media = out.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    else:
-        out = io.StringIO()
-        writer = csv.writer(out)
-        writer.writerow(columns)
-        writer.writerows(safe)
-        content, media = out.getvalue(), "text/csv"
-    return Response(content, media_type=media, headers={"Content-Disposition": f'attachment; filename="{filename}.{format}"'})
+def table_download(columns, rows, filename, format="csv", **kwargs):
+    from .exports import table_download as download
+    return download(columns, rows, filename, format, **kwargs)
 
 
 @router.get("/targets/template")
 def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
+    from .exports import require_scoped_export
+    require_scoped_export(db, user)
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager", "Team Leader"}:
         raise HTTPException(403, "Your role cannot upload targets")
     period = period or business_date(now()).strftime("%Y-%m")
@@ -958,7 +942,8 @@ def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", u
             rows.append([agent.employee_id, period, row.order_type, row.daily_target, row.monthly_target, row.daily_target, row.monthly_target])
         if not existing:
             rows.append([agent.employee_id, period, "ALL", "", "", 0, 0])
-    return table_download(TARGET_COLUMNS, rows, "sales-targets", format)
+    branch_label = (db.get(Branch, branch_id).name if rows and db.get(Branch, branch_id) else "Selected branch (no matching records)") if branch_id else "All authorized branches"
+    return table_download(TARGET_COLUMNS, rows, "sales targets", format, metadata={"period": period, "branch": branch_label}, notes=["Edit daily_target and monthly_target only. Keep current targets and identifiers unchanged for stale-file detection."])
 
 
 @router.post("/targets/file")
@@ -1024,7 +1009,9 @@ def target_file(body: StatusFile, request: Request, user=Depends(principal), db=
 
 
 @router.get("/export")
-def export_sales(format: Literal["csv", "xlsx"] = "csv", period: str = "", order_type: str = "", status: str = "", branch_id: str = "", agent_id: str = "", leader_id: str = "", from_date: str = "", to_date: str = "", user=Depends(principal), db=Depends(get_db)):
+def export_sales(format: Literal["csv", "xlsx", "pdf"] = "csv", period: str = "", order_type: str = "", status: str = "", branch_id: str = "", agent_id: str = "", leader_id: str = "", from_date: str = "", to_date: str = "", user=Depends(principal), db=Depends(get_db)):
+    from .exports import require_scoped_export
+    require_scoped_export(db, user)
     query = filtered_sales_query(db, user, period, order_type, status, branch_id, agent_id, leader_id, from_date, to_date)
     rows = [sale_view(db, row) for row in db.scalars(query.order_by(SalesRecord.created_at.desc()))]
     columns = ["sale_id", "current_status", "new_status", "created_at", "agent", "leader", "sales_manager", "branch", "outlet", "order_type", "customer_name", "document", "nationality", "plan_name", "account_number", "request_id", "sim_serial", "router_serial", "advance_transaction_number", "sr_number", "alternate_number", "msisdn", "employee_id", "assignment_effective_at", "monthly_cost", "prepayment", "tele_status", "tele_remark", "tele_last_attempt", "welcome_status", "welcome_remark", "welcome_last_attempt"]
@@ -1033,9 +1020,11 @@ def export_sales(format: Literal["csv", "xlsx"] = "csv", period: str = "", order
     tasks = {(task.sale_id, task.stage): task for task in db.scalars(select(SalesCallTask).where(SalesCallTask.sale_id.in_([r["id"] for r in rows])))}
     output = []
     for row in rows:
-        values = [row["id"], row["status"], row["status"]] + [row.get(key) or "Not recorded" for key in columns[3:-6]]
+        values = [row["id"], row["status"], row["status"]] + [row.get(key) if row.get(key) is not None and row.get(key) != "" else "Not recorded" for key in columns[3:-6]]
         for stage in CALL_STAGES:
             attempt, task = latest.get((row["id"], stage)), tasks.get((row["id"], stage))
             values += [task.status if task else "Not recorded", attempt.remark if attempt else "Not recorded", attempt.created_at if attempt else "Not recorded"]
         output.append(values)
-    return table_download(columns, output, "sales-records", format)
+    branch_label = (db.get(Branch, branch_id).name if rows and db.get(Branch, branch_id) else "Selected branch (no matching records)") if branch_id else "All authorized branches"
+    agent_label = (rows[0]["agent"] if rows else "Selected sales agent (no matching records)") if agent_id else "All authorized sales agents"
+    return table_download(columns, output, "sales records", format, metadata={"period": period or "All dates", "from_date": from_date or "All dates", "to_date": to_date or "All dates", "product": order_type or "All products", "status": status or "All statuses", "branch": branch_label, "sales_agent": agent_label}, notes=["Change new_status only when importing status updates. Cancelled sales are excluded from net sales on the original sale date."])

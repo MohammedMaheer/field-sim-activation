@@ -678,7 +678,7 @@ export default function TransactionJourney() {
             </div>
             <div className="txn-receipt">
               <div className="txn-section-head">
-                <h3>Relay · Demo receipt</h3>
+                <h3>Qanawat · Receipt</h3>
                 <b>{record.reference}</b>
               </div>
               <div className="txn-receipt-grid">

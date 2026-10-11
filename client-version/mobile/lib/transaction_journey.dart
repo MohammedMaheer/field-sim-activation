@@ -315,7 +315,7 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
               name: '${record!['reference']}.pdf',
             ),
           ],
-          text: 'Relay demo activation receipt — no payment collected',
+          text: 'Qanawat activation receipt',
         ),
       );
     });
@@ -793,7 +793,7 @@ class _TransactionState extends ConsumerState<TransactionScreen> {
               ], color: const Color(0xFFE0F6EA)),
               gap(),
               panel([
-                title('Relay · Demo receipt'),
+                title('Qanawat · Activation receipt'),
                 gap(),
                 for (final entry in {
                   'Reference': record!['reference'],

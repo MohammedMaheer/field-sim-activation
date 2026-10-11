@@ -1,17 +1,13 @@
 """Branch stock, movement history and shortage alerts, including existing SIM stock."""
 
-import csv
-import io
 from datetime import datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import Response
 from pydantic import Field
 from .validation import BusinessInput
 from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
-from openpyxl import Workbook
 
 from .db import Audit, Agent, Branch, FieldAsset, FieldAssetMovement, FieldAssetRequest, Movement, Outlet, Role, Session, Sim, SimProgress, StockThreshold, User, get_db, now
 from .security import active_agent, agent_for_update, assert_agent, permissions, principal, visible_agents
@@ -511,9 +507,11 @@ def csv_safe(value):
 
 
 @router.get("/report/export")
-def export_stock(kind: Literal["summary", "movements", "stock", "requests"] = "summary", format: Literal["csv", "xlsx"] = "csv",
+def export_stock(kind: Literal["summary", "movements", "stock", "requests"] = "summary", format: Literal["csv", "xlsx", "pdf"] = "csv",
                  branch_id: str = "", category: str = "", status: str = "", agent_id: str = "",
                  start: datetime | None = None, end: datetime | None = None, user=Depends(principal), db=Depends(get_db)):
+    from .exports import require_scoped_export
+    require_scoped_export(db, user)
     if kind == "summary":
         rows = summary_rows(db, user)
         columns = ["branch", "category", "available", "assigned", "reserved", "damaged", "lost", "consumed", "returned", "retired", "minimum", "low_stock"]
@@ -532,26 +530,12 @@ def export_stock(kind: Literal["summary", "movements", "stock", "requests"] = "s
                 and (kind == "summary" or not agent_id or row.get("agent_id") == agent_id)
                 and (not start or not row.get("created_at") or row["created_at"] >= start.replace(tzinfo=None))
                 and (not end or not row.get("created_at") or row["created_at"] <= end.replace(tzinfo=None))]
-    if format == "xlsx":
-        workbook = Workbook()
-        sheet = workbook.active
-        sheet.title = "Stock report"
-        sheet.append(columns)
-        for row in rows:
-            sheet.append([csv_safe(row.get(column, "")) for column in columns])
-        sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
-        output = io.BytesIO()
-        workbook.save(output)
-        return Response(output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        headers={"Content-Disposition": f'attachment; filename="stock-{kind}.xlsx"'})
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(columns)
-    for row in rows:
-        writer.writerow([csv_safe(row.get(column, "")) for column in columns])
-    return Response(output.getvalue(), media_type="text/csv",
-                    headers={"Content-Disposition": f'attachment; filename="stock-{kind}.csv"'})
+    from .exports import table_download
+    branch = db.get(Branch, branch_id) if branch_id and rows else None
+    return table_download(columns, rows, "stock " + kind, format,
+                          metadata={"branch": branch.name if branch else "Selected branch (no matching records)" if branch_id else "All authorized branches", "category": category or "All categories", "status": status or "All statuses", "from_date": start or "All dates", "to_date": end or "All dates"},
+                          machine_headers=format == "csv")
+
 
 
 class RequestCreate(BusinessInput):

@@ -112,14 +112,14 @@ void main() {
         tester.widget<DropdownButtonFormField<String>>(account).initialValue,
         'agent1@relay.demo',
       );
-      await tester.tap(find.text('Sign in to Relay'));
+      await tester.tap(find.text('Sign in to Qanawat'));
       await tester.pumpAndSettle();
       expect(service.calls.single, ['agent1@relay.demo', '']);
       await tester.tap(account);
       await tester.pumpAndSettle();
       await tester.tap(find.text('admin@relay.demo').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Sign in to Relay'));
+      await tester.tap(find.text('Sign in to Qanawat'));
       await tester.pumpAndSettle();
       expect(service.calls.last, ['admin@relay.demo', '']);
       expect(tester.takeException(), isNull);
@@ -161,8 +161,8 @@ void main() {
     expect(tester.widget<TextField>(password).obscureText, isTrue);
     await tester.enterText(email, 'staff@example.com');
     await tester.enterText(password, 'test-private-password');
-    await tester.ensureVisible(find.text('Sign in to Relay'));
-    await tester.tap(find.text('Sign in to Relay'));
+    await tester.ensureVisible(find.text('Sign in to Qanawat'));
+    await tester.tap(find.text('Sign in to Qanawat'));
     await tester.pumpAndSettle();
     expect(service.calls.single, [
       'staff@example.com',

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'typography.dart';
+import 'branding.dart';
 
 /// A single paper-feed reveal; refreshing the record never restarts it.
 class ReceiptReveal extends StatefulWidget {
@@ -73,12 +74,10 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                     final textScale =
                         MediaQuery.textScalerOf(context).scale(12) / 12;
                     final stacked = constraints.maxWidth / textScale < 260;
-                    final brand = Text(
-                      'relay.',
-                      style: RelayTypography.section.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    const brand = QanawatBrand(
+                      width: 120,
+                      height: 35,
+                      darkSurface: true,
                     );
                     final replay = IconButton(
                       tooltip: 'Replay invoice printing',

@@ -1,11 +1,11 @@
 {
-    "name": "relay_agent",
-    "short_name": "relay_agent",
+    "name": "Qanawat",
+    "short_name": "Qanawat",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Qanawat field operations.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -34,7 +34,7 @@ void main() {
     expect(router.canPop(), isTrue);
     await tester.tap(find.byTooltip('Sign out').last);
     await tester.pumpAndSettle();
-    expect(find.text('Sign in to Relay'), findsOneWidget);
+    expect(find.text('Sign in to Qanawat'), findsOneWidget);
     expect(find.text('Sales management'), findsNothing);
     expect(router.canPop(), isFalse);
     expect(tester.takeException(), isNull);

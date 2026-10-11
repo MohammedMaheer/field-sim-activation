@@ -1,6 +1,4 @@
 import asyncio
-import csv
-import io
 import json
 import os
 import secrets
@@ -99,7 +97,7 @@ async def lifespan(app):
         pass
 
 
-app = FastAPI(title="Relay Operations API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Qanawat Operations API", version="1.0.0", lifespan=lifespan)
 
 
 @app.exception_handler(DatabasePoolTimeout)
@@ -1829,91 +1827,14 @@ REPORTS = {
 
 
 def pdf_bytes(title, rows, subtitle):
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from xml.sax.saxutils import escape
-
-    buffer = io.BytesIO()
-    styles = getSampleStyleSheet()
-    styles["Normal"].fontSize = 9
-    styles["Normal"].leading = 12
-    doc = SimpleDocTemplate(
-        buffer, pagesize=landscape(A4), rightMargin=30, leftMargin=30, topMargin=35, bottomMargin=35
-    )
-    story = [
-        Paragraph("RELAY | " + escape(title), styles["Title"]),
-        Paragraph(escape(subtitle), styles["Normal"]),
-        Spacer(1, 16),
-    ]
-    if rows and "reference" in rows[0]:
-        keys = ["reference", "customer", "agent", "outlet", "plan", "status", "created_at"]
-        counts = {
-            state: sum(r.get("status") == state for r in rows)
-            for state in ["ACTIVATED", "PROCESSING", "FAILED", "DRAFT"]
-        }
-        story.extend(
-            [
-                Paragraph(
-                    " | ".join(f"{state.title()}: {count}" for state, count in counts.items()),
-                    styles["Heading3"],
-                ),
-                Spacer(1, 12),
-            ]
-        )
-    else:
-        keys = [k for k in (rows[0] if rows else {}) if k not in {"id", "created_at"}][:7]
-    data = [[Paragraph(k.replace("_", " ").title(), styles["Normal"]) for k in keys]]
-    for row in rows:
-        values = []
-        for k in keys:
-            cell = row.get(k, "")
-            value = (
-                (f"{cell:.6f}" if k in {"lat", "lng"} else f"{cell:.1f}")
-                if isinstance(cell, float)
-                else str(cell)
-            )
-            if k.endswith("_at") and value:
-                value = value[:16].replace("T", " ") + " UTC"
-            values.append(Paragraph(escape(value[:180]), styles["Normal"]))
-        data.append(values)
-    if keys:
-        table = Table(data, repeatRows=1, colWidths=[780 / len(keys)] * len(keys))
-        table.setStyle(
-            TableStyle(
-                [
-                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eedee5")),
-                    (
-                        "ROWBACKGROUNDS",
-                        (0, 1),
-                        (-1, -1),
-                        [colors.white, colors.HexColor("#f6f7f9")],
-                    ),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
-                    ("TOPPADDING", (0, 0), (-1, -1), 9),
-                    ("LINEBELOW", (0, 0), (-1, 0), 1, colors.HexColor("#761b3a")),
-                ]
-            )
-        )
-        story.append(table)
-    else:
-        story.append(Paragraph("No records match the selected filters.", styles["Normal"]))
-
-    def footer(canvas, doc):
-        canvas.setFont("Helvetica", 8)
-        canvas.drawString(30, 20, "Relay Operations | Confidential")
-        canvas.drawRightString(810, 20, f"Page {doc.page}")
-
-    doc.build(story, onFirstPage=footer, onLaterPages=footer)
-    return buffer.getvalue()
+    from .exports import table_pdf_bytes
+    return table_pdf_bytes(title, rows, subtitle)
 
 
 @app.get("/api/reports/{report}")
 def export(
     report: str,
-    format: Literal["csv", "pdf"] = "csv",
+    format: Literal["csv", "xlsx", "pdf"] = "csv",
     q: str = "",
     status: str = "",
     start: str = "",
@@ -2025,7 +1946,7 @@ def export(
         for r in rows
     ]
     subtitle = f"Generated {now():%d %b %Y %H:%M} UTC | {len(rows)} records | Dates: {start or 'all'} to {end or 'all'} | Status: {status or 'all'} | Search: {q or 'none'}"
-    if branch_id:
+    if branch_id and rows:
         subtitle += " | Branch: " + (
             db.get(Branch, branch_id).name if db.get(Branch, branch_id) else "No matching branch"
         )
@@ -2033,58 +1954,36 @@ def export(
         subtitle += " | Closed sales use original sale dates and current status; targets and stock are current. Legacy activation, AHT and eKYC remain historical."
     audit(db, user, "Report Exported", report, new={"format": format, "rows": len(rows)})
     db.commit()
+    from .exports import table_download
+    columns = list(dict.fromkeys(key for row in rows for key in row))
+    if not columns:
+        columns = ["No matching records"]
+    metadata = {"from_date": start or "All dates", "to_date": end or "All dates", "status": status or "All statuses", "search": q or "None", "branch": (db.get(Branch, branch_id).name if rows and db.get(Branch, branch_id) else "Selected branch (no matching records)") if branch_id else "All authorized branches"}
     if format == "pdf":
-        data = pdf_bytes(report.title() + " report", rows, subtitle)
-        media = "application/pdf"
-    else:
-        buffer = io.StringIO()
-        keys = (
-            list(dict.fromkeys(k for row in rows for k in row)) if rows else ["No matching records"]
-        )
-        writer = csv.DictWriter(buffer, fieldnames=keys)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(
-                {
-                    k: "'" + str(v) if str(v).startswith(("=", "+", "-", "@", "\t", "\r")) else v
-                    for k, v in row.items()
-                }
-            )
-        data = buffer.getvalue().encode("utf-8-sig")
-        media = "text/csv"
-    return Response(
-        data,
-        media_type=media,
-        headers={"Content-Disposition": f'attachment; filename="relay-{report}.{format}"'},
-    )
+        from .exports import filename
+        return Response(pdf_bytes(report.title() + " report", rows, subtitle), media_type="application/pdf", headers={"Content-Disposition": f'attachment; filename="{filename(report + " report", "pdf")}"', "Cache-Control": "private, no-store"})
+    return table_download(columns, rows, report + " report", format, metadata=metadata,
+                          machine_headers=format == "csv", notes=[subtitle])
+
 
 
 @app.get("/api/orders/{order_id}/receipt")
 def receipt(order_id: str, user=Depends(principal), db=Depends(get_db)):
+    from .exports import filename, receipt_pdf_bytes
     order = db.get(Order, order_id)
     if not order:
         raise HTTPException(404, "Order not found")
     assert_agent(db, user, order.agent_id)
     view = order_view(db, order)
-    rows = [
-        {"Field": k.replace("_", " ").title(), "Value": view[k]}
-        for k in [
-            "reference",
-            "request_id",
-            "sr_id",
-            "msisdn",
-            "customer",
-            "plan",
-            "agent",
-            "outlet",
-            "created_at",
-            "status",
-        ]
-    ]
+    sections = [{"title": title, "fields": [{"label": label, "value": view.get(key) or "Not recorded"} for key, label in fields]} for title, fields in [
+        ("Activation record", [("reference", "Reference"), ("request_id", "Request ID"), ("sr_id", "SR number"), ("created_at", "Recorded date"), ("status", "Recorded status")]),
+        ("Customer and service", [("customer", "Customer"), ("msisdn", "Phone number"), ("plan", "Subscriber plan")]),
+        ("Recorded by", [("agent", "Sales agent"), ("outlet", "Branch")]),
+    ]]
     return Response(
-        pdf_bytes("Activation receipt", rows, "Demo provider transaction — no payment collected"),
+        receipt_pdf_bytes("Activation receipt", sections, "Historical activation record"),
         media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{order.reference}.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{filename("activation receipt", "pdf", order.reference)}"', "Cache-Control": "private, no-store"},
     )
 
 

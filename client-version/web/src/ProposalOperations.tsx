@@ -1,17 +1,12 @@
 import { businessPeriod } from "./businessTime";
 import CommissionCalculations from "./CommissionCalculations";
+import ExportActions from "./ExportActions";
 import { useSearchParams } from "react-router-dom";
 import { useState } from "react";
 import { useBranchScope } from "./BranchScope";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ClipboardCheck,
-  Download,
-  FileUp,
-  Plus,
-  RefreshCw,
-} from "lucide-react";
-import { api, post, patch, download, Row } from "./api";
+import { ClipboardCheck, FileUp, Plus, RefreshCw } from "lucide-react";
+import { api, post, patch, Row } from "./api";
 import RecordOverview from "./RecordOverview";
 import {
   Badge,
@@ -385,17 +380,12 @@ export function Incentives({ user, notify }: Props) {
           <div className="eyebrow">SALES PERFORMANCE</div>
           <h1>Incentives</h1>
         </div>
-        {user.permissions.includes("report.read") && (
-          <button
-            onClick={() =>
-              download(
-                `/incentives/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`,
-                `incentives-${period}.csv`,
-              ).catch((e) => setMessage(e.message))
-            }
-          >
-            <Download size={16} /> Export CSV
-          </button>
+        {user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read") && (
+          <ExportActions
+            path={`/incentives/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`}
+            name={`qanawat-sales-commissions-${period}`}
+            label="Export history"
+          />
         )}
       </div>
       <div className="proposal-toolbar">

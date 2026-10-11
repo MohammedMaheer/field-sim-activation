@@ -30,6 +30,7 @@ export default function KycCapture() {
       ["activation.write", "ekyc.write"].includes(p),
     );
   const canReview = user.permissions.includes("compliance.write");
+  const canExport = user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read");
   const activity = useQuery<Row[]>({
     queryKey: ["kyc-captures", "overview", branch],
     queryFn: () =>
@@ -664,7 +665,7 @@ export default function KycCapture() {
                       subtitle={"Capture " + capture.id.slice(0, 8)}
                     >
                       <div className="capture-detail">
-                        <ActivationReceipt capture={capture} />
+                        <ActivationReceipt capture={capture} canExport={canExport} />
                         <details
                           className="capture-supporting"
                           open={
@@ -1072,7 +1073,7 @@ export default function KycCapture() {
                           {!!capture.rows?.length &&
                             capture.status !== "EXTRACTED" && (
                               <div className="capture-toolbar">
-                                <button
+                                {canExport && <button
                                   disabled={busy || dirty}
                                   onClick={() =>
                                     run(() =>
@@ -1087,7 +1088,7 @@ export default function KycCapture() {
                                 >
                                   <FileSpreadsheet size={16} />
                                   Generate Excel
-                                </button>
+                                </button>}
                                 {capture.status === "VALIDATED" && canWrite && (
                                   <button
                                     className="primary"

@@ -11,12 +11,12 @@ from itertools import islice
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Literal
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field
 from .validation import BusinessInput
 from sqlalchemy import case, select, text
 from openpyxl import load_workbook
-from .db import Agent, Outlet, FieldTask, Incentive, SupportTicket, User, get_db, now
+from .db import Agent, Branch, Outlet, FieldTask, Incentive, SupportTicket, User, get_db, now
 from .security import principal, require, assert_agent, visible_agents
 from .services import audit, raw
 
@@ -255,17 +255,11 @@ def import_incentives(body: IncentiveUpload, request: Request, user=Depends(prin
 
 
 @router.get("/api/incentives/export")
-def export_incentives(request: Request, user=Depends(principal), db=Depends(get_db), period: str | None = None, branch_id: str = ""):
+def export_incentives(request: Request, user=Depends(principal), db=Depends(get_db), period: str | None = None, branch_id: str = "", format: Literal["csv", "xlsx", "pdf"] = "csv"):
     require(db, user, "report.read")
     rows = incentives(user, db, period, branch_id)
-    out = io.StringIO()
-    writer = csv.writer(out)
-    writer.writerow(["Employee ID", "Agent", "Period", "Amount AED", "Source", "Status", "Note"])
-    for row in rows:
-        note = row["note"]
-        if note.lstrip().startswith(("=", "+", "-", "@")):
-            note = "'" + note
-        writer.writerow([row["employee_id"], row["agent"], row["period"], row["amount"], row["source"], row["status"], note])
+    from .exports import table_download
+    columns = ["employee_id", "agent", "period", "amount", "source", "status", "note"]
     audit(db, user, "Incentives Exported", period or "all", request=request)
     db.commit()
-    return Response(out.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="incentives.csv"'})
+    return table_download(columns, rows, "sales commissions", format, metadata={"period": period or "All periods", "branch": (db.get(Branch, branch_id).name if rows and db.get(Branch, branch_id) else "Selected branch (no matching records)") if branch_id else "All authorized branches"}, machine_headers=False)

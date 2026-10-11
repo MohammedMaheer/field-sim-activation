@@ -67,7 +67,7 @@ def seed():
             db.flush()
             outlets.append(o)
             db.add(Territory(name=f"{name} territory", outlet_id=o.id, radius=500))
-        product = Product(name="Relay Mobile")
+        product = Product(name="Qanawat Mobile")
         db.add(product)
         db.flush()
         plans = [
