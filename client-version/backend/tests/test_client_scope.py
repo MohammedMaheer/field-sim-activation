@@ -1619,14 +1619,22 @@ def test_inventory_edit_is_scoped_audited_and_rejects_stale_details(client):
     assert client.patch(path, json=body).status_code == 200
 
 
+def valid_ocr_photo():
+    from PIL import Image
+    stream = io.BytesIO()
+    Image.new('RGB', (90, 90), 'white').save(stream, 'PNG')
+    return base64.b64encode(stream.getvalue()).decode()
+
+
 def test_identity_extraction_maps_printed_dates_without_verification_claim(client,monkeypatch):
     from app import captures
     login(client,"agent1")
     monkeypatch.setattr(captures.extractor,"extract",lambda _: {"lines":[{"text":"Identity document"},{"text":"Full legal name: Alex Sample"},{"text":"ID No: SAMPLE-001"},{"text":"Date of Birth: 14 NOV 1991"},{"text":"Date of expiry: 14/11/2030"}]})
-    response=client.post("/api/kyc-captures/read-document",json={"image_base64":"eA=="})
+    response=client.post("/api/kyc-captures/read-document",json={"image_base64":valid_ocr_photo()})
     assert response.status_code==200
     result = response.json()
     assert result.pop("document_check", None)
+    assert result.pop("_ocr")["lines"]
     assert result=={"name":"Alex Sample","document_number":"SAMPLE-001","birth_date":"1991-11-14","expiry_date":"2030-11-14"}
 
 
@@ -1640,10 +1648,11 @@ def test_identity_extraction_reads_unseparated_document_labels(client, monkeypat
         {"text": "Date of birth 14 NOV 1991"},
         {"text": "Expiry date 14 NOV 2030"},
     ]})
-    response = client.post("/api/kyc-captures/read-document", json={"image_base64": "eA=="})
+    response = client.post("/api/kyc-captures/read-document", json={"image_base64": valid_ocr_photo()})
     assert response.status_code == 200
     result = response.json()
     assert result.pop("document_check", None)
+    assert result.pop("_ocr")["lines"]
     assert result == {
         "name": "ALEX SAMPLE", "document_number": "784-1991-1234567-1",
         "nationality": "UNITED ARAB EMIRATES", "birth_date": "1991-11-14",
@@ -1656,12 +1665,13 @@ def test_passport_mrz_autofills_readable_identity_without_verification(client, m
     login(client, "agent1")
     monkeypatch.setattr(captures.extractor, "extract", lambda _: {"lines": [
         {"text": "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<"},
-        {"text": "L898902C36UTO7408122F3004159<<<<<<<<<<<<<<04"},
+        {"text": "L898902C36UTO7408122F3004157<<<<<<<<<<<<<<04"},
     ]})
-    response = client.post("/api/kyc-captures/read-document", json={"image_base64": "eA=="})
+    response = client.post("/api/kyc-captures/read-document", json={"image_base64": valid_ocr_photo()})
     assert response.status_code == 200
     result = response.json()
     assert result.pop("document_check", None)
+    assert result.pop("_ocr")["lines"]
     assert result == {
         "name": "ANNA MARIA ERIKSSON", "document_number": "L898902C3",
         "birth_date": "1974-08-12", "expiry_date": "2030-04-15",

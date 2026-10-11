@@ -47,6 +47,8 @@ PATHS = {
     "/api/events",
     "/api/events/stream",
     "/api/reports/{report}",
+    "/api/kyc-captures/ocr-jobs",
+    "/api/kyc-captures/ocr-jobs/{job_id}",
 }
 
 

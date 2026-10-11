@@ -208,7 +208,7 @@ class Intake(BaseModel):
     msisdn: str = Field(default="", max_length=40)
     signature: list[list[tuple[float, float]]] = Field(default_factory=list, max_length=100)
     kiosk_reference: str = Field(default="", max_length=120)
-    payment_image: str = Field(default="", max_length=1_333_336)
+    payment_image: str = Field(default="", max_length=5_333_336)
     payment_on_receipt: bool = False
     step: int = Field(default=0, ge=0, le=2)
 
@@ -291,6 +291,13 @@ class Intake(BaseModel):
 
 
 DOCUMENT_KEYS = ("name", "document_number", "birth_date", "expiry_date")
+DOCUMENT_RECOGNIZED_KEYS = (*DOCUMENT_KEYS, "nationality", "issue_date", "gender", "arabic_name", "document_type")
+ORDER_RECOGNIZED_KEYS = ("order_reference", "msisdn", "product_name", "package_name", "monthly_cost", "prepayment", "account_number", "sim_identifier", "router_serial", "advance_transaction_number", "order_type", "sr_number", "plan_id")
+
+
+def evidence_value(value):
+    """Normalize spacing/case without dropping significant decimal punctuation."""
+    return " ".join(str(value).split()).casefold()
 
 
 def document_check(image, fields, user_id):
@@ -302,7 +309,9 @@ def document_check(image, fields, user_id):
         json.dumps(
             {
                 "image": hashlib.sha256(base64.b64decode(image, validate=True)).hexdigest(),
-                "fields": {key: fields[key] for key in DOCUMENT_KEYS},
+                "version": 2,
+                "fields": {key: Intake.canonical_document_type(fields[key]) if key == "document_type" else fields[key]
+                           for key in DOCUMENT_RECOGNIZED_KEYS if fields.get(key)},
                 "user": user_id,
                 "expires": now().timestamp() + 30 * 86400,
             }
@@ -322,10 +331,11 @@ def check_document_evidence(intake, user):
             and proof["expires"] >= now().timestamp()
             and proof["image"]
             == hashlib.sha256(base64.b64decode(intake.document_image, validate=True)).hexdigest()
-            and all(
-                normalize(proof["fields"][key]) == normalize(getattr(intake, key))
-                for key in DOCUMENT_KEYS
-            )
+            and all(normalize(proof["fields"][key]) == normalize(getattr(intake, key)) for key in DOCUMENT_KEYS)
+            and (proof.get("version", 1) < 2 or all(
+                evidence_value(value) == evidence_value(getattr(intake, key))
+                for key, value in proof["fields"].items() if key in DOCUMENT_RECOGNIZED_KEYS and key not in DOCUMENT_KEYS
+            ))
         )
         if valid:
             return
@@ -375,6 +385,11 @@ def check_order_evidence(intake, user):
             )
             and (intake.receipt_sr_check or not proof["fields"].get("sr_number")
                  or normalize(proof["fields"]["sr_number"]) == normalize(intake.sr_number))
+            and (proof.get("version", 1) < 2 or all(
+                evidence_value(value) == evidence_value(getattr(intake, key))
+                for key, value in proof["fields"].items()
+                if key in ORDER_RECOGNIZED_KEYS and key not in (*ORDER_KEYS, "sr_number")
+            ))
         )
         if valid:
             return
@@ -487,17 +502,88 @@ class IdentityImage(BaseModel):
     image_base64: str = Field(max_length=1_333_336)
 
 
+def ocr_lines(result):
+    return [{"text": str(line.get("text", ""))[:1000].strip(), "confidence": line.get("confidence")}
+            for line in result.get("lines", [])[:200] if isinstance(line, dict)]
+
+
+def ocr_metadata(lines, warnings):
+    return {"lines": lines, "warnings": list(dict.fromkeys(warnings))}
+
+
+def printed_value(fields, seen, blocked, warnings, key, value, confidence=None):
+    """Never resolve two conflicting printed values by taking the last line."""
+    if not value:
+        return
+    normalized = (re.sub(r"[^\w]", "", str(value)).casefold()
+                  if key in {"document_number", "order_reference", "msisdn", "sr_number"} else evidence_value(value))
+    if key in seen and seen[key] != normalized:
+        blocked.add(key)
+        warnings.append(f"Conflicting {key.replace('_', ' ')} values. Capture one complete screen.")
+    seen[key] = normalized
+    if confidence is not None:
+        try:
+            if float(confidence) < 50:
+                blocked.add(key)
+                warnings.append(f"Read {key.replace('_', ' ')} again with a clearer photo.")
+        except (TypeError, ValueError):
+            blocked.add(key)
+    if key in blocked:
+        fields.pop(key, None)
+    else:
+        fields[key] = value
+
+
+def labelled_values(lines, aliases):
+    labels = sorted(aliases, key=len, reverse=True)
+    def label_match(text):
+        for label in labels:
+            match = re.match(rf"^{re.escape(label)}(?:\s*[:：–-]\s*|\s+|$)(.*)$", text, re.I)
+            if match:
+                return aliases[label], match.group(1).strip()
+        return None
+    for index, line in enumerate(lines):
+        matched = label_match(line["text"])
+        if not matched:
+            continue
+        key, value = matched
+        confidence = line.get("confidence")
+        if not value and index + 1 < len(lines) and not label_match(lines[index + 1]["text"]):
+            value = lines[index + 1]["text"]
+            confidence = lines[index + 1].get("confidence")
+        if value:
+            yield key, value, confidence
+
+
+def valid_mrz_part(value, check):
+    weights = (7, 3, 1)
+    def number(char):
+        return 0 if char == "<" else int(char) if char.isdigit() else ord(char) - ord("A") + 10
+    return bool(re.fullmatch(r"[A-Z0-9<]+", value) and check.isdigit()
+                and sum(number(char) * weights[index % 3] for index, char in enumerate(value)) % 10 == int(check))
+
+
 @router.post("/read-document")
 def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    user_id = user.id
+    # Authorization has completed; do not occupy a pool checkout during Tesseract.
+    db.rollback()
     try:
-        result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
+        from .ocr_queue import extract_compatibility
+        result = extract_compatibility(base64.b64decode(body.image_base64, validate=True), user_id)
     except OcrBusy:
         raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(
             422, "Document wasn't captured clearly. Use a clearer ID or passport photo."
         )
+    return parse_document_result(result, body.image_base64, user_id)
+
+
+def parse_document_result(result, image_base64, user_id):
     aliases = {
         "full name": "name",
         "full legal name": "name",
@@ -519,25 +605,13 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
         "arabic name": "arabic_name",
         "document expiry date": "expiry_date",
     }
-    fields = {}
-    lines = [str(line.get("text", "")).strip() for line in result.get("lines", [])]
-    labels = sorted(aliases, key=len, reverse=True)
-    for index, text in enumerate(lines):
-        label, sep, value = text.partition(":")
-        key = aliases.get(label.strip().lower()) if sep else None
-        if not key:
-            for candidate in labels:
-                match = re.match(rf"^{re.escape(candidate)}\s*[-–:]?\s+(.+)$", text, re.I)
-                if match:
-                    key, value = aliases[candidate], match.group(1)
-                    break
-        if not key and text.lower() in aliases and index + 1 < len(lines):
-            key, value = aliases[text.lower()], lines[index + 1]
-        if key and value.strip():
-            value = value.strip()
-            if key.endswith("date"):
-                parsed = None
-                for fmt in (
+    fields, seen, blocked, warnings = {}, {}, set(), []
+    source_lines = ocr_lines(result)
+    lines = [line["text"] for line in source_lines]
+    for key, value, confidence in labelled_values(source_lines, aliases):
+        if key.endswith("date"):
+            parsed = None
+            for fmt in (
                     "%Y-%m-%d",
                     "%d/%m/%Y",
                     "%d-%m-%Y",
@@ -545,20 +619,22 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                     "%d-%B-%Y",
                     "%d %b %Y",
                     "%d %B %Y",
-                ):
-                    try:
-                        parsed = datetime.strptime(value, fmt).date().isoformat()
-                        break
-                    except ValueError:
-                        pass
-                if not parsed:
-                    continue
-                value = parsed
-            fields[key] = value[: 80 if key in {"document_number", "nationality"} else 120]
-        if "document_number" not in fields:
-            emirates_id = re.search(r"\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b", text)
-            if emirates_id:
-                fields["document_number"] = emirates_id.group().replace(" ", "")
+            ):
+                try:
+                    parsed = datetime.strptime(value, fmt).date().isoformat()
+                    break
+                except ValueError:
+                    pass
+            if not parsed:
+                blocked.add(key)
+                fields.pop(key, None)
+                warnings.append(f"Read {key.replace('_', ' ')} again with a clearer photo.")
+                continue
+            value = parsed
+        printed_value(fields, seen, blocked, warnings, key, value[:80 if key in {"document_number", "nationality"} else 160 if key == "arabic_name" else 120], confidence)
+    for index, text in enumerate(lines):
+        for emirates_id in re.finditer(r"\b784[-\s]?\d{4}[-\s]?\d{7}[-\s]?\d\b", text):
+                printed_value(fields, seen, blocked, warnings, "document_number", emirates_id.group().replace(" ", ""), source_lines[index].get("confidence"))
     # Passport machine-readable zones contain the printed name and number.
     if "name" not in fields:
         for index, text in enumerate(lines):
@@ -571,20 +647,26 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                 if re.fullmatch(r"[A-Z][A-Z .'-]{3,}", next_line):
                     candidates.append(next_line)
             if candidates:
-                fields["name"] = " ".join(candidates)[:120]
+                confidences = [line.get("confidence") for line in source_lines[index + 1:index + 1 + len(candidates)] if line.get("confidence") is not None]
+                printed_value(fields, seen, blocked, warnings, "name", " ".join(candidates)[:120], min(confidences) if confidences else None)
             break
     for index, text in enumerate(lines[:-1]):
         if not re.match(r"^P<[A-Z<]{3,}$", text):
             continue
+        next_line = lines[index + 1].upper()
+        if len(next_line) < 28 or not all(valid_mrz_part(part, check) for part, check in (
+                (next_line[:9], next_line[9:10]), (next_line[13:19], next_line[19:20]),
+                (next_line[21:27], next_line[27:28]))):
+            warnings.append("Passport scan contains an unreadable machine-readable code. Capture a clearer photo.")
+            continue
         zone = text.upper()
         name_part = zone[5:].split("<<")
         if len(name_part) > 1 and "name" not in fields:
-            fields["name"] = " ".join(
+            printed_value(fields, seen, blocked, warnings, "name", " ".join(
                 part.replace("<", " ").strip() for part in [name_part[1], name_part[0]] if part
-            ).strip()
-        next_line = lines[index + 1].upper()
+            ).strip(), source_lines[index].get("confidence"))
         if re.match(r"^[A-Z0-9<]{9}[0-9]", next_line) and "document_number" not in fields:
-            fields["document_number"] = next_line[:9].replace("<", "")
+            printed_value(fields, seen, blocked, warnings, "document_number", next_line[:9].replace("<", ""), source_lines[index + 1].get("confidence"))
         if len(next_line) >= 28:
             for key, part in (("birth_date", next_line[13:19]), ("expiry_date", next_line[21:27])):
                 if key in fields or not re.fullmatch(r"\d{6}", part):
@@ -592,9 +674,7 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
                 year = int(part[:2])
                 year += 1900 if key == "birth_date" and year > datetime.now().year % 100 else 2000
                 try:
-                    fields[key] = (
-                        datetime.strptime(f"{year}{part[2:]}", "%Y%m%d").date().isoformat()
-                    )
+                    printed_value(fields, seen, blocked, warnings, key, datetime.strptime(f"{year}{part[2:]}", "%Y%m%d").date().isoformat(), source_lines[index + 1].get("confidence"))
                 except ValueError:
                     pass
         break
@@ -610,11 +690,12 @@ def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_d
     elif re.search(r"document\s+type\s*:\s*(?:uae\s+)?identity", identity_text):
         fields["document_type"] = "National ID"
     if identity_context and all(fields.get(key) for key in DOCUMENT_KEYS):
-        fields["document_check"] = document_check(body.image_base64, fields, user.id)
+        fields["document_check"] = document_check(image_base64, fields, user_id)
+    fields["_ocr"] = ocr_metadata(source_lines, warnings)
     return fields
 
 
-def order_fields(lines):
+def order_fields(lines, warnings=None):
     labels = {
         "request id": "order_reference",
         "request number": "order_reference",
@@ -635,28 +716,22 @@ def order_fields(lines):
         "service request number": "sr_number",
         "order type": "order_type",
     }
-    values = {}
-    texts = [str(line.get("text", "")).strip() for line in lines]
-    for index, text in enumerate(texts):
-        for label, key in labels.items():
-            match = re.match(rf"^{re.escape(label)}\s*[:：-]?\s*(.*)$", text, re.I)
-            if not match:
-                continue
-            value = match.group(1).strip()
-            if not value and index + 1 < len(texts):
-                value = texts[index + 1]
-            if value and value.casefold() not in labels:
-                values[key] = value[:160]
-            break
+    warnings = warnings if warnings is not None else []
+    source_lines = ocr_lines({"lines": lines})
+    values, seen, blocked = {}, {}, set()
+    for key, value, confidence in labelled_values(source_lines, labels):
+        printed_value(values, seen, blocked, warnings, key, value[:160], confidence)
+    for line in source_lines:
+        text = line["text"]
         if re.search(r"(?:basic\s+plan|grand\s+total|monthly)", text, re.I):
             cost = re.search(r"(?:AED\s*)?(\d+(?:\.\d{1,2})?)\s*(?:AED\s*)?monthly", text, re.I)
             advance = re.search(
                 r"(?:AED\s*)?(\d+(?:\.\d{1,2})?)\s*(?:AED\s*)?prepayment", text, re.I
             )
             if cost:
-                values["monthly_cost"] = cost.group(1)
+                printed_value(values, seen, blocked, warnings, "monthly_cost", cost.group(1), line.get("confidence"))
             if advance:
-                values["prepayment"] = advance.group(1)
+                printed_value(values, seen, blocked, warnings, "prepayment", advance.group(1), line.get("confidence"))
     if not re.fullmatch(r"[+\d][\d\s-]{7,19}", values.get("msisdn", "")):
         values.pop("msisdn", None)
     reference = values.get("order_reference", "")
@@ -683,14 +758,30 @@ def order_fields(lines):
 @router.post("/read-order")
 def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    user_id = user.id
+    db.rollback()
     try:
-        result = extractor.extract(base64.b64decode(body.image_base64, validate=True))
+        from .ocr_queue import extract_compatibility
+        result = extract_compatibility(base64.b64decode(body.image_base64, validate=True), user_id)
     except OcrBusy:
         raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(422, "Order screen couldn't be read. Take a clearer photo.")
-    lines = result.get("lines", [])
-    fields = order_fields(lines)
+    return parse_order_result(result, body.image_base64, user_id, db)
+
+
+def parse_order_result(result, image_base64, user_id, db):
+    lines = ocr_lines(result)
+    warnings = []
+    fields = order_fields(lines, warnings)
+    fields["order_fields"] = [
+        {"label": str(field.get("label", ""))[:120], "value": str(field.get("value", ""))[:1000]}
+        for row in result.get("rows", []) if isinstance(row, dict)
+        for field in row.get("fields", []) if isinstance(field, dict)
+    ][:100]
+    fields["_ocr"] = ocr_metadata(lines, warnings)
     text = " ".join(str(line.get("text", "")) for line in lines).lower()
     if not re.search(r"order\s+details|package\s+name|request\s+id", text) or not all(
         fields.get(key) for key in (*ORDER_KEYS, "package_name")
@@ -706,31 +797,40 @@ def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db))
         json.dumps(
             {
                 "image": hashlib.sha256(
-                    base64.b64decode(body.image_base64, validate=True)
+                    base64.b64decode(image_base64, validate=True)
                 ).hexdigest(),
-                "fields": {key: fields[key] for key in (*ORDER_KEYS, "sr_number") if fields.get(key)},
-                "user": user.id,
+                "version": 2,
+                "fields": {key: fields[key] for key in ORDER_RECOGNIZED_KEYS if fields.get(key)},
+                "user": user_id,
                 "expires": now().timestamp() + 30 * 86400,
             }
         ).encode()
     ).decode()
-    fields["order_fields"] = [
-        {"label": str(field.get("label", ""))[:120], "value": str(field.get("value", ""))[:1000]}
-        for row in result.get("rows", [])
-        for field in row.get("fields", [])
-    ][:100]
     return fields
 
 
 def receipt_sr_number(lines):
     """Read a labelled SR only; order/request IDs are different business fields."""
-    texts = [str(line.get("text", "")).strip() for line in lines if isinstance(line, dict)]
+    lines = ocr_lines({"lines": lines})
+    texts = [line["text"] for line in lines]
     found = set()
     for index, text in enumerate(texts):
         match = re.match(r"^(?:SR\s*(?:number|no\.?|#)|service\s+request\s*(?:number|no\.?|#))\s*[:：-]?\s*(.*)$", text, re.I)
         if not match:
             continue
+        if text and texts[index] and lines[index].get("confidence") is not None:
+            try:
+                if float(lines[index]["confidence"]) < 50:
+                    return ""
+            except (TypeError, ValueError):
+                return ""
         value = match.group(1).strip() or (texts[index + 1] if index + 1 < len(texts) else "")
+        if not match.group(1).strip() and index + 1 < len(texts) and lines[index + 1].get("confidence") is not None:
+            try:
+                if float(lines[index + 1]["confidence"]) < 50:
+                    return ""
+            except (TypeError, ValueError):
+                return ""
         if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9\s/-]{3,119}", value) and re.search(r"\d", value):
             found.add(re.sub(r"\s+", "", value))
     return next(iter(found)) if len(found) == 1 else ""
@@ -739,20 +839,31 @@ def receipt_sr_number(lines):
 @router.post("/receipt-fields")
 def read_receipt_fields(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    user_id = user.id
+    db.rollback()
     try:
         data = base64.b64decode(body.image_base64, validate=True)
         inspect_image(data)
-        result = extractor.extract(data)
+        from .ocr_queue import extract_compatibility
+        result = extract_compatibility(data, user_id)
     except OcrBusy:
         raise HTTPException(503, "Scanner is busy. Try again shortly.", headers={"Retry-After": "2"}) from None
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(422, "The receipt couldn't be read. Try a clearer photo.") from None
-    lines = result.get("lines", [])
+    return parse_receipt_result(result, body.image_base64, user_id)
+
+
+def parse_receipt_result(result, image_base64, user_id):
+    data = base64.b64decode(image_base64, validate=True)
+    lines = ocr_lines(result)
     sr = receipt_sr_number(lines)
     proof = cipher.encrypt(json.dumps({"image": hashlib.sha256(data).hexdigest(),
-             "sr_number": sr, "user": user.id, "expires": now().timestamp() + 30 * 86400}).encode()).decode() if sr else ""
+             "sr_number": sr, "user": user_id, "expires": now().timestamp() + 30 * 86400}).encode()).decode() if sr else ""
+    warnings = [] if sr or not any(re.match(r"^(?:SR|service\s+request)\b", line["text"], re.I) for line in lines) else ["SR number is unclear or conflicting. Backend SR verification remains pending."]
     return {"fields": {"sr_number": sr} if sr else {}, "sr_check": proof,
-            "lines": [{"text": str(line.get("text", ""))[:1000]} for line in lines[:200] if isinstance(line, dict)]}
+            "lines": lines, "_ocr": ocr_metadata(lines, warnings)}
 
 
 @router.get("/leader-confirmations")
@@ -931,11 +1042,9 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
     agent, outlet = capture_assignment(db, body.agent_id)
     if not source:
         raise HTTPException(422, "Enter the source transaction reference")
-    queued = db.scalar(
-        select(func.count()).select_from(KycCapture).where(KycCapture.status == "QUEUED")
-    )
-    if queued >= 20:
-        raise HTTPException(429, "OCR queue is busy. Keep the image and retry shortly.")
+    from .ocr_queue import admission_lock, ensure_admission
+    admission_lock(db)
+    ensure_admission(db, user.id)
     row = KycCapture(
         branch_id=outlet.branch_id,
         agent_id=body.agent_id,
@@ -1389,11 +1498,16 @@ def retry(
     db=Depends(get_db),
 ):
     access(db, user, True)
+    from .ocr_queue import admission_lock, ensure_admission
+    admission_lock(db)
     row = get_capture(db, user, capture_id, True)
     version_check(row, body)
     if row.status != "OCR_FAILED":
         raise HTTPException(409, "Only failed extraction can be retried")
+    ensure_admission(db, user.id)
     row.status, row.error = "QUEUED", ""
+    row.ocr_lease_token = row.ocr_lease_until = None
+    row.ocr_attempts, row.ocr_available_at = 0, now()
     record(db, row, user, "KYC OCR Retried", request)
     db.commit()
     return view(row)
@@ -1516,38 +1630,107 @@ def excel(capture_id: str, request: Request, user=Depends(principal), db=Depends
     )
 
 
-def process_capture():
+def claim_capture():
+    """Claim legacy evidence briefly; do not keep a DB checkout during OCR."""
+    from datetime import timedelta
+    from .ocr_queue import (OcrJob, admission_lock, capture_access, maintain_jobs,
+                            LEASE_SECONDS, MAX_ATTEMPTS)
     with DB() as db:
+        try:
+            admission_lock(db)
+        except HTTPException:
+            return None
+        maintain_jobs(db)
+        stamp = now()
+        expired = db.scalars(select(KycCapture).where(KycCapture.status == "QUEUED",
+            KycCapture.ocr_lease_until <= stamp).limit(20).with_for_update(skip_locked=True))
+        for pending in expired:
+            pending.ocr_lease_token = pending.ocr_lease_until = None
+            if pending.ocr_attempts >= MAX_ATTEMPTS:
+                pending.status, pending.error = "OCR_FAILED", "The scan timed out. Retry with a clearer screenshot."
+                record(db, pending, db.get(User, pending.creator_id), "KYC OCR OCR_FAILED", data=payload(pending))
+            else:
+                pending.ocr_available_at = stamp
+        db.flush()
+        if (db.scalar(select(OcrJob.id).where(OcrJob.status == "PROCESSING", OcrJob.lease_until > stamp).limit(1))
+                or db.scalar(select(KycCapture.id).where(KycCapture.status == "QUEUED",
+                    KycCapture.ocr_lease_until > stamp).limit(1))):
+            db.commit()
+            return None
         row = db.scalar(
             select(KycCapture)
-            .where(KycCapture.status == "QUEUED")
-            .order_by(KycCapture.created_at)
+            .where(KycCapture.status == "QUEUED", KycCapture.ocr_lease_token.is_(None),
+                   or_(KycCapture.ocr_available_at.is_(None), KycCapture.ocr_available_at <= stamp))
+            .order_by(KycCapture.created_at, KycCapture.id)
             .with_for_update(skip_locked=True)
             .limit(1)
         )
         if not row:
-            return
+            db.commit()
+            return None
+        try:
+            capture_access(db, db.get(User, row.creator_id))
+        except HTTPException:
+            row.status, row.error = "OCR_FAILED", "Capture access changed. Contact your administrator."
+            record(db, row, db.get(User, row.creator_id), "KYC OCR OCR_FAILED", data=payload(row))
+            db.commit()
+            return None
+        row.ocr_attempts += 1
+        row.ocr_lease_token, row.ocr_lease_until = str(uuid.uuid4()), stamp + timedelta(seconds=LEASE_SECONDS)
+        claimed = {"id": row.id, "token": row.ocr_lease_token, "image": row.image_encrypted}
+        db.commit()
+        return claimed
+
+
+def finish_capture(claimed, extracted=None, *, error="", transient=False, busy=False):
+    from datetime import timedelta
+    from .ocr_queue import capture_access, MAX_ATTEMPTS, MAX_QUEUE_AGE, RETRY_AFTER
+    with DB() as db:
+        row = db.scalar(select(KycCapture).where(KycCapture.id == claimed["id"],
+            KycCapture.status == "QUEUED", KycCapture.ocr_lease_token == claimed["token"],
+            KycCapture.ocr_lease_until > now()).with_for_update())
+        if not row:
+            return False
         user = db.get(User, row.creator_id)
         data = payload(row)
         try:
-            extracted = extractor.extract(cipher.decrypt(row.image_encrypted.encode()))
+            capture_access(db, user)
+        except HTTPException:
+            error, transient, busy = "Capture access changed. Contact your administrator.", False, False
+        row.ocr_lease_token = row.ocr_lease_until = None
+        if (error and transient and (busy or row.ocr_attempts < MAX_ATTEMPTS)
+                and row.updated_at > now() - MAX_QUEUE_AGE):
+            if busy:
+                row.ocr_attempts = max(0, row.ocr_attempts - 1)
+            row.ocr_available_at = now() + timedelta(seconds=RETRY_AFTER if busy else min(30, 2 ** row.ocr_attempts))
+            db.commit()
+            return True
+        if error:
+            row.status, row.error = "OCR_FAILED", error
+        else:
             data.update({k: v for k, v in extracted.items() if k != "history"})
             row.status, row.error = "EXTRACTED", ""
-        except OcrBusy:
-            db.rollback()
-            return
-        except ValueError:
-            row.status, row.error = (
-                "OCR_FAILED",
-                "No readable text or unsupported image. Try a clearer PNG/JPEG screenshot.",
-            )
-        except Exception:
-            row.status, row.error = (
-                "OCR_FAILED",
-                "Could not read the receipt. Try again or contact your team.",
-            )
         record(db, row, user, "KYC OCR " + row.status, data=data)
         db.commit()
+        return True
+
+
+def process_capture():
+    import subprocess
+    claimed = claim_capture()
+    if not claimed:
+        return False
+    try:
+        extracted = extractor.extract(cipher.decrypt(claimed["image"].encode()))
+    except OcrBusy:
+        return finish_capture(claimed, error="Scanner is busy. Retry shortly.", transient=True, busy=True)
+    except (subprocess.TimeoutExpired, subprocess.CalledProcessError, OSError):
+        return finish_capture(claimed, error="The scan timed out. Retry with a clearer screenshot.", transient=True)
+    except ValueError:
+        return finish_capture(claimed, error="No readable text or unsupported image. Try a clearer PNG/JPEG screenshot.")
+    except Exception:
+        return finish_capture(claimed, error="Could not read the receipt. Try again or contact your team.")
+    return finish_capture(claimed, extracted)
 
 
 class ActivationBody(VersionBody):

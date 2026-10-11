@@ -1,5 +1,6 @@
 import { expect, Page, test } from "@playwright/test";
 import { previewBuild } from "./preview";
+import { mockStageResult } from "./ocr-mock";
 import path from "node:path";
 
 test("administrator inventory import follows the effective write grant", async ({page}) => {
@@ -161,8 +162,9 @@ async function fixture(page: Page, role = "Administrator", grants?: string[]) {
             ]);
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
-      url = new URL(request.url()),
-      path = url.pathname;
+      url = new URL(request.url());
+    const job = url.pathname === '/api/kyc-captures/ocr-jobs' ? request.postDataJSON() : null;
+    const path = job ? '/api/kyc-captures/' + ({DOCUMENT: 'read-document', ORDER: 'read-order', RECEIPT: 'receipt-fields'} as Record<string,string>)[job.stage] : url.pathname;
     if (
       ["PUT", "PATCH", "POST", "DELETE"].includes(request.method()) &&
       !path.startsWith("/api/auth/")
@@ -332,7 +334,7 @@ async function fixture(page: Page, role = "Administrator", grants?: string[]) {
       });
       return;
     }
-    await route.fulfill({ json: data });
+    await route.fulfill({ json: job ? {id: job.operation_id, stage: job.stage, status: 'COMPLETED', result: data} : data });
   });
   return writes;
 }
@@ -879,15 +881,11 @@ test("optional receipt reads printed SR and duplicate submission stays reviewabl
   page,
 }) => {
   const writes = await fixture(page, "Operations Manager");
-  await page.route("**/api/kyc-captures/receipt-fields", (route) =>
-    route.fulfill({
-      json: {
+  await mockStageResult(page, "RECEIPT", () => ({
         fields: { sr_number: "SR-PRINTED-456" },
         sr_check: "synthetic-receipt-proof",
         lines: ["SR Number: SR-PRINTED-456"],
-      },
-    }),
-  );
+  }));
   await page.route("**/api/kyc-captures/sale-submissions", async (route) => {
     writes.push({
       path: "/api/kyc-captures/sale-submissions",
@@ -959,9 +957,7 @@ test("a replacement receipt without SR restores the captured order SR", async ({
   page,
 }) => {
   const writes = await fixture(page, "Operations Manager");
-  await page.route("**/api/kyc-captures/read-order", (route) =>
-    route.fulfill({
-      json: {
+  await mockStageResult(page, "ORDER", () => ({
         order_type: "NEW",
         package_name: "Freedom 325",
         plan_name: "Freedom 325",
@@ -970,13 +966,9 @@ test("a replacement receipt without SR restores the captured order SR", async ({
         order_reference: "REQUEST-ONLY-123",
         sr_number: "SR-ORDER-123",
         order_check: "synthetic-order-check",
-      },
-    }),
-  );
+  }));
   let receiptNumber = 0;
-  await page.route("**/api/kyc-captures/receipt-fields", (route) =>
-    route.fulfill({
-      json:
+  await mockStageResult(page, "RECEIPT", () =>
         ++receiptNumber === 1
           ? {
               fields: { sr_number: "SR-RECEIPT-456" },
@@ -984,7 +976,6 @@ test("a replacement receipt without SR restores the captured order SR", async ({
               lines: [],
             }
           : { fields: {}, sr_check: "", lines: [] },
-    }),
   );
   await page.route("**/api/kyc-captures/sale-submissions", async (route) => {
     writes.push({

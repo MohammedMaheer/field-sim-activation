@@ -15,8 +15,10 @@ test("mobile receipt SR extraction reaches the same administrator record", async
   page.on("response", async (response) => {
     const path = new URL(response.url()).pathname;
     if (!response.ok()) return;
-    if (path === "/api/kyc-captures/receipt-fields")
-      receipt = await response.json();
+    if (path.startsWith('/api/kyc-captures/ocr-jobs')) {
+      const job = await response.json();
+      if (job.stage === 'RECEIPT' && job.status === 'COMPLETED') receipt = job.result;
+    }
     if (path === "/api/kyc-captures/sale-submissions") {
       submitted = response.request().postDataJSON();
       capture = await response.json();

@@ -374,6 +374,28 @@ class PreviewService extends RelayService {
       );
       return {'discarded': true};
     }
+    if (path == '/kyc-captures/ocr-jobs') {
+      final stage = body['stage'];
+      final endpoint = stage == 'ORDER'
+          ? 'read-order'
+          : stage == 'RECEIPT'
+          ? 'receipt-fields'
+          : 'read-document';
+      final result = await dispatch(
+        RequestOptions(
+          path: '/kyc-captures/$endpoint',
+          method: 'POST',
+          data: body,
+        ),
+      );
+      return {
+        'id': body['operation_id'],
+        'stage': stage,
+        'status': 'COMPLETED',
+        'result': result,
+        'retry_after': 2,
+      };
+    }
     if (path == '/kyc-captures/draft') {
       if (o.method == 'PUT') {
         data[path] = {'version': body['version'] + 1, 'data': body['data']};

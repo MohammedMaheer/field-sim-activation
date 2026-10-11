@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { Context, useResource } from "./App";
 import { api, post, patch, download, Row } from "./api";
+import { ocrOperation, readStageOcr, ocrWarning } from './ocrJobs';
 import { Badge, Panel, ErrorState, Loading, Drawer } from "./components";
 
 export default function KycCapture() {
@@ -154,8 +155,9 @@ export default function KycCapture() {
         reader.onerror = () => reject(new Error("Could not read this receipt"));
         reader.readAsDataURL(file);
       });
-      const result = await post("/kyc-captures/receipt-fields", {
-        image_base64,
+      const result = await readStageOcr(ocrOperation('RECEIPT', image_base64), {
+        isCurrent: () => current,
+        onStatus: message => { if (current) setReceiptMessage(message); },
       });
       if (!current) return;
       if (result.fields?.sr_number && result.sr_check) {
@@ -165,7 +167,7 @@ export default function KycCapture() {
           receipt_sr_check: result.sr_check,
         }));
         setReceiptMessage("SR number read from receipt");
-      } else setReceiptMessage("Receipt attached · SR number not found");
+      } else setReceiptMessage(ocrWarning(result) || "Receipt attached · SR number not found");
     })()
       .catch((failure: any) => {
         if (current)

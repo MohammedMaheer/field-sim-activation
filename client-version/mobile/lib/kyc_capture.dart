@@ -18,6 +18,7 @@ import 'experience.dart';
 import 'role_access.dart';
 import 'receipt_sr.dart';
 import 'receipt_document.dart';
+import 'ocr_jobs.dart';
 import 'branding.dart';
 import 'exports.dart';
 import 'sales_presentation.dart';
@@ -41,6 +42,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Uint8List? bytes;
   String? receiptOriginalSr;
   String? receiptSrNotice;
+  StageOcrRequest? receiptReadRequest;
   String operation = const Uuid().v4();
   List<Json> captures = [], rows = [];
   Json? capture;
@@ -236,15 +238,24 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     intake['sr_number'] = receiptOriginalSr;
     if (mounted) setState(() => receiptSrNotice = 'Reading SR number…');
     try {
-      final response = await ref
-          .read(serviceProvider)
-          .dio
-          .post(
-            '/kyc-captures/receipt-fields',
-            data: {'image_base64': base64Encode(image)},
-          );
+      final selectedImage = base64Encode(image);
+      final selectedOperation = operation;
+      final request = receiptReadRequest?.image == selectedImage
+          ? receiptReadRequest!
+          : receiptReadRequest = StageOcrRequest('RECEIPT', selectedImage);
+      final result = await request.read(
+        ref.read(serviceProvider),
+        isCurrent: () =>
+            mounted &&
+            selectedOperation == operation &&
+            bytes != null &&
+            base64Encode(bytes!) == selectedImage,
+        onStatus: (message) {
+          if (mounted) setState(() => receiptSrNotice = message);
+        },
+      );
       final fields = receiptSrFields(
-        Json.from(response.data),
+        result,
         fallbackSr: receiptOriginalSr ?? '',
       );
       if (!mounted) return;
@@ -568,7 +579,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     }
     final currentUser = ref.watch(serviceProvider).user;
     final canWrite = canVisitMobilePage('/ekyc', currentUser);
-    final canExport = (currentUser?['permissions'] as List? ?? []).contains(currentUser?['role'] == 'Field Agent' ? 'read' : 'report.read');
+    final canExport = (currentUser?['permissions'] as List? ?? []).contains(
+      currentUser?['role'] == 'Field Agent' ? 'read' : 'report.read',
+    );
     final editable =
         canWrite &&
         capture != null &&
@@ -888,27 +901,29 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             ],
                           ],
                           const SizedBox(height: 12),
-                          if (canExport) FilledButton.tonalIcon(
-                            onPressed: busy ? null : printReceipt,
-                            icon: const Icon(Icons.print_outlined),
-                            label: Text(
-                              saleMode
-                                  ? 'Print sale receipt'
-                                  : payment
-                                  ? 'Print invoice'
-                                  : 'Print receipt',
+                          if (canExport)
+                            FilledButton.tonalIcon(
+                              onPressed: busy ? null : printReceipt,
+                              icon: const Icon(Icons.print_outlined),
+                              label: Text(
+                                saleMode
+                                    ? 'Print sale receipt'
+                                    : payment
+                                    ? 'Print invoice'
+                                    : 'Print receipt',
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 8),
-                          if (canExport) OutlinedButton.icon(
-                            onPressed: busy ? null : () => export('receipt'),
-                            icon: const Icon(Icons.picture_as_pdf_outlined),
-                            label: Text(
-                              payment
-                                  ? 'Download / share invoice'
-                                  : 'Download / share receipt',
+                          if (canExport)
+                            OutlinedButton.icon(
+                              onPressed: busy ? null : () => export('receipt'),
+                              icon: const Icon(Icons.picture_as_pdf_outlined),
+                              label: Text(
+                                payment
+                                    ? 'Download / share invoice'
+                                    : 'Download / share receipt',
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 10),
                           FilledButton(
                             onPressed: () => context.go('/'),
@@ -1301,7 +1316,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     child: const Text('Save details'),
                   ),
                 ],
-                if (canExport && (capture!['rows'] as List? ?? []).isNotEmpty &&
+                if (canExport &&
+                    (capture!['rows'] as List? ?? []).isNotEmpty &&
                     capture!['status'] != 'EXTRACTED') ...[
                   gap(),
                   OutlinedButton(

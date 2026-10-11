@@ -16,6 +16,7 @@ import 'package:dio/dio.dart';
 import 'package:image/image.dart' as imaging;
 import 'package:image_picker/image_picker.dart';
 import 'services.dart';
+import 'ocr_jobs.dart';
 
 class DocumentScanResult {
   final Uint8List image;
@@ -233,6 +234,11 @@ class _IntakeCameraState extends State<IntakeCamera>
         complete(DocumentScanResult(bytes, fields));
       } else if (mounted && !finished) {
         scanGuidance = 'No document detected · move closer';
+        nextAutoScan = DateTime.now().add(const Duration(seconds: 4));
+      }
+    } on OcrTemporaryFailure catch (failure) {
+      if (mounted && !finished) {
+        scanGuidance = failure.message;
         nextAutoScan = DateTime.now().add(const Duration(seconds: 4));
       }
     } catch (_) {
@@ -512,6 +518,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   bool busy = true, reading = false;
   Timer? planRefresh;
   String? error;
+  final Map<String, StageOcrRequest> pendingReads = {};
+  String? retryableStage;
+  int captureRevision = 0;
   final Set<String> missing = {};
   final Map<String, GlobalKey> fieldAnchors = {};
   final Map<String, FocusNode> fieldFocus = {};
@@ -659,43 +668,108 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
     if (ref.read(serviceProvider).isPreview || !looksLikeDocument(frame)) {
       return null;
     }
-    try {
-      final response = await ref
-          .read(serviceProvider)
-          .dio
-          .post(
-            '/kyc-captures/read-document',
-            data: {'image_base64': encodeDocument(frame)},
-            options: Options(receiveTimeout: const Duration(seconds: 7)),
-          );
-      final fields = Map<String, dynamic>.from(response.data);
-      return fields['document_check'] != null ? fields : null;
-    } catch (_) {
-      return null;
-    }
+    final request = StageOcrRequest('DOCUMENT', encodeDocument(frame));
+    final fields = await request.read(
+      capturedService,
+      isCurrent: () => mounted,
+    );
+    return fields['document_check'] != null ? fields : null;
   }
 
   Future<Json?> autoReadOrder(Uint8List frame) async {
     if (ref.read(serviceProvider).isPreview || !looksLikeDocument(frame)) {
       return null;
     }
-    try {
-      final response = await ref
-          .read(serviceProvider)
-          .dio
-          .post(
-            '/kyc-captures/read-order',
-            data: {'image_base64': encodeDocument(frame)},
-            options: Options(receiveTimeout: const Duration(seconds: 7)),
-          );
-      final fields = Map<String, dynamic>.from(response.data);
-      return fields['order_check'] != null ? fields : null;
-    } catch (_) {
-      return null;
-    }
+    final request = StageOcrRequest('ORDER', encodeDocument(frame));
+    final fields = await request.read(
+      capturedService,
+      isCurrent: () => mounted,
+    );
+    return fields['order_check'] != null ? fields : null;
   }
 
   String captureActivity = 'Reading document…';
+
+  Future<void> readStoredPhoto(String key, {Json? scannedFields}) async {
+    final image = data[key]?.toString() ?? '';
+    final stage = key == 'order_image' ? 'ORDER' : 'DOCUMENT';
+    final currentRevision = captureRevision;
+    final request = pendingReads[key]?.image == image
+        ? pendingReads[key]!
+        : pendingReads[key] = StageOcrRequest(stage, image);
+    try {
+      final fields =
+          scannedFields ??
+          await request.read(
+            capturedService,
+            isCurrent: () =>
+                mounted &&
+                currentRevision == captureRevision &&
+                data[key] == image,
+            onStatus: (message) {
+              if (mounted) setState(() => captureActivity = message);
+            },
+          );
+      if (!mounted ||
+          currentRevision != captureRevision ||
+          data[key] != image) {
+        return;
+      }
+      final proof =
+          fields[key == 'order_image' ? 'order_check' : 'document_check'];
+      if (proof == null || proof.toString().isEmpty) {
+        throw Exception(
+          ocrWarning(fields) ??
+              (key == 'order_image'
+                  ? "Order details weren't captured clearly. Try again."
+                  : "Customer details weren't captured clearly. Try again."),
+        );
+      }
+      data.addAll(fields);
+      retryableStage = null;
+      error = ocrWarning(fields);
+      missing.removeWhere(
+        (field) =>
+            (data[field] ?? '').toString().trim().isNotEmpty &&
+            !(field == 'order_type' && data[field] == 'UNSPECIFIED'),
+      );
+      revision++;
+    } on OcrReadCancelled {
+      return;
+    } on OcrTemporaryFailure catch (failure) {
+      if (mounted && currentRevision == captureRevision) {
+        retryableStage = key;
+        error = failure.message;
+      }
+    } catch (failure) {
+      if (mounted && currentRevision == captureRevision) {
+        retryableStage = null;
+        error = failure is DioException
+            ? friendlyError(failure)
+            : failure.toString().replaceFirst('Exception: ', '');
+      }
+    }
+  }
+
+  Future<void> retryStoredPhoto() async {
+    final key = retryableStage;
+    if (key == null || busy) {
+      return;
+    }
+    setState(() {
+      busy = true;
+      reading = true;
+      error = null;
+    });
+    await readStoredPhoto(key);
+    await cache();
+    if (mounted) {
+      setState(() {
+        busy = false;
+        reading = false;
+      });
+    }
+  }
 
   Future<void> photo(
     String key,
@@ -761,42 +835,18 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         );
       }
       error = null;
-      if (key == 'document_image') data.remove('document_check');
-      if (key == 'order_image') data.remove('order_check');
+      if (key == 'document_image' || key == 'order_image') {
+        data = withoutStageCapture(
+          data,
+          key == 'document_image' ? 'DOCUMENT' : 'ORDER',
+        );
+        captureRevision++;
+        retryableStage = null;
+      }
       data[key] = encodeDocument(bytes);
       if (mounted) setState(() {});
       if (key == 'document_image' || key == 'order_image') {
-        try {
-          if (scannedFields != null) {
-            data.addAll(scannedFields);
-          } else {
-            final r = await service.dio.post(
-              key == 'order_image'
-                  ? '/kyc-captures/read-order'
-                  : '/kyc-captures/read-document',
-              data: {'image_base64': data[key]},
-            );
-            data.addAll(Map<String, dynamic>.from(r.data));
-          }
-          if ((data[key == 'order_image' ? 'order_check' : 'document_check'] ??
-                  '')
-              .toString()
-              .isEmpty) {
-            throw Exception('Screen unreadable');
-          }
-          missing.removeWhere(
-            (field) =>
-                (data[field] ?? '').toString().trim().isNotEmpty &&
-                !(field == 'order_type' && data[field] == 'UNSPECIFIED'),
-          );
-          revision++;
-        } catch (e) {
-          data.remove(key);
-          data.remove(key == 'order_image' ? 'order_check' : 'document_check');
-          error = key == 'order_image'
-              ? "Order details weren't captured clearly. Try again."
-              : "Customer details weren't captured clearly. Try again.";
-        }
+        await readStoredPhoto(key, scannedFields: scannedFields);
       }
       await cache();
     } catch (e) {
@@ -1074,6 +1124,12 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           const SizedBox(height: 12),
           if (error != null)
             Text(error!, style: const TextStyle(color: Colors.red)),
+          if (retryableStage != null)
+            TextButton.icon(
+              onPressed: busy ? null : retryStoredPhoto,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry retained photo'),
+            ),
           if (step == 0) ...[
             const Text('Customer details', style: RelayTypography.section),
             const SizedBox(height: 8),
@@ -1099,6 +1155,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                     : null,
                 reading: reading,
                 readingLabel: captureActivity,
+                verified: (data['document_check'] ?? '').toString().isNotEmpty,
                 illustration: false,
                 document: 'Customer details',
               ),
@@ -1179,6 +1236,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 image: hasImage('order_image') ? data['order_image'] : null,
                 reading: reading,
                 readingLabel: captureActivity,
+                verified: (data['order_check'] ?? '').toString().isNotEmpty,
                 illustration: false,
                 document: 'Order details',
               ),

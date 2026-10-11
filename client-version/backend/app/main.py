@@ -22,6 +22,7 @@ from .security import *
 from .services import *
 from . import providers
 from .captures import router as capture_router, process_capture, payload as capture_payload, SAMPLE_REFERENCE_PREFIXES
+from .ocr_queue import router as ocr_router, process_ocr_job
 from .proposal import router as proposal_router
 from .organization import router as organization_router
 from .administration import router as administration_router
@@ -54,6 +55,7 @@ async def capture_worker():
     while True:
         await asyncio.sleep(2)
         try:
+            await asyncio.to_thread(process_ocr_job)
             await asyncio.to_thread(process_capture)
         except Exception:
             import logging
@@ -107,6 +109,8 @@ async def database_capacity(request: Request, exc: DatabasePoolTimeout):
 
 
 app.include_router(notifications_router)
+# Static job routes precede the historical /{capture_id} routes.
+app.include_router(ocr_router)
 app.include_router(capture_router)
 app.include_router(inventory_bulk_router)
 app.include_router(branch_lifecycle_router)

@@ -39,7 +39,7 @@ class ReceiptCaptureService extends RelayService {
             );
             return;
           }
-          if (request.path == '/kyc-captures/receipt-fields') {
+          if (request.path == '/kyc-captures/ocr-jobs') {
             receiptImage = request.data['image_base64'];
           }
           handler.resolve(
@@ -48,8 +48,13 @@ class ReceiptCaptureService extends RelayService {
               statusCode: 200,
               data: request.path == '/kyc-captures'
                   ? []
-                  : request.path == '/kyc-captures/receipt-fields'
-                  ? extraction
+                  : request.path == '/kyc-captures/ocr-jobs'
+                  ? {
+                      'id': request.data['operation_id'],
+                      'stage': 'RECEIPT',
+                      'status': 'COMPLETED',
+                      'result': extraction,
+                    }
                   : {'version': 0, 'data': <String, dynamic>{}},
             ),
           );

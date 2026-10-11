@@ -1,8 +1,9 @@
 import IntakeCamera from "./IntakeCamera";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, post, Row } from "./api";
 import { useResource } from "./App";
 import { Camera, ArrowLeft, ArrowRight } from "lucide-react";
+import { ocrOperation, readStageOcr, withoutStageCapture, ocrWarning, OcrOperation, OcrTemporaryFailure, OcrReadCancelled } from './ocrJobs';
 export default function CustomerIntake({
   value,
   onChange,
@@ -17,6 +18,13 @@ export default function CustomerIntake({
   const [camera, setCamera] = useState("");
   const [reading, setReading] = useState(false),
     [scanImage, setScanImage] = useState("");
+  const [captureStatus, setCaptureStatus] = useState('Reading captured screen…');
+  const [retryKey, setRetryKey] = useState('');
+  const currentValue = useRef(value), alive = useRef(true), captureRevision = useRef(0);
+  const pendingReads = useRef<Record<string, OcrOperation>>({});
+  currentValue.current = value;
+  useEffect(() => { alive.current = true; return () => { alive.current = false; captureRevision.current++; }; }, []);
+  const replaceValue = (next: Row) => { currentValue.current = next; onChange(next); };
   const plans = useResource("plans");
   const [missing, setMissing] = useState<string[]>([]);
   const fieldLabels: Record<string, string> = {
@@ -78,7 +86,7 @@ export default function CustomerIntake({
             "."
         : "",
     );
-    onChange({ ...value, [key]: v });
+    replaceValue({ ...currentValue.current, [key]: v });
   };
   const clearMissing = (keys: string[]) => {
     const remaining = missing.filter((item) => !keys.includes(item));
@@ -110,40 +118,49 @@ export default function CustomerIntake({
     if (image.length > 1333336) throw Error("Choose a smaller photo.");
     return image;
   }
-  async function detectDocument(file: File) {
+  async function detect(file: File, key: string) {
+    const generation = ++captureRevision.current;
     try {
       const image = await preparedImage(file);
-      const details = await post("/kyc-captures/read-document", {
-        image_base64: image,
+      const stage = key === 'order_image' ? 'ORDER' : 'DOCUMENT';
+      const details = await readStageOcr(ocrOperation(stage, image), {
+        isCurrent: () => alive.current && generation === captureRevision.current,
+        onStatus: setCaptureStatus,
       });
-      if (!details.document_check) return false;
+      if (!alive.current || generation !== captureRevision.current) return false;
+      if (!details[key === 'order_image' ? 'order_check' : 'document_check']) { setError(ocrWarning(details)); return false; }
       setScanImage(image);
-      clearMissing(["document_image", ...Object.keys(details)]);
-      onChange({ ...value, ...details, document_image: image });
+      clearMissing([key, ...Object.keys(details)]);
+      replaceValue({ ...withoutStageCapture(currentValue.current, stage), ...details, [key]: image, capture_mode: 'SCREENSHOT_SALE' });
+      setError(ocrWarning(details));
       return true;
-    } catch {
+    } catch (failure: any) {
+      if (failure instanceof OcrTemporaryFailure && alive.current) setError(failure.message);
       return false;
     }
   }
-  async function detectOrder(file: File) {
-    try {
-      const image = await preparedImage(file);
-      const details = await post("/kyc-captures/read-order", {
-        image_base64: image,
-      });
-      if (!details.order_check) return false;
-      setScanImage(image);
-      clearMissing(["order_image", ...Object.keys(details)]);
-      onChange({
-        ...value,
-        ...details,
-        order_image: image,
-        capture_mode: "SCREENSHOT_SALE",
-      });
-      return true;
-    } catch {
-      return false;
-    }
+  const detectDocument = (file: File) => detect(file, 'document_image');
+  const detectOrder = (file: File) => detect(file, 'order_image');
+  async function readStoredPhoto(key: string, generation: number) {
+    const image = currentValue.current[key];
+    const stage = key === 'order_image' ? 'ORDER' : 'DOCUMENT';
+    const operation = pendingReads.current[key]?.image === image ? pendingReads.current[key] : (pendingReads.current[key] = ocrOperation(stage, image));
+    const details = await readStageOcr(operation, {
+      isCurrent: () => alive.current && generation === captureRevision.current && currentValue.current[key] === image,
+      onStatus: setCaptureStatus,
+    });
+    if (!details[key === 'order_image' ? 'order_check' : 'document_check']) throw Error(ocrWarning(details) || (key === 'order_image' ? "Order details weren't captured clearly. Try again." : "Customer details weren't captured clearly. Try again."));
+    replaceValue({ ...currentValue.current, ...details });
+    clearMissing([key, ...Object.keys(details)]);
+    setError(ocrWarning(details));
+  }
+  async function retryRetainedPhoto() {
+    if (!retryKey || busy) return;
+    const generation = captureRevision.current;
+    setBusy(true); setReading(true); setError('');
+    try { await readStoredPhoto(retryKey, generation); setRetryKey(''); }
+    catch (failure: any) { if (!(failure instanceof OcrReadCancelled)) setError(failure.message); }
+    finally { if (alive.current) { setBusy(false); setReading(false); } }
   }
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
@@ -154,38 +171,19 @@ export default function CustomerIntake({
       const image = await preparedImage(file);
       if (key === "document_image" || key === "order_image")
         setScanImage(image);
-      let details: Row = {};
       if (key === "document_image" || key === "order_image") {
-        try {
-          details = await post(
-            key === "order_image"
-              ? "/kyc-captures/read-order"
-              : "/kyc-captures/read-document",
-            {
-              image_base64: image,
-            },
-          );
-          if (
-            !details[key === "order_image" ? "order_check" : "document_check"]
-          )
-            throw Error("Screen unreadable");
-        } catch {
-          setScanImage("");
-          onChange({
-            ...value,
-            [key]: "",
-            [key === "order_image" ? "order_check" : "document_check"]: "",
-          });
-          throw Error(
-            key === "order_image"
-              ? "Order details weren't captured clearly. Try again."
-              : "Customer details weren't captured clearly. Try again.",
-          );
-        }
+        const generation = ++captureRevision.current;
+        replaceValue({ ...withoutStageCapture(currentValue.current, key === 'order_image' ? 'ORDER' : 'DOCUMENT'), [key]: image });
+        setRetryKey('');
+        await readStoredPhoto(key, generation);
+      } else {
+        replaceValue({ ...currentValue.current, [key]: image });
       }
-      onChange({ ...value, ...details, [key]: image });
     } catch (e: any) {
-      setError(e.message);
+      if (!(e instanceof OcrReadCancelled) && alive.current) {
+        if (e instanceof OcrTemporaryFailure) setRetryKey(key);
+        setError(e.message);
+      }
     } finally {
       setBusy(false);
       setReading(false);
@@ -338,6 +336,7 @@ export default function CustomerIntake({
           {error}
         </p>
       )}
+      {retryKey && <button type="button" disabled={busy} onClick={retryRetainedPhoto}>Retry retained photo</button>}
       {step === 0 ? (
         <>
           <h2>Customer details</h2>
@@ -390,7 +389,7 @@ export default function CustomerIntake({
           {(value.document_image || reading) && (
             <div
               data-intake-field="document_image"
-              className={`document-scan ${reading ? "reading" : value.document_image ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
+              className={`document-scan ${reading ? "reading" : value.document_check ? "complete" : "ready"} ${missing.includes("document_image") ? "field-missing" : ""}`}
               aria-live="polite"
             >
               {scanImage || value.document_image ? (
@@ -410,10 +409,10 @@ export default function CustomerIntake({
               <div className="scan-beam" />
               <span className="scan-status">
                 {reading
-                  ? "Reading details…"
-                  : value.document_image
+                  ? captureStatus
+                  : value.document_check
                     ? "Details captured"
-                    : "Position customer screen"}
+                    : "Photo retained · capture not confirmed"}
               </span>
             </div>
           )}
@@ -438,7 +437,7 @@ export default function CustomerIntake({
                   accept="image/png,image/jpeg"
                   capture={key === "selfie_image" ? "user" : "environment"}
                   disabled={busy}
-                  onChange={(e) => photo(e.target.files?.[0], key)}
+                  onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void photo(file, key); }}
                 />
               </label>
             ))}
@@ -468,7 +467,7 @@ export default function CustomerIntake({
           {(value.order_image || reading) && (
             <div
               data-intake-field="order_image"
-              className={`document-scan ${reading ? "reading" : "complete"}`}
+              className={`document-scan ${reading ? "reading" : value.order_check ? "complete" : "ready"}`}
               aria-live="polite"
             >
               {value.order_image && (
@@ -479,7 +478,7 @@ export default function CustomerIntake({
               )}
               <div className="scan-beam" />
               <span className="scan-status">
-                {reading ? "Reading order…" : "Order captured"}
+                {reading ? captureStatus : value.order_check ? "Order captured" : "Photo retained · capture not confirmed"}
               </span>
             </div>
           )}
@@ -493,7 +492,7 @@ export default function CustomerIntake({
                 accept="image/png,image/jpeg"
                 capture="environment"
                 disabled={busy}
-                onChange={(e) => photo(e.target.files?.[0], "order_image")}
+                onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void photo(file, "order_image"); }}
               />
             </label>
           </div>

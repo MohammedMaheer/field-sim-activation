@@ -5,13 +5,14 @@ import 'typography.dart';
 
 class ScanSurface extends StatefulWidget {
   final String? image;
-  final bool reading, illustration;
+  final bool reading, illustration, verified;
   final String document, readingLabel;
   const ScanSurface({
     super.key,
     this.image,
     this.reading = false,
     this.illustration = false,
+    this.verified = true,
     this.document = 'Emirates ID',
     this.readingLabel = 'Reading document…',
   });
@@ -37,7 +38,7 @@ class _ScanSurfaceState extends State<ScanSurface>
   void didUpdateWidget(covariant ScanSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.image != widget.image) expanded = false;
-    if (widget.image != null && !widget.reading) {
+    if (widget.image != null && widget.verified && !widget.reading) {
       beam.stop();
     } else if (!beam.isAnimating) {
       beam.repeat(reverse: true);
@@ -52,7 +53,7 @@ class _ScanSurfaceState extends State<ScanSurface>
 
   @override
   Widget build(BuildContext context) {
-    final complete = widget.image != null && !widget.reading;
+    final complete = widget.image != null && widget.verified && !widget.reading;
     if (complete && !expanded) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 10),

@@ -4,7 +4,7 @@ from datetime import timedelta
 from threading import Event, BoundedSemaphore, get_ident
 from uuid import uuid4
 import pytest
-from test_client_scope import client, database, login  # noqa: F401
+from test_client_scope import client, database, login, valid_ocr_photo  # noqa: F401
 from app import capture_ocr
 from app import main
 from app.db import DB, User, Session, Permission, Event as WorkspaceEvent, now
@@ -42,7 +42,7 @@ def test_busy_document_reader_returns_retryable_status(client, monkeypatch):  # 
         raise capture_ocr.OcrBusy()
 
     monkeypatch.setattr(capture_ocr.extractor, 'extract', busy)
-    response = client.post('/api/kyc-captures/read-document', json={'image_base64': 'aW1hZ2U='})
+    response = client.post('/api/kyc-captures/read-document', json={'image_base64': valid_ocr_photo()})
     assert response.status_code == 503
     assert response.headers['retry-after'] == '2'
     assert 'busy' in response.json()['detail']

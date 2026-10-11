@@ -259,6 +259,7 @@ export default function OrganizationSetup({
   });
   const [kind, setKind] = useState<Kind>(initial);
   const [branch, setBranch] = useState(initialBranchId || scope.branch);
+  const [leader, setLeader] = useState("");
   const [editBranch, setEditBranch] = useState(initialBranchId || "");
   const [newLeaders, setNewLeaders] = useState<string[]>([]);
   const [busy, setBusy] = useState(false),
@@ -267,13 +268,18 @@ export default function OrganizationSetup({
   const branchLeaders: Row[] = (directory.data?.leaders || []).filter(
     (person: Row) => person.branch_id === branch,
   );
+  const selectedLeader = branchLeaders.some((person) => person.id === leader)
+    ? leader
+    : branchLeaders.length === 1
+      ? branchLeaders[0].id
+      : "";
   return (
     <Drawer
-      title="Manage branches and sales agents"
+      title="Branch and staff setup"
       onClose={() => !busy && onClose()}
     >
       <div className="setup-tabs" role="group" aria-label="Setup type">
-        {(["branches", "agents", "teams"] as Kind[]).map((item) => (
+        {(["branches", "teams", "agents"] as Kind[]).map((item) => (
           <button
             key={item}
             aria-pressed={kind === item}
@@ -349,14 +355,19 @@ export default function OrganizationSetup({
                   setBranch(created.id);
                   setEditBranch(created.id);
                   setNewLeaders([]);
+                  setLeader("");
+                } else if (kind === "teams") {
+                  setLeader(created.id);
                 }
                 form.reset();
                 await cache.invalidateQueries();
+                if (kind === "branches") setKind("teams");
+                else if (kind === "teams") setKind("agents");
                 setSuccess(
                   kind === "branches"
-                    ? "Branch created. Add its sales agents or team leaders."
+                    ? "Branch created. Add a team leader."
                     : kind === "teams"
-                      ? "Team leader assigned to the branch."
+                      ? "Team leader assigned. Add sales agents."
                       : "Sales agent created and assigned to the branch.",
                 );
               } catch (failure: any) {
@@ -379,7 +390,11 @@ export default function OrganizationSetup({
                 <select
                   required
                   value={branch}
-                  onChange={(event) => setBranch(event.target.value)}
+                  onChange={(event) => {
+                    setBranch(event.target.value);
+                    setLeader("");
+                    setSuccess("");
+                  }}
                 >
                   <option value="">Select branch</option>
                   {directory.data.branches.map((item: Row) => (
@@ -455,17 +470,18 @@ export default function OrganizationSetup({
                 <label className="wide">
                   Reporting team leader
                   <select
-                    key={branch}
                     name="leader_id"
-                    required={branchLeaders.length > 0}
-                    defaultValue={
-                      branchLeaders.length === 1 ? branchLeaders[0].id : ""
-                    }
+                    required
+                    disabled={!branchLeaders.length}
+                    value={selectedLeader}
+                    onChange={(event) => setLeader(event.target.value)}
                   >
                     <option value="">
                       {branchLeaders.length
                         ? "Select team leader"
-                        : "No team leader assigned"}
+                        : branch
+                          ? "Add a team leader first"
+                          : "Select a branch first"}
                     </option>
                     {branchLeaders.map((person) => (
                       <option key={person.id} value={person.id}>
@@ -474,6 +490,20 @@ export default function OrganizationSetup({
                     ))}
                   </select>
                 </label>
+                {branch && !branchLeaders.length && (
+                  <button
+                    className="wide"
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      setKind("teams");
+                      setError("");
+                      setSuccess("");
+                    }}
+                  >
+                    Add team leader to this branch
+                  </button>
+                )}
               </>
             )}
             {kind !== "branches" && (
@@ -506,7 +536,10 @@ export default function OrganizationSetup({
                 {error}
               </p>
             )}
-            <button className="primary" disabled={busy}>
+            <button
+              className="primary"
+              disabled={busy || (kind === "agents" && !selectedLeader)}
+            >
               {busy
                 ? "Saving…"
                 : `Create ${kind === "branches" ? "branch" : kind === "teams" ? "team leader" : "sales agent"}`}

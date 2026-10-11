@@ -47,15 +47,15 @@ export async function api(
   }
   if (!r.ok) {
     if (r.status === 429)
-      throw new Error("Too many requests. Wait a minute and try again.");
+      throw Object.assign(new Error("Too many requests. Wait a minute and try again."), { status: r.status });
     const body = await r
       .json()
       .catch(() => ({ detail: "Request failed. Please try again." }));
-    throw new Error(
+    throw Object.assign(new Error(
       typeof body.detail === "string"
         ? body.detail
         : "Check the required fields and try again.",
-    );
+    ), { status: r.status });
   }
   return r.json();
 }

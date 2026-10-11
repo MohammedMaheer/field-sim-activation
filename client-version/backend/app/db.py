@@ -302,6 +302,10 @@ class KycCapture(Entity):
     version: Mapped[int] = mapped_column(Integer, default=1)
     reviewer_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     error: Mapped[str] = mapped_column(String(200), default="")
+    ocr_lease_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    ocr_lease_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ocr_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    ocr_available_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now)
 
 
