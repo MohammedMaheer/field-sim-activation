@@ -71,9 +71,26 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                 ),
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final textScale =
-                        MediaQuery.textScalerOf(context).scale(12) / 12;
-                    final stacked = constraints.maxWidth / textScale < 260;
+                    final statusStyle = RelayTypography.caption.copyWith(
+                      color: const Color(0xff9ff4da),
+                      letterSpacing: .6,
+                      fontWeight: FontWeight.w700,
+                    );
+                    final statusMeasure = TextPainter(
+                      text: TextSpan(
+                        text: widget.readyLabel,
+                        style: statusStyle,
+                      ),
+                      textDirection: Directionality.of(context),
+                      textScaler: MediaQuery.textScalerOf(context),
+                      maxLines: 1,
+                    )..layout();
+                    // Reserve the complete status label, so the printer header
+                    // never changes layout as printing finishes.
+                    final stacked =
+                        constraints.maxWidth <
+                        130 + 8 + 48 + 8 + statusMeasure.width + 9 + 8;
+                    statusMeasure.dispose();
                     const brand = QanawatBrand(
                       width: 120,
                       height: 35,
@@ -98,11 +115,10 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                     );
                     final status = Text(
                       _controller.isCompleted ? widget.readyLabel : 'PRINTING…',
-                      style: RelayTypography.caption.copyWith(
-                        color: Color(0xff9ff4da),
-                        letterSpacing: .6,
-                        fontWeight: FontWeight.w700,
-                      ),
+                      key: const ValueKey('receipt-printer-status'),
+                      style: statusStyle,
+                      maxLines: 2,
+                      textAlign: TextAlign.right,
                     );
                     final indicator = Container(
                       width: 8,
@@ -118,7 +134,8 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                         children: [
                           Row(
                             children: [
-                              Expanded(child: brand),
+                              brand,
+                              const Spacer(),
                               replay,
                               const SizedBox(width: 9),
                               indicator,
@@ -137,6 +154,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                         brand,
                         const Spacer(),
                         replay,
+                        const SizedBox(width: 8),
                         Flexible(child: status),
                         const SizedBox(width: 9),
                         indicator,

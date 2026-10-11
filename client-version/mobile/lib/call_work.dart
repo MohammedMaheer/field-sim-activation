@@ -77,7 +77,15 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
       return;
     }
     if (fetching) {
-      reloadPending = true;
+      // A slow background poll must not schedule a visible loading cycle.
+      // Explicit refreshes (including branch changes) still get a follow-up.
+      if (!silent) {
+        reloadPending = true;
+        setState(() {
+          loading = true;
+          error = '';
+        });
+      }
       return;
     }
     fetching = true;

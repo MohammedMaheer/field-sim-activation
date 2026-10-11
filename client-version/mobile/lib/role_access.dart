@@ -31,6 +31,7 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
         );
   }
   if (path == '/reports') return permissions.contains('report.read');
+  if (!permissions.contains('read')) return false;
   if (role == 'Sales Manager') {
     return path.startsWith('/transaction/') ||
         [

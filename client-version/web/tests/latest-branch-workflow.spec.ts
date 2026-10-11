@@ -713,6 +713,30 @@ test("Sales Manager SR workspace is read-only", async ({ page }) => {
   expect(writes).toHaveLength(0);
 });
 
+test("revoked Sales Manager read access hides record pages and direct SR access", async ({ page }) => {
+  await fixture(page, "Sales Manager", ["report.read"]);
+  await page.goto("/sr-verification");
+  await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  for (const name of ["Sales management", "SR verification", "Transaction history", "SIM inventory"])
+    await expect(nav.getByRole("link", { name, exact: true })).toHaveCount(0);
+  await page.goto("/sales");
+  await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+});
+
+for (const role of ["Administrator", "Operations Manager", "Team Leader", "Field Agent", "Compliance Officer", "Inventory Manager", "Branch Manager"]) {
+  test(`${role}: revoked read hides general navigation and denies direct inventory access`, async ({ page }) => {
+    await fixture(page, role, ["report.read", "settings.write", "compliance.write"]);
+    await page.goto("/inventory");
+    await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+    const nav = page.getByRole("navigation", { name: "Main navigation" });
+    for (const name of ["Sales management", "SIM inventory", "Customers", "Team leaders", "Branches"])
+      await expect(nav.getByRole("link", { name, exact: true })).toHaveCount(0);
+    await page.goto("/customers");
+    await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+  });
+}
+
 test("call-only role can scope its queue without wider workspace access", async ({
   page,
 }) => {
@@ -747,6 +771,20 @@ test("call-only role can scope its queue without wider workspace access", async 
     animations: "disabled",
   });
 });
+
+for (const role of ["Administrator", "Operations Manager", "Compliance Officer"]) {
+  test(`${role}: backend caller with revoked read cannot open or poll the call queue`, async ({ page }) => {
+    const paths: string[] = [];
+    page.on("request", (request) => paths.push(new URL(request.url()).pathname));
+    await fixture(page, role, ["compliance.write"]);
+    await page.goto("/call-work");
+    await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Call work queue", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Call work queue", exact: true })).toHaveCount(0);
+    expect(paths).not.toContain("/api/sales-management/call-tasks");
+    expect(paths).not.toContain("/api/sales-management/call-tasks/summary");
+  });
+}
 
 test("stale unauthorized branch selection is cleared", async ({ page }) => {
   await page.addInitScript(() =>

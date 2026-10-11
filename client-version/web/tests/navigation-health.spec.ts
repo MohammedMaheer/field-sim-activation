@@ -61,7 +61,7 @@ async function expectHealthyView(
 ) {
   const main = page.locator("#workspace-content");
   await expect(main).toBeVisible();
-  await expect(main.locator("h1").first(), label).toBeVisible({
+  await expect(main.getByRole("heading").first(), label).toBeVisible({
     timeout: 15000,
   });
   await expect(page.locator(".skeleton")).toHaveCount(0, { timeout: 15000 });
@@ -120,6 +120,10 @@ for (const account of accounts) {
         await test.step(label, async () =>
           expectHealthyView(page, health, label),
         );
+        await page.screenshot({
+          path: testInfo.outputPath(`${account}-${width}-${destination.path.replace(/\W+/g, "-") || "overview"}.png`),
+          animations: "disabled",
+        });
         visited.push(label);
       }
     }
@@ -130,7 +134,7 @@ for (const account of accounts) {
   });
 }
 
-test("administrator: sales, assets, administration and commission subviews remain healthy at both widths", async ({
+test("administrator: sales, assets, notifications and commission subviews remain healthy at both widths", async ({
   page,
 }, testInfo) => {
   test.setTimeout(240000);
@@ -161,24 +165,26 @@ test("administrator: sales, assets, administration and commission subviews remai
         await test.step(label, async () =>
           expectHealthyView(page, health, label),
         );
+        await page.screenshot({
+          path: testInfo.outputPath(`${width}-${path.replace(/\W+/g, "-")}-${tab.trim().replace(/\W+/g, "-")}.png`),
+          animations: "disabled",
+        });
         visited.push(label);
       }
     }
-    for (const section of [
-      "branches",
-      "agents",
-      "customers",
-      "inventory",
-      "incentives",
-    ]) {
-      health.pending.clear();
-      await page.goto(`/administration?section=${section}`);
-      const label = `${width}px administration / ${section}`;
-      await expectHealthyView(page, health, label);
-      await expect(
-        page.getByRole("textbox", { name: "Search records" }),
-      ).toBeVisible();
-      visited.push(label);
+    // Dedicated management pages are covered through visible navigation above.
+    // The removed workspace module is not a destination in the current product;
+    // notifications remain available through the top bell, outside the sidebar.
+    health.pending.clear();
+    await page.goto("/notifications");
+    await expectHealthyView(page, health, `${width}px notifications`);
+    for (const filter of await page.locator(".notification-filters button").all()) {
+      const label = (await filter.innerText()).trim();
+      await filter.click();
+      await expect(filter).toHaveAttribute("aria-pressed", "true");
+      await expectHealthyView(page, health, `${width}px notifications / ${label}`);
+      await page.screenshot({ path: testInfo.outputPath(`${width}-notifications-${label.replace(/\W+/g, "-")}.png`), animations: "disabled" });
+      visited.push(`${width}px notifications / ${label}`);
     }
     health.pending.clear();
     await page.goto("/incentives");
@@ -196,6 +202,7 @@ test("administrator: sales, assets, administration and commission subviews remai
       health,
       `${width}px all four approved incentive tables`,
     );
+    await page.screenshot({ path: testInfo.outputPath(`${width}-approved-incentive-tables.png`), animations: "disabled" });
     visited.push(`${width}px all four approved incentive tables`);
   }
   await testInfo.attach("read-only-subviews", {

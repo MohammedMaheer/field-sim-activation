@@ -2,6 +2,58 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/role_access.dart';
 
 void main() {
+  test('general workspace routes require read for every staff role', () {
+    for (final role in knownRoles.where(
+      (role) =>
+          !['Tele Verification Officer', 'Welcome Call Officer'].contains(role),
+    )) {
+      final user = {
+        'role': role,
+        'permissions': ['ekyc.write', 'compliance.write', 'report.read'],
+      };
+      for (final path in [
+        '/sales-management',
+        '/assets',
+        '/incentives',
+        '/stock',
+        '/records',
+        '/customers',
+        '/transactions',
+        '/transaction/example',
+        '/call-work',
+        '/ekyc',
+        '/screenshot-capture',
+        '/drafts',
+        '/support',
+      ]) {
+        expect(canVisitMobilePage(path, user), isFalse, reason: '$role $path');
+      }
+      // Reports have their own explicit grant and remain independent.
+      expect(canVisitMobilePage('/reports', user), isTrue, reason: role);
+    }
+  });
+  test('Sales Manager workspace access follows its effective read grant', () {
+    final user = {
+      'role': 'Sales Manager',
+      'permissions': <String>['read'],
+    };
+    for (final path in [
+      '/sales-management',
+      '/assets',
+      '/incentives',
+      '/stock',
+      '/records',
+      '/customers',
+      '/transactions',
+      '/transaction/example',
+    ]) {
+      expect(canVisitMobilePage(path, user), isTrue, reason: path);
+    }
+    user['permissions'] = <String>[];
+    expect(canVisitMobilePage('/transactions', user), isFalse);
+    expect(canVisitMobilePage('/transaction/example', user), isFalse);
+    expect(canVisitMobilePage('/sales-management', user), isFalse);
+  });
   test('administrators retain review visibility but cannot capture sales', () {
     final user = {
       'role': 'Administrator',

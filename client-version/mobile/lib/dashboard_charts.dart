@@ -10,7 +10,8 @@ class WeeklyActivityCard extends StatelessWidget {
   const WeeklyActivityCard(this.data, {super.key});
   @override
   Widget build(BuildContext context) {
-    final trend = (data['trend'] as List? ?? []).cast<Json>();
+    final trend = (data['sales_trend'] as List? ?? data['trend'] as List? ?? [])
+        .cast<Json>();
     final maxValue = trend.fold<double>(
       1,
       (v, r) => [

@@ -32,11 +32,11 @@ def test_reset_preserves_accounts_and_edited_plans(tmp_path, monkeypatch):
     sample_reset.reset_samples()
     assert identities() == before
     with db_factory() as db:
-        assert len(list(db.scalars(select(KycCapture)))) == 9
+        assert len(list(db.scalars(select(KycCapture)))) == 14
         assert sorted((b.id, b.name) for b in db.scalars(select(Branch))) == branches
         assert sorted((a.id, a.outlet_id, a.leader_id) for a in db.scalars(select(Agent))) == assignments
         assert audit_ids <= {a.id for a in db.scalars(select(Audit))}
-        assert len(list(db.scalars(select(SalesRecord)))) == 9
+        assert len(list(db.scalars(select(SalesRecord)))) == 14
         outbox = list(db.scalars(select(email_delivery.EmailOutbox)))
         assert outbox
         assert all(item.status == 'SKIPPED' and item.attempts == 0 for item in outbox)
@@ -58,7 +58,70 @@ def test_reset_preserves_accounts_and_edited_plans(tmp_path, monkeypatch):
     sample_reset.reset_samples()
     assert identities() == before
     with db_factory() as db:
-        assert len(list(db.scalars(select(SalesRecord)))) == 9
+        assert len(list(db.scalars(select(SalesRecord)))) == 14
+    engine.dispose()
+
+
+def test_fresh_records_match_current_workflow_and_stock(tmp_path, monkeypatch):
+    import io
+    from openpyxl import load_workbook
+    from app import commissions, sr_verification, email_delivery  # noqa: F401
+    from app.captures import payload, Intake
+    from app.db import CallAttempt, FieldAsset, FieldAssetMovement, FieldAssetRequest, SavedCaptureDraft, Sim, Movement
+    from app.sales_management import ORDER_TYPES, call_timing, call_stage_access, permitted
+    from app.security import cipher
+    engine = create_engine('sqlite:///' + str(tmp_path / 'workflows.db'))
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr(seed_module, 'DB', factory)
+    seed_module.seed()
+    monkeypatch.setenv('RELAY_RESET_OPERATIONAL_SAMPLES', 'KEEP_ACCOUNTS_AND_PLANS')
+    from app.fresh_samples import refresh_samples
+    refresh_samples(factory)
+    with factory() as db:
+        sales = list(db.scalars(select(SalesRecord)))
+        assert {s.order_type for s in sales} == set(ORDER_TYPES)
+        assert {s.agent_id for s in sales} == {a.id for a in db.scalars(select(Agent))}
+        assert {s.status for s in sales} == {'CLOSED', 'CANCELLED', 'IN_PROGRESS'}
+        assert {s.status for s in db.scalars(select(sr_verification.SrCheck))} == {'MATCHED', 'MISMATCH', 'PENDING_SR_VERIFICATION'}
+        assert any(s.status == 'CLOSED' and db.scalar(select(sr_verification.SrCheck).where(sr_verification.SrCheck.sale_id == s.id)).status == 'MISMATCH' for s in sales)
+        for sale in sales:
+            if sale.status in {'CLOSED', 'CANCELLED'} and sale.order_type != 'ELIFE':
+                sim = db.get(Sim, sale.details['stock_deducted_sim_id'])
+                assert sim.status == 'ACTIVATED'
+                assert sim.serial == sale.details['sim_serial']
+                intake = payload(db.get(KycCapture, sale.capture_id))['intake']
+                assert intake['sim_type'] == ('ESIM' if sim.sim_type == 'eSIM' else 'PHYSICAL')
+                assert sim.business_category == {'HW': 'Home Wireless', 'WASEL': 'Wasel / Prepaid', 'VISITOR': 'Visitor'}.get(sale.order_type, 'Postpaid')
+                assert len(list(db.scalars(select(Movement).where(Movement.sim_id == sim.id, Movement.new_status == 'ACTIVATED')))) == 1
+            if sale.order_type == 'ELIFE':
+                assert not sale.details.get('sim_serial')
+            if sale.order_type in {'HW', 'ELIFE'}:
+                assert sale.plan_name in {'Home Wireless', 'eLife'}
+                assert sale.details['monthly_cost'] == ''
+        draft = db.scalar(select(SavedCaptureDraft))
+        data = payload(draft)
+        assert data['saved_draft_id'] == draft.id
+        assert Intake.model_validate(data).name == 'Jamie Cole'
+        assert data['step'] == 0
+        assert list(db.scalars(select(FieldAssetRequest)))
+        assets = list(db.scalars(select(FieldAsset)))
+        assert {a.category for a in assets} == {'ROUTER', 'TABLET', 'UNIFORM'}
+        assert len(list(db.scalars(select(FieldAssetMovement)))) == len(assets)
+        assert any(c.stage == 'WELCOME_CALL' for c in db.scalars(select(CallAttempt)))
+        for attempt in db.scalars(select(CallAttempt)):
+            actor = db.get(User, attempt.actor_id)
+            sale = db.get(SalesRecord, attempt.sale_id)
+            call_stage_access(db, actor, attempt.stage)
+            assert permitted(db, actor, sale), 'Sample call actor must have access to this sale'
+        for batch in db.scalars(select(sr_verification.SrBatch)):
+            book = load_workbook(io.BytesIO(cipher.decrypt(batch.report_encrypted.encode())), read_only=True)
+            assert book.active.cell(1, 1).value == 'SR number'
+            for check in db.scalars(select(sr_verification.SrCheck).where(sr_verification.SrCheck.batch_id == batch.id)):
+                assert check.business_date == batch.business_date
+        deferred = next(s for s in sales if s.details.get('tele_deferred_until'))
+        assert deferred.details['tele_defer_reason']
+        assert call_timing(deferred, 'TELE_VERIFICATION')['deferred']
     engine.dispose()
 
 

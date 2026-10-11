@@ -39,7 +39,13 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
   Future<void> load({bool silent = false}) async {
     if (!mounted) return;
     if (fetching) {
-      reloadPending = true;
+      if (!silent) {
+        reloadPending = true;
+        setState(() {
+          loading = true;
+          error = '';
+        });
+      }
       return;
     }
     fetching = true;

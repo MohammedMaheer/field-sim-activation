@@ -4,11 +4,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 
 final authorizedBranchesProvider = FutureProvider<List<Json>>((ref) async {
-  ref.watch(
-    serviceProvider.select(
-      (service) => '${service.user?['id']}:${service.syncRevision}',
-    ),
-  );
+  // Account changes must clear the catalog. A background sync is a refresh,
+  // so retain the dropdown and its height while the updated catalog loads.
+  ref.watch(serviceProvider.select((service) => service.user?['id']));
+  ref.listen<int>(serviceProvider.select((service) => service.syncRevision), (
+    previous,
+    next,
+  ) {
+    if (previous != next) ref.invalidateSelf();
+  });
   final result = await ref
       .read(serviceProvider)
       .dio

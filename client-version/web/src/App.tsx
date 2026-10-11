@@ -207,8 +207,9 @@ export function canVisitPage(path: string, user: Row) {
     );
   if (path === "sr-verification")
     return (
-      user.permissions?.includes("compliance.write") ||
-      user.role === "Sales Manager"
+      user.permissions?.includes("read") &&
+      (user.permissions?.includes("compliance.write") ||
+        user.role === "Sales Manager")
     );
   if (path === "administration") return false;
   const permissions = user.permissions || [];
@@ -222,7 +223,7 @@ export function canVisitPage(path: string, user: Row) {
       )
     );
   if (user.role === "Sales Manager")
-    return [
+    return permissions.includes("read") && [
       "",
       "sales",
       "equipment",
@@ -238,10 +239,12 @@ export function canVisitPage(path: string, user: Row) {
     ].includes(path);
   if (path === "call-work")
     return (
-      permissions.includes("compliance.write") ||
-      permissions.includes("call.tele.read") ||
-      permissions.includes("call.welcome.read")
+      permissions.includes("read") &&
+      (permissions.includes("compliance.write") ||
+        permissions.includes("call.tele.read") ||
+        permissions.includes("call.welcome.read"))
     );
+  if (!permissions.includes("read")) return false;
   if (path === "team-leaders")
     return ["Administrator", "Operations Manager", "Team Leader"].includes(
       user.role,
@@ -407,9 +410,7 @@ export default function App() {
     queryFn: () => api("/sales-management/call-tasks/summary"),
     enabled:
       !!user &&
-      (user.permissions?.includes("compliance.write") ||
-        user.permissions?.includes("call.tele.read") ||
-        user.permissions?.includes("call.welcome.read")),
+      canVisitPage("call-work", user),
     refetchInterval: 15000,
   });
   const stockAlerts = useQuery({

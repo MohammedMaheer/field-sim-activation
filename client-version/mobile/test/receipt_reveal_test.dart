@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/receipt_reveal.dart';
 
@@ -66,6 +67,56 @@ void expectFullyPrinted(WidgetTester tester) {
 }
 
 void main() {
+  for (final width in [320.0, 360.0, 390.0]) {
+    for (final scale in [1.0, 1.3]) {
+      testWidgets('printer status fits $width px at $scale text scale', (
+        tester,
+      ) async {
+        tester.view.physicalSize = Size(width, 844);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: MediaQuery(
+              data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+              child: Scaffold(
+                body: SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: ReceiptReveal(
+                      readyLabel: 'RECEIPT READY',
+                      child: invoice(),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        final status = find.byKey(const ValueKey('receipt-printer-status'));
+        final headerHeight = tester.getTopLeft(paperClip()).dy;
+        expect(find.text('PRINTING…'), findsOneWidget);
+        await tester.pumpAndSettle();
+        expect(find.text('RECEIPT READY'), findsOneWidget);
+        final paragraph = tester.renderObject<RenderParagraph>(status);
+        final lines = paragraph
+            .getBoxesForSelection(
+              const TextSelection(baseOffset: 0, extentOffset: 13),
+            )
+            .map((box) => box.top)
+            .toSet();
+        expect(lines.length, lessThanOrEqualTo(2));
+        expect(paragraph.didExceedMaxLines, isFalse);
+        expect(tester.getTopLeft(paperClip()).dy, headerHeight);
+        expect(
+          tester.getSize(find.byTooltip('Replay invoice printing')).width,
+          greaterThanOrEqualTo(48),
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+  }
   testWidgets('invoice prints header first downwards and replays in order', (
     tester,
   ) async {

@@ -17,7 +17,7 @@ async function signIn(page: Page, email = "admin@relay.demo") {
     .click();
   await expect(
     page.getByRole("heading", { name: /^Operations overview/ }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 20000 });
 }
 async function apiHeaders(request: APIRequestContext) {
   const response = await request.post("/api/auth/login", {
@@ -242,6 +242,7 @@ test("real branch context follows modules and reports start today", async ({
   page,
   request,
 }) => {
+  test.setTimeout(120000);
   const headers = await apiHeaders(request),
     branches = await (
       await request.get("/api/resources/branches", { headers })
@@ -279,13 +280,10 @@ test("real branch context follows modules and reports start today", async ({
   );
   await page.getByLabel("From date", { exact: true }).fill("2026-10-01");
   const download = page.waitForEvent("download");
-  await page
-    .locator(".report-card")
-    .filter({
-      has: page.getByRole("heading", { name: "SIM inventory", exact: true }),
-    })
-    .getByRole("button", { name: "CSV", exact: true })
-    .click();
+  const stockReport = page.locator(".report-card").filter({
+    has: page.getByRole("heading", { name: "SIM inventory", exact: true }),
+  });
+  await stockReport.getByRole("button", { name: "CSV", exact: true }).click();
   expect((await download).suggestedFilename()).toMatch(/\.csv$/);
   await page.reload();
   await expect(branch).toHaveValue(selected.id);

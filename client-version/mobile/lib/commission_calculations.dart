@@ -71,7 +71,13 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
 
   Future<void> load({bool quiet = false}) async {
     if (fetching) {
-      reloadPending = true;
+      if (!quiet) {
+        reloadPending = true;
+        setState(() {
+          loading = true;
+          error = '';
+        });
+      }
       return;
     }
     fetching = true;
