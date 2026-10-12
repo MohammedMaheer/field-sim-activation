@@ -1821,7 +1821,7 @@ def test_payment_invoice_review_and_backend_activation(client, monkeypatch):
     assert client.post(path+"/activation",json=action).status_code == 409
     pdf = client.get(path+"/receipt")
     text = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf.content)).pages)
-    assert "PAYMENT INVOICE" in text and "Not recorded" in text and "350.00" in text
+    assert "REFERENCE BILL" in text and "Not recorded" in text and "350.00" in text
     assert "SAMPLE-ID-9090" not in text
     with DB() as db:
         assert db.scalar(select(Order).where(Order.id == completed.json()["order_id"])).status == "ACTIVATED"

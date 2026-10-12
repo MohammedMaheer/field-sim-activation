@@ -110,7 +110,7 @@ void main() {
         expect(paragraph.didExceedMaxLines, isFalse);
         expect(tester.getTopLeft(paperClip()).dy, headerHeight);
         expect(
-          tester.getSize(find.byTooltip('Replay invoice printing')).width,
+          tester.getSize(find.byTooltip('Replay bill printing')).width,
           greaterThanOrEqualTo(48),
         );
         expect(tester.takeException(), isNull);
@@ -155,7 +155,7 @@ void main() {
     // Refreshing the same receipt must not start the print again.
     await tester.pumpWidget(app);
     expectFullyPrinted(tester);
-    await tester.tap(find.byTooltip('Replay invoice printing'));
+    await tester.tap(find.byTooltip('Replay bill printing'));
     await tester.pump();
     expect(tester.getRect(paperClip()).height, 0);
     expect(find.byKey(headerKey).hitTestable(), findsNothing);
@@ -178,10 +178,10 @@ void main() {
       ),
     );
     expectFullyPrinted(tester);
-    await tester.tap(find.byTooltip('Replay invoice printing'));
+    await tester.tap(find.byTooltip('Replay bill printing'));
     await tester.pump(const Duration(milliseconds: 1100));
     expectFullyPrinted(tester);
-    expect(find.text('INVOICE READY'), findsOneWidget);
+    expect(find.text('BILL READY'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

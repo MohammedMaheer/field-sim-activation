@@ -1272,8 +1272,7 @@ def receipt(capture_id: str, request: Request, user=Depends(principal), db=Depen
                 value = "**** " + value[-4:]
             entries.append((label, value))
     payment = data.get("document_kind") in {"PAYMENT_CONFIRMATION", "SALE_SCREENSHOTS"}
-    sale_mode = data.get("document_kind") == "SALE_SCREENSHOTS"
-    title = "Sale receipt" if sale_mode else "Payment invoice" if payment else "Activation receipt"
+    title = "Reference bill" if payment else "Activation receipt"
     sections = [{"title": "Receipt details", "fields": [{"label": key, "value": value} for key, value in entries]}]
     if payment:
         projected = data["invoice"]

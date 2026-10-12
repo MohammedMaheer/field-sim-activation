@@ -16,8 +16,8 @@ test('fresh submissions support side-by-side staff review', async ({page})=>{
  await expect(page.getByRole('img',{name:'Captured customer signature',exact:true}).first()).toBeVisible();
  await page.getByRole('button',{name:'Payment confirmation',exact:true}).click();
  await expect(page.getByRole('button',{name:'Verify submission',exact:true})).toBeDisabled();
- await page.getByText('Payment invoice',{exact:true}).click();
- await page.getByRole('button',{name:'Replay invoice printing',exact:true}).click();
+ await page.getByText('Reference bill',{exact:true}).click();
+ await page.getByRole('button',{name:'Replay reference bill printing',exact:true}).click();
  await page.waitForTimeout(2400);
  await page.screenshot({path:'../output/qa/hosted39-payment-invoice.png'});
 });

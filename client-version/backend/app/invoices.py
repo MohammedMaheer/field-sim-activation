@@ -45,9 +45,9 @@ def invoice(row, data):
     )
     sections = [
         {
-            "title": "Invoice",
+            "title": "Reference bill",
             "fields": [
-                field("Sale reference" if sale_mode else "Invoice number", ("SALE-" if sale_mode else "PAY-") + row.id[:8].upper()),
+                field("Sale reference" if sale_mode else "Reference bill number", ("SALE-" if sale_mode else "PAY-") + row.id[:8].upper()),
                 field("Date", row.created_at.strftime("%d %b %Y, %H:%M UTC")),
                 field("Review", review),
                 field("Activation", ("Confirmed by backend" if row.status == "VERIFIED" else "Recorded by agent") if order_mode else activation.get("status") or "Awaiting backend team"),

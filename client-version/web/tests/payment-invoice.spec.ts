@@ -121,13 +121,13 @@ test("payment invoice and backend activation remain connected", async ({
   await page
     .getByRole("button", { name: "Payment confirmation", exact: true })
     .click();
-  await page.getByText("Payment invoice", { exact: true }).click();
+  await page.getByText("Reference bill", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Payment successful", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".invoice-sections")).toContainText("Not recorded");
   await page
-    .getByRole("button", { name: "Replay invoice printing", exact: true })
+    .getByRole("button", { name: "Replay reference bill printing", exact: true })
     .click();
   const paper = page.locator(".verified-receipt");
   await page.waitForTimeout(500);
@@ -180,9 +180,9 @@ test("payment invoice and backend activation remain connected", async ({
   ).toBeVisible();
   const invoiceDetails = page
     .locator("details")
-    .filter({ has: page.getByText("Payment invoice", { exact: true }) });
+    .filter({ has: page.getByText("Reference bill", { exact: true }) });
   if (!((await invoiceDetails.getAttribute("open")) !== null))
-    await page.getByText("Payment invoice", { exact: true }).click();
+    await page.getByText("Reference bill", { exact: true }).click();
   await expect(page.locator(".invoice-sections")).toContainText("ACTIVATED");
   await expect(page.locator(".invoice-sections")).toContainText(
     "EXTERNAL-QA-123",

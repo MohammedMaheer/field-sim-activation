@@ -6,7 +6,7 @@ This update follows the owner's 9 October answers and the supplied October incen
 
 1. Capture the externally activated checkout customer-details screen.
 2. Capture order details and record the product, package, phone, request ID and charges actually shown. Required customer/phone/request fields must be bound to readable captured evidence. Unknown values are **Not recorded**. New flow has no barcode/signature requirement.
-3. Review and submit the sale. A payment receipt can be attached here, but it is optional and requires no separate backend payment approval. Stored receipt means **Payment recorded**, not gateway settlement. The compact animated sale receipt uses recorded fields only.
+3. Review and submit the sale. A payment receipt can be attached here, but it is optional and requires no separate backend payment approval. Stored receipt means **Payment recorded**, not gateway settlement. The compact animated **Reference bill** uses recorded fields only. Its header includes a direct **Home** action, available without scrolling to the bottom.
 4. Backend staff independently compare the customer and order evidence. Confirmation closes the recorded sale and, where a known matching branch SIM is recorded, deducts it once. Team leaders receive read-only updates; agents and leaders cannot reassign staff.
 5. Backend staff upload the daily Excel/CSV SR report, preview every sale result and apply a checked import. SR state is independent of activation state: **Matched**, **Mismatch**, or **Pending SR verification**. A missing/mismatched SR does not undo an already recorded activation. Report cancellation updates the sale's original day's/month's net totals.
 

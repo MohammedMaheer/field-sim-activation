@@ -75,11 +75,7 @@ String receiptPrintDocument(Map<String, dynamic> capture) {
                 },
               ],
             });
-  final title = sale
-      ? 'Sale receipt'
-      : payment
-      ? 'Payment invoice'
-      : 'Activation receipt';
+  final title = sale || payment ? 'Reference bill' : 'Activation receipt';
   final status = sale ? activationLabel(capture) : projected['heading'];
   final sections = projected['sections'] as List? ?? [];
   final content = sections.map((section) {
@@ -87,10 +83,10 @@ String receiptPrintDocument(Map<String, dynamic> capture) {
     final cells = fields
         .map(
           (field) =>
-              '<tr><th>${_text(field['label'])}</th><td>${_text(_privateValue(field['label'], field['value']))}</td></tr>',
+              '<tr><th>${_text(referenceBillFieldLabel(field['label']))}</th><td>${_text(_privateValue(field['label'], field['value']))}</td></tr>',
         )
         .join();
-    return '<section><h2>${_text(section['title'])}</h2><table><tbody>$cells</tbody></table></section>';
+    return '<section><h2>${_text(referenceBillTitle(section['title']))}</h2><table><tbody>$cells</tbody></table></section>';
   }).join();
   return '''<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Qanawat ${_text(title)}</title><style>
 @page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;color:#242738;font:12px/1.4 Arial,sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}

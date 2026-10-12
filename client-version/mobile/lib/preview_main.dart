@@ -139,8 +139,8 @@ Uint8List previewReceiptPdf(Json row) {
       : 'FINAL REVIEW PENDING';
   final lines = [
     row['document_kind'] == 'PAYMENT_CONFIRMATION'
-        ? 'RELAY | PAYMENT INVOICE'
-        : 'RELAY | ACTIVATION RECEIPT',
+        ? 'QANAWAT | REFERENCE BILL'
+        : 'QANAWAT | ACTIVATION RECEIPT',
     row['document_kind'] == 'PAYMENT_CONFIRMATION'
         ? "${paymentInvoice(row)['heading'].toString().toUpperCase()} - ${paymentInvoice(row)['status']}"
         : status,

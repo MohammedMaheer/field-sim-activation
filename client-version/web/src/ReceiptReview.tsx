@@ -742,11 +742,7 @@ export default function ReceiptReview({
       )}
       <details className="review-history">
         <summary>
-          {saleMode
-            ? "Sale receipt"
-            : payment
-              ? "Payment invoice"
-              : "Historical receipt"}
+          {payment ? "Reference bill" : "Historical receipt"}
         </summary>
         <ActivationReceipt capture={capture} canExport={canExport} />
       </details>

@@ -5,11 +5,12 @@ import {
   CheckCircle2,
   Clock3,
   Download,
+  Home,
   Printer,
   RotateCcw,
 } from "lucide-react";
 import { api, download, Row } from "./api";
-import { printReceipt } from "./receiptPrinting";
+import { printReceipt, referenceBillSections } from "./receiptPrinting";
 
 export default function ActivationReceipt({ capture, canExport }: { capture: Row; canExport: boolean }) {
   const [exporting, setExporting] = useState(false);
@@ -17,6 +18,8 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
   const [expanded, setExpanded] = useState(false);
   const [printRun, setPrintRun] = useState(0);
   const [printing, setPrinting] = useState(false);
+  const generatedBill = capture.document_kind === "PAYMENT_CONFIRMATION" ||
+    capture.intake?.capture_mode === "SCREENSHOT_SALE";
   async function printPaper() {
     setPrinting(true);
     setError("");
@@ -35,11 +38,11 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
     try {
       await download(
         `/kyc-captures/${capture.id}/receipt`,
-        `qanawat-${capture.document_kind === "PAYMENT_CONFIRMATION" ? "invoice" : "sale-receipt"}-${capture.id}.pdf`,
+        `qanawat-${generatedBill ? "reference-bill" : "activation-receipt"}-${capture.id}.pdf`,
       );
     } catch {
       setError(
-        `Could not download ${capture.document_kind === "PAYMENT_CONFIRMATION" ? "invoice" : "receipt"}. Please try again.`,
+        `Could not download ${generatedBill ? "reference bill" : "receipt"}. Please try again.`,
       );
     } finally {
       setExporting(false);
@@ -74,9 +77,9 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
         )
         .map(([label, value]) => ({ label, value })),
   );
-  const sections: Row[] = capture.invoice?.sections || [];
+  const sections: Row[] = referenceBillSections(capture.invoice?.sections || []);
   const primaryLabels: Record<string, string[]> = {
-    Invoice: ["Invoice number", "Date"],
+    "Reference bill": ["Reference bill number", "Sale reference", "Date"],
     Customer: ["Customer name", "Document number", "Phone number"],
     "SIM & plan": orderMode
       ? ["Request ID", "Plan", "Monthly charge", "Prepayment on order"]
@@ -111,7 +114,7 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
     );
   const supportingSections = [
     ...(otherFields.length
-      ? [{ title: "More invoice details", fields: otherFields }]
+      ? [{ title: "More bill details", fields: otherFields }]
       : []),
     ...sections.filter((section) => !primaryLabels[section.title]),
   ];
@@ -133,13 +136,16 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
   );
   return (
     <div className="receipt-kiosk-assembly">
+      <Link className="button-link" to="/" aria-label="Home" style={{ marginBottom: 10 }}>
+        <Home size={17} /> Home
+      </Link>
       <div className="receipt-kiosk-machine">
         <div className="receipt-kiosk-screen">
           <img src="/branding/qanawat-logo.png" alt="Qanawat" style={{width: 126, height: "auto", background: "white", borderRadius: 6, padding: 5}} />
-          <span>{saleMode ? "SALE RECEIPT" : "PAYMENT INVOICE"}</span>
+          <span>{generatedBill ? "REFERENCE BILL" : "ACTIVATION RECEIPT"}</span>
           <button
             type="button"
-            aria-label="Replay invoice printing"
+            aria-label={generatedBill ? "Replay reference bill printing" : "Replay receipt printing"}
             onClick={() => setPrintRun((n) => n + 1)}
           >
             <RotateCcw size={17} />
@@ -153,11 +159,7 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
           key={`${capture.id}-${printRun}`}
           className={`verified-receipt receipt-${capture.status.toLowerCase()}`}
           aria-label={
-            saleMode
-              ? "Sale receipt"
-              : payment
-                ? "Payment invoice"
-                : "Activation receipt"
+            generatedBill ? "Reference bill" : "Activation receipt"
           }
         >
           <header className="verified-receipt-heading">
@@ -178,11 +180,7 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
             </div>
             {canExport && <button type="button" className="receipt-print" disabled={printing} onClick={printPaper}>
               <Printer size={16} />{" "}
-              {printing ? "Preparing…" : saleMode
-                ? "Print receipt"
-                : payment
-                  ? "Print invoice"
-                  : "Print receipt"}
+              {printing ? "Preparing…" : generatedBill ? "Print reference bill" : "Print receipt"}
             </button>}
             {canExport && <button
               className="receipt-print"
@@ -196,11 +194,7 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
           <div className="receipt-paper-brand">
             <img src="/branding/qanawat-logo.png" alt="Qanawat Connect Solutions LLC" style={{width: 200, maxWidth: "60%", height: "auto"}} />
             <span>
-              {saleMode
-                ? "SALE RECEIPT"
-                : payment
-                  ? "PAYMENT INVOICE"
-                  : "ACTIVATION RECEIPT"}
+              {generatedBill ? "REFERENCE BILL" : "ACTIVATION RECEIPT"}
             </span>
           </div>
           {saleMode && (

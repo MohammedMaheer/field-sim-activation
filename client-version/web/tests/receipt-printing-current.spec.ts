@@ -37,14 +37,17 @@ async function fixture(page: Page, capture = record) {
   await expect(page.getByRole("heading", {name: "Backend verification", exact: true})).toBeVisible();
 }
 
-test("backend sale receipt prints complete isolated paper from a collapsed review section", async ({page}) => {
+test("reference bill prints complete isolated paper and normalizes cached invoice sections", async ({page}) => {
   await fixture(page);
-  await expect(page.locator(".review-history").filter({hasText: "Sale receipt"}).first()).not.toHaveAttribute("open", "");
-  await page.locator("summary").filter({hasText: /^Sale receipt$/}).click();
+  await expect(page.locator(".review-history").filter({hasText: "Reference bill"}).first()).not.toHaveAttribute("open", "");
+  await page.locator("summary").filter({hasText: /^Reference bill$/}).click();
+  await expect(page.locator(".invoice-sections h3").first()).toHaveText("Reference bill");
+  await expect(page.locator(".invoice-sections")).toContainText("SALE-A");
   await expect(page.getByRole("button", {name: "Show supporting details", exact: true})).toBeVisible();
-  await page.getByRole("button", {name: "Print receipt", exact: true}).click();
+  await page.getByRole("button", {name: "Print reference bill", exact: true}).click();
   const frame = page.frameLocator('iframe[title="Qanawat receipt print document"]');
-  await expect(frame.locator("h1")).toHaveText("Sale receipt");
+  await expect(frame.locator("h1")).toHaveText("Reference bill");
+  await expect(frame.locator("h2").first()).toHaveText("Reference bill");
   await expect(frame.locator("body")).toContainText("Activated · SR mismatch");
   await expect(frame.locator("body")).toContainText("Nationality");
   await expect(frame.locator("body")).toContainText("Independent reviewer");
@@ -74,6 +77,7 @@ test("rejected receipt printing retains correction status and legacy document ma
   await page.locator("summary").filter({hasText: /^Historical receipt$/}).click();
   await page.getByRole("button", {name: "Print receipt", exact: true}).click();
   const frame = page.frameLocator('iframe[title="Qanawat receipt print document"]');
+  await expect(frame.locator("h1")).toHaveText("Activation receipt");
   await expect(frame.locator("body")).toContainText("Correction required");
   await expect(frame.locator("body")).toContainText("AED 199.00");
   await expect(frame.locator("body")).toContainText("•••• 5678");
@@ -82,14 +86,34 @@ test("rejected receipt printing retains correction status and legacy document ma
 
 test("printing reads the current server state and refuses newly revoked receipt access", async ({page}) => {
   await fixture(page);
-  await page.locator("summary").filter({hasText: /^Sale receipt$/}).click();
+  await page.locator("summary").filter({hasText: /^Reference bill$/}).click();
   await page.route("**/api/kyc-captures/print-sale-a/print-data", (route) => route.fulfill({json: {...record, activation_label: "Fully activated"}}));
-  await page.getByRole("button", {name: "Print receipt", exact: true}).click();
+  await page.getByRole("button", {name: "Print reference bill", exact: true}).click();
   const frame = page.frameLocator('iframe[title="Qanawat receipt print document"]');
   await expect(frame.locator("body")).toContainText("Fully activated");
   await page.locator('iframe[title="Qanawat receipt print document"]').evaluate((el) => el.remove());
   await page.route("**/api/kyc-captures/print-sale-a/print-data", (route) => route.fulfill({status: 403, json: {detail: "This receipt is no longer available to your account."}}));
-  await page.getByRole("button", {name: "Print receipt", exact: true}).click();
+  await page.getByRole("button", {name: "Print reference bill", exact: true}).click();
   await expect(page.getByRole("alert")).toContainText("This receipt is no longer available");
   await expect(page.locator('iframe[title="Qanawat receipt print document"]')).toHaveCount(0);
+});
+
+test("reference bill has an immediate Home link and retains readable controls on a narrow screen", async ({page}) => {
+  await page.setViewportSize({width: 390, height: 844});
+  await fixture(page);
+  await page.locator("summary").filter({hasText: /^Reference bill$/}).click();
+  const home = page.locator(".receipt-kiosk-assembly").getByRole("link", {name: "Home", exact: true});
+  await expect(home).toHaveAttribute("href", "/");
+  await home.scrollIntoViewIfNeeded();
+  await expect(home).toBeVisible();
+  await expect(page.getByRole("button", {name: "Replay reference bill printing", exact: true})).toBeVisible();
+  const assembly = page.locator(".receipt-kiosk-assembly");
+  await assembly.locator(".verified-receipt").evaluate(async (node) => {
+    await Promise.all(node.getAnimations().map((animation) => animation.finished));
+  });
+  expect(await assembly.evaluate((node) => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.screenshot({path: "../output/qa/reference-bill-home-390.png", fullPage: true});
+  await home.click();
+  await expect(page).toHaveURL(/\/$/);
 });

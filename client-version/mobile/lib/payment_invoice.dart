@@ -2,6 +2,16 @@ import 'package:flutter/material.dart';
 import 'typography.dart';
 import 'sr_verification.dart';
 
+/// Old saved projections keep their API shape; display the current bill name.
+String referenceBillTitle(dynamic title) => switch (title) {
+  'Invoice' || 'Payment invoice' || 'Sale receipt' => 'Reference bill',
+  'More invoice details' => 'More reference bill details',
+  _ => title.toString(),
+};
+
+String referenceBillFieldLabel(dynamic label) =>
+    label == 'Invoice number' ? 'Reference bill number' : label.toString();
+
 Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
   final intake = row['intake'] as Map? ?? {};
   final saleMode = intake['capture_mode'] == 'SCREENSHOT_SALE';
@@ -69,9 +79,9 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
     'status': status,
     'sections': [
       {
-        'title': 'Invoice',
+        'title': 'Reference bill',
         'fields': [
-          field('Invoice number', 'PAY-${invoiceId.toUpperCase()}'),
+          field('Reference bill number', 'PAY-${invoiceId.toUpperCase()}'),
           field('Date', dateText),
           field('Review', status),
           field(
@@ -238,6 +248,8 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
     if ([
       'Request ID',
       'Invoice number',
+      'Reference bill number',
+      'Sale reference',
       'Payment reference',
       'SIM serial',
     ].contains(field['label'])) {
@@ -281,7 +293,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              section['title'],
+              referenceBillTitle(section['title']),
               style: RelayTypography.section.copyWith(
                 fontSize: 15,
                 color: Color(0xff762765),
@@ -299,7 +311,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Text(
-                            field['label'],
+                            referenceBillFieldLabel(field['label']),
                             style: RelayTypography.label.copyWith(
                               color: const Color(0xff596675),
                             ),
@@ -318,7 +330,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
                           Expanded(
                             flex: 4,
                             child: Text(
-                              field['label'],
+                              referenceBillFieldLabel(field['label']),
                               style: RelayTypography.label.copyWith(
                                 color: Color(0xff596675),
                               ),
@@ -347,7 +359,12 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
   Widget build(BuildContext context) {
     final sections = (widget.invoice['sections'] as List).cast<Map>();
     const primary = <String, List<String>>{
-      'Invoice': ['Invoice number', 'Date'],
+      'Reference bill': [
+        'Reference bill number',
+        'Invoice number',
+        'Sale reference',
+        'Date',
+      ],
       'Customer': ['Customer name', 'Document number', 'Phone number'],
       'SIM & plan': [
         'Request ID',
@@ -372,7 +389,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
     final otherFields = <dynamic>[];
     final extra = <Map>[];
     for (final item in sections) {
-      final labels = primary[item['title']];
+      final labels = primary[referenceBillTitle(item['title'])];
       if (labels == null) {
         extra.add(item);
       } else {
@@ -389,7 +406,10 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
       }
     }
     if (otherFields.isNotEmpty) {
-      extra.insert(0, {'title': 'More invoice details', 'fields': otherFields});
+      extra.insert(0, {
+        'title': 'More reference bill details',
+        'fields': otherFields,
+      });
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,

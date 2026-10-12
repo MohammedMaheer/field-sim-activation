@@ -7,7 +7,7 @@ class ReceiptReveal extends StatefulWidget {
   const ReceiptReveal({
     super.key,
     required this.child,
-    this.readyLabel = 'INVOICE READY',
+    this.readyLabel = 'BILL READY',
   });
   final Widget child;
   final String readyLabel;
@@ -97,7 +97,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                       darkSurface: true,
                     );
                     final replay = IconButton(
-                      tooltip: 'Replay invoice printing',
+                      tooltip: 'Replay bill printing',
                       constraints: const BoxConstraints(
                         minWidth: 48,
                         minHeight: 48,

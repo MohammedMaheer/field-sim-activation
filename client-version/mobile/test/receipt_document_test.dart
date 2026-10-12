@@ -36,6 +36,12 @@ void main() {
           'status': 'Verified',
           'sections': [
             {
+              'title': 'Invoice',
+              'fields': [
+                {'label': 'Invoice number', 'value': 'PAY-123'},
+              ],
+            },
+            {
               'title': 'Customer',
               'fields': [
                 {'label': 'Customer name', 'value': 'Jordan & Vale'},
@@ -55,6 +61,9 @@ void main() {
         },
       });
       expect(html, contains('Qanawat'));
+      expect(html, contains('<h1>Reference bill</h1>'));
+      expect(html, contains('Reference bill number'));
+      expect(html, isNot(contains('Invoice')));
       expect(html, contains('Activated · SR mismatch'));
       expect(html, contains('Nationality'));
       expect(html, contains('Jordan &amp; Vale'));

@@ -411,7 +411,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                 : type == 'excel'
                 ? 'captured-details'
                 : capture?['document_kind'] == 'PAYMENT_CONFIRMATION'
-                ? 'invoice'
+                ? 'reference-bill'
+                : capture?['intake']?['capture_mode'] == 'SCREENSHOT_SALE'
+                ? 'reference-bill'
                 : 'sale-receipt'}-$id.$ext',
       );
       if (mounted) await file.share(context);
@@ -433,10 +435,35 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       final file = ExportDocument.fromResponse(
         response,
         format: 'pdf',
-        fallbackFilename: 'qanawat-sale-receipt-${current['id']}.pdf',
+        fallbackFilename: 'qanawat-reference-bill-${current['id']}.pdf',
       );
       await printSaleReceipt(file.bytes, current, file.filename);
     });
+  }
+
+  Future<void> startNewTransaction() async {
+    if (dirty &&
+        !(await showDialog<bool>(
+              context: context,
+              builder: (c) => AlertDialog(
+                title: const Text('Discard unsaved changes?'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(c, false),
+                    child: const Text('Keep editing'),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(c, true),
+                    child: const Text('Discard'),
+                  ),
+                ],
+              ),
+            ) ??
+            false)) {
+      return;
+    }
+    if (!mounted) return;
+    context.push('/screenshot-capture');
   }
 
   String receiptDate(dynamic value) {
@@ -637,6 +664,11 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       );
     }
     final receipt = capture;
+    final compactBillHeader =
+        receipt != null &&
+        MediaQuery.sizeOf(context).width /
+                MediaQuery.textScalerOf(context).scale(1) <
+            360;
     final verified = receipt?['intake'] != null;
     final receiptSuccess = receipt?['status'] == 'VERIFIED';
     final saleMode = receipt?['intake']?['capture_mode'] == 'SCREENSHOT_SALE';
@@ -686,44 +718,50 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     ? 'Submit sale'
                     : 'Payment'
               : payment
-              ? 'Invoice'
+              ? 'Reference bill'
               : 'Receipt',
+          maxLines: 2,
+          style: const TextStyle(fontSize: 18, height: 1.05),
         ),
         actions: [
-          if (canWrite && capture != null)
-            TextButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      if (dirty &&
-                          !(await showDialog<bool>(
-                                context: context,
-                                builder: (c) => AlertDialog(
-                                  title: const Text('Discard unsaved changes?'),
-                                  actions: [
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(c, false),
-                                      child: const Text('Keep editing'),
-                                    ),
-                                    TextButton(
-                                      onPressed: () => Navigator.pop(c, true),
-                                      child: const Text('Discard'),
-                                    ),
-                                  ],
-                                ),
-                              ) ??
-                              false)) {
-                        return;
-                      }
-                      if (!context.mounted) return;
-                      context.push('/screenshot-capture');
-                    },
-              child: const Text('New'),
+          if (capture != null)
+            IconButton(
+              tooltip: 'Home',
+              onPressed: () => context.go('/'),
+              icon: const Icon(Icons.home_outlined),
             ),
-          IconButton(
-            onPressed: busy ? null : refresh,
-            icon: const Icon(Icons.refresh),
-          ),
+          if (canWrite && capture != null && !compactBillHeader)
+            IconButton(
+              tooltip: 'New transaction',
+              onPressed: busy ? null : startNewTransaction,
+              icon: const Icon(Icons.add),
+            ),
+          if (compactBillHeader)
+            PopupMenuButton<String>(
+              tooltip: 'Bill actions',
+              enabled: !busy,
+              onSelected: (action) {
+                if (action == 'new') {
+                  startNewTransaction();
+                } else {
+                  refresh();
+                }
+              },
+              itemBuilder: (_) => [
+                if (canWrite)
+                  const PopupMenuItem(
+                    value: 'new',
+                    child: Text('New transaction'),
+                  ),
+                const PopupMenuItem(value: 'refresh', child: Text('Refresh')),
+              ],
+            )
+          else
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: busy ? null : refresh,
+              icon: const Icon(Icons.refresh),
+            ),
         ],
       ),
       body: ListView(
@@ -743,7 +781,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             ),
           if (receipt != null && receipt['intake'] != null)
             ReceiptReveal(
-              readyLabel: saleMode ? 'RECEIPT READY' : 'INVOICE READY',
+              readyLabel: payment ? 'BILL READY' : 'RECEIPT READY',
               key: ValueKey('receipt-${receipt["id"]}'),
               child: Container(
                 decoration: BoxDecoration(
@@ -826,10 +864,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             children: [
                               const QanawatBrand(width: 164, height: 47),
                               Text(
-                                saleMode
-                                    ? 'SALE RECEIPT'
-                                    : payment
-                                    ? 'PAYMENT INVOICE'
+                                payment
+                                    ? 'REFERENCE BILL'
                                     : 'ACTIVATION RECEIPT',
                                 style: TextStyle(
                                   fontSize: 10,
@@ -844,7 +880,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                             PaymentInvoiceSections(invoice: invoice!)
                           else ...[
                             _ReceiptLine(
-                              'Invoice / reference',
+                              'Reference',
                               receipt['source_reference'],
                             ),
                             _ReceiptLine('Customer', receipt['intake']['name']),
@@ -906,10 +942,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                               onPressed: busy ? null : printReceipt,
                               icon: const Icon(Icons.print_outlined),
                               label: Text(
-                                saleMode
-                                    ? 'Print sale receipt'
-                                    : payment
-                                    ? 'Print invoice'
+                                payment
+                                    ? 'Print reference bill'
                                     : 'Print receipt',
                               ),
                             ),
@@ -920,14 +954,14 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                               icon: const Icon(Icons.picture_as_pdf_outlined),
                               label: Text(
                                 payment
-                                    ? 'Download / share invoice'
+                                    ? 'Download / share reference bill'
                                     : 'Download / share receipt',
                               ),
                             ),
                           const SizedBox(height: 10),
                           FilledButton(
                             onPressed: () => context.go('/'),
-                            child: const Text('Done · Return to dashboard'),
+                            child: const Text('Done · Home'),
                           ),
                         ],
                       ),

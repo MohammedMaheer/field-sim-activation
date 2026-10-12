@@ -110,7 +110,7 @@ test("backend side-by-side review, correction and verification", async ({
   await expect
     .poll(() => image.evaluate((el: HTMLImageElement) => el.naturalWidth))
     .toBeGreaterThan(0);
-  await page.getByText("Payment invoice", { exact: true }).click();
+  await page.getByText("Reference bill", { exact: true }).click();
   await expect(
     page.getByRole("heading", { name: "Payment successful", exact: true }),
   ).toBeVisible();
@@ -208,7 +208,7 @@ test("backend side-by-side review, correction and verification", async ({
     };
   });
   await page
-    .getByRole("button", { name: "Print invoice", exact: true })
+    .getByRole("button", { name: "Print reference bill", exact: true })
     .click();
   expect(await page.evaluate(() => (window as any).printed)).toBeTruthy();
 });

@@ -393,7 +393,7 @@ void main() {
   });
 
   testWidgets(
-    'New from verified receipt opens clean capture and both Back actions preserve receipt',
+    'Reference bill New preserves receipt and direct Home leaves transaction',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);
       tester.view.devicePixelRatio = 1;
@@ -427,8 +427,10 @@ void main() {
           ),
         ),
       );
-      await waitFor(tester, find.text('New'));
-      await tester.tap(find.text('New'));
+      await waitFor(tester, find.byTooltip('New transaction'));
+      expect(find.text('Reference bill'), findsWidgets);
+      expect(find.byTooltip('Home').hitTestable(), findsOneWidget);
+      await tester.tap(find.byTooltip('New transaction'));
       final name = find.widgetWithText(TextFormField, 'Full name');
       await waitFor(tester, name);
       expect(tester.widget<TextFormField>(name).initialValue, isEmpty);
@@ -438,19 +440,19 @@ void main() {
       expect(find.byType(IntakeCamera), findsOneWidget);
       expect(router.canPop(), isTrue);
       await tester.tap(find.byTooltip('Back'));
-      await waitFor(tester, find.text('New'));
+      await waitFor(tester, find.byTooltip('New transaction'));
       expect(
         router.routeInformationProvider.value.uri.path,
         '/transaction/existing-capture',
       );
       expect(find.text('Previous customer'), findsWidgets);
       expect(find.text('Transaction unavailable'), findsNothing);
-      await tester.tap(find.text('New'));
+      await tester.tap(find.byTooltip('New transaction'));
       await waitFor(tester, name);
       expect(tester.widget<TextFormField>(name).initialValue, isEmpty);
       expect(find.text('Document captured'), findsNothing);
       await tester.binding.handlePopRoute();
-      await waitFor(tester, find.text('New'));
+      await waitFor(tester, find.byTooltip('New transaction'));
       expect(
         router.routeInformationProvider.value.uri.path,
         '/transaction/existing-capture',
@@ -462,6 +464,11 @@ void main() {
         service.existingCapture!['intake']['document_image'],
         'captured-old',
       );
+      await tester.tap(find.byTooltip('Home'));
+      await waitFor(tester, find.text('Workspace home'));
+      expect(router.routeInformationProvider.value.uri.path, '/');
+      expect(router.canPop(), isFalse);
+      expect(service.existingCapture!['intake']['name'], 'Previous customer');
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
     },

@@ -421,7 +421,7 @@ void main() {
           await tester.pump(const Duration(milliseconds: 1100));
           expect(tester.takeException(), isNull);
           await tester.pump(const Duration(milliseconds: 1200));
-          expectReadableText(tester, 'INVOICE READY', width);
+          expectReadableText(tester, 'BILL READY', width);
           for (final text in [
             'Payment recorded',
             'Customer',
@@ -436,8 +436,8 @@ void main() {
           final paper = find.byKey(const ValueKey('invoice-feed'));
           final printedHeight = tester.getSize(paper).height;
           expect(printedHeight, greaterThan(0));
-          await tester.ensureVisible(find.byTooltip('Replay invoice printing'));
-          await tester.tap(find.byTooltip('Replay invoice printing'));
+          await tester.ensureVisible(find.byTooltip('Replay bill printing'));
+          await tester.tap(find.byTooltip('Replay bill printing'));
           await tester.pump();
           expect(tester.getSize(paper).height, 0);
           await tester.pump(const Duration(milliseconds: 2300));

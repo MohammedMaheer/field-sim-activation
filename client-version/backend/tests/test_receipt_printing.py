@@ -21,13 +21,13 @@ def test_sale_receipt_is_branded_compact_complete_and_private(client):
     response = client.get(f"/api/kyc-captures/{submitted.json()['id']}/receipt")
     assert response.status_code == 200, response.text
     assert response.headers["content-type"].startswith("application/pdf")
-    assert "qanawat-sale-receipt-" in response.headers["content-disposition"]
+    assert "qanawat-reference-bill-" in response.headers["content-disposition"]
     assert response.headers["cache-control"] == "no-store"
     reader = PdfReader(io.BytesIO(response.content))
     text = " ".join(page.extract_text() for page in reader.pages)
     assert len(reader.pages) <= 2
     assert "Qanawat Connect Solutions LLC" in text
-    for value in ("SALE RECEIPT", "Same customer", "Monthly charge", "325", "Prepayment on order", "0",
+    for value in ("REFERENCE BILL", "Same customer", "Monthly charge", "325", "Prepayment on order", "0",
                   "Nationality", "Order details screen", "Not recorded", "SR verification"):
         assert value in text
     assert body["intake"]["order_reference"] in "".join(text.split())
@@ -68,7 +68,7 @@ def test_print_preparation_rechecks_effective_export_permission_and_scope(client
     url = f"/api/kyc-captures/{submitted['id']}/print-data"
     response = client.get(url)
     assert response.status_code == 200 and 'no-store' in response.headers['cache-control']
-    assert response.json()['invoice']['sections']
+    assert response.json()['invoice']['sections'][0]['title'] == 'Reference bill'
     assert response.json()['invoice']['sr_verification']['verified_at'] == '2026-10-11T08:00:00'
     assert 'images' not in response.json() and 'lines' not in response.json()
     login(client, 'agent2')

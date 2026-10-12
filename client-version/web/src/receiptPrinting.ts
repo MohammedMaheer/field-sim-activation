@@ -16,16 +16,28 @@ function privateValue(label: string, value: unknown) {
   return string || "Not recorded";
 }
 
+/** Normalize cached projections without changing the compatible invoice API key. */
+export function referenceBillSections(sections: Row[]) {
+  return sections.map((section) => ({
+    ...section,
+    title: section.title === "Invoice" ? "Reference bill" : section.title,
+    fields: (section.fields || []).map((field: Row) => ({
+      ...field,
+      label: field.label === "Invoice number" ? "Reference bill number" : field.label,
+    })),
+  }));
+}
+
 /** A separate paper document avoids portal overflow, closed details and animation styles. */
 export function receiptPrintDocument(capture: Row) {
   const intake = capture.intake || {};
   const sale = intake.capture_mode === "SCREENSHOT_SALE";
   const payment = capture.document_kind === "PAYMENT_CONFIRMATION";
-  const title = sale ? "Sale receipt" : payment ? "Payment invoice" : "Activation receipt";
+  const title = sale || payment ? "Reference bill" : "Activation receipt";
   const status = sale ? activationLabel(capture) : capture.invoice?.heading ||
     (capture.status === "VERIFIED" ? "Receipt verified" : capture.status === "REJECTED" ? "Correction required" : "Final review pending");
   const projected: Row[] = Array.isArray(capture.invoice?.sections) ? capture.invoice.sections : [];
-  const sections = projected.length ? projected : [
+  const sections = projected.length ? referenceBillSections(projected) : [
     { title: "Receipt", fields: [
       { label: "Reference", value: capture.source_reference },
       { label: "Date", value: capture.created_at },

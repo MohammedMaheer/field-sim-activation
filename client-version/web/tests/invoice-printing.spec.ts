@@ -6,7 +6,7 @@ test('phone invoice feeds down and supporting records stay collapsed', async ({p
   await page.getByRole('tab', {name:'Capture',exact:true}).click();
   await page.getByRole('button', {name:'History',exact:true}).click();
   await page.getByText(/^PAY-/).first().click();
-  const replay = page.getByRole('button', {name:'Replay invoice printing',exact:true});
+  const replay = page.getByRole('button', {name:'Replay reference bill printing',exact:true});
   await expect(replay).toBeVisible();
   await page.waitForTimeout(2400);
   await page.screenshot({path:'../output/qa/invoice-39-phone-complete.png'});
