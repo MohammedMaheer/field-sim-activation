@@ -57,8 +57,10 @@ final router = GoRouter(
     GoRoute(path: '/ekyc', builder: (c, s) => const KycCaptureScreen()),
     GoRoute(
       path: '/sales-management',
-      builder: (c, s) =>
-          SalesManagementScreen(selectedId: s.uri.queryParameters['selected']),
+      builder: (c, s) => SalesManagementScreen(
+        selectedId: s.uri.queryParameters['selected'],
+        initialTab: s.uri.queryParameters['tab'] == 'targets' ? 2 : 0,
+      ),
     ),
     GoRoute(path: '/assets', builder: (c, s) => const FieldAssetsScreen()),
     GoRoute(
@@ -901,7 +903,8 @@ class HomeScreen extends ConsumerWidget {
                       (d['sales_performance']?['daily_target'] ?? d['target'])
                           .toString(),
                       Icons.flag_outlined,
-                      onTap: () => context.push('/reports'),
+                      onTap: () =>
+                          context.push('/sales-management?tab=targets'),
                       accent: const Color(0xFFB47721),
                     ),
                   ),

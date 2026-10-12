@@ -7,15 +7,19 @@ from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select, func
 from sqlalchemy.exc import IntegrityError
 from .db import Agent, Branch, Outlet, Role, User, Session, get_db
-from .security import lifecycle_row_for_update, principal, password_hash
+from .security import lifecycle_row_for_update, principal, password_hash, require
 from .services import audit
 
 router = APIRouter(prefix="/api/organization")
 
 
-def administrator(db, user):
-    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
+def administrator(db, user, *, write=True):
+    role = db.get(Role, user.role_id).name
+    if role not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only administrators and backend staff can manage the organization")
+    require(db, user, "read")
+    if write:
+        require(db, user, "settings.write" if role == "Administrator" else "task.write")
 
 
 def leader_view(db, leader):
@@ -60,7 +64,7 @@ def capture_assignment(db, agent_id):
 
 @router.get("")
 def directory(db=Depends(get_db), user=Depends(principal)):
-    administrator(db, user)
+    administrator(db, user, write=False)
     leaders = db.scalars(
         select(User).join(Role).where(Role.name == "Team Leader").order_by(User.name)
     ).all()
@@ -245,7 +249,7 @@ def branch_leaders(db, branch_id):
 
 @router.get("/branches/{branch_id}/leaders")
 def leader_management(branch_id: str, db=Depends(get_db), user=Depends(principal)):
-    administrator(db, user)
+    administrator(db, user, write=False)
     branch = db.get(Branch, branch_id)
     if not branch:
         raise HTTPException(404, "Branch not found")

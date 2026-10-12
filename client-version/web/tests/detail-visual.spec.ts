@@ -9,9 +9,10 @@ test('record names open useful details and restore focus at both widths',async({
  await authenticate(page);
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:960});
-  for(const [route,title] of [['/customers','Customer directory details'],['/incentives','Incentive details']]){
+  for(const [route,title] of [['/customers','Customer details'],['/incentives','Incentive details']]){
    await page.goto(route);
    if(route==='/incentives') {
+    await page.locator('.incentive-recorded-history > summary').click();
     // Current-month entries can be empty after the calendar changes. Inspect a
     // recorded period without creating incentives or changing client formulas.
     await expect(page.getByRole('heading',{name:'Incentive history',exact:true})).toBeVisible();
@@ -39,8 +40,9 @@ test('live roster fits desktop and displays valid synchronization times',async({
  await expect(page.getByText('Invalid Date',{exact:true})).toHaveCount(0);
  const table=page.locator('.table-scroll');expect(await table.evaluate(el=>el.scrollWidth<=el.clientWidth)).toBeTruthy();
  await page.goto('/reports');
- const cards=page.locator('.report-card').filter({has:page.getByRole('button',{name:'CSV',exact:true})});
+ const cards=page.locator('.report-card').filter({has: page.getByRole('button')});
  await expect(cards.first()).toBeVisible();
+ await expect.poll(async()=>cards.evaluateAll(els=>els.every(el=>getComputedStyle(el).opacity==='1'))).toBe(true);
  const positions=await cards.evaluateAll(els=>els.map(el=>({top:el.getBoundingClientRect().top,bottom:el.querySelector('button')!.getBoundingClientRect().bottom})));
  expect(positions.length).toBeGreaterThanOrEqual(5);
  let alignedPairs=0;

@@ -94,7 +94,7 @@ def deliver_pending(limit=10):
             agent = db.get(Agent, sale.agent_id) if sale else None
             from .sales_management import permitted
             from .sr_verification import sale_state
-            eligible = person and sale and agent and item.user_id in {agent.user_id, sale.leader_id} and permissions(db, person) and permitted(db, person, sale)
+            eligible = person and sale and agent and item.user_id in {agent.user_id, sale.leader_id} and "read" in permissions(db, person) and permitted(db, person, sale)
             if eligible and item.user_id == agent.user_id and agent.employment_status != "ACTIVE":
                 eligible = False
             if not eligible or sale_state(db, sale)["status"] == "MATCHED":

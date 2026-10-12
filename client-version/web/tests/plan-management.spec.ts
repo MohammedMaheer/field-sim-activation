@@ -55,7 +55,7 @@ test("administrator manages plans and field selections stay in sync", async ({ p
   await expect(created).toHaveCount(0);
 
   await page.goto("/agents");
-  await page.getByRole("button", { name: "Add agent" }).click();
+  await page.getByRole("button", { name: "Add sales agent", exact: true }).click();
   const email = page.getByLabel("Sign-in email");
   const password = page.locator('input[name="password"]');
   await expect(email).toBeVisible();

@@ -13,6 +13,7 @@ class StockRequestService extends RelayService {
       'id': 'agent-test',
       'agent_id': 'agent-test',
       'role': 'Field Agent',
+      'permissions': ['read', 'inventory.self'],
     };
     dio.interceptors.add(
       InterceptorsWrapper(
@@ -34,6 +35,29 @@ class StockRequestService extends RelayService {
 }
 
 void main() {
+  testWidgets('stock request control follows effective permission revocation', (
+    tester,
+  ) async {
+    final service = StockRequestService();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [serviceProvider.overrideWith((ref) => service)],
+        child: const MaterialApp(home: FieldAssetsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Request stock'), findsOneWidget);
+    service.user = {
+      ...service.user!,
+      'permissions': ['read'],
+    };
+    service.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(find.text('Request stock'), findsNothing);
+    expect(service.submitted, isNull);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
   testWidgets(
     'stock request stays usable on a small phone with keyboard open',
     (tester) async {

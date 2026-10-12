@@ -150,6 +150,7 @@ async function fixture(page: Page, role = "Administrator", grants?: string[]) {
           ? ["read", "activation.write", "ekyc.write"]
           : [
               "read",
+              "task.write",
               "report.read",
               "settings.write",
               "inventory.write",

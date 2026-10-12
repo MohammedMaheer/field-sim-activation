@@ -36,13 +36,13 @@ void main() {
         await t.pump(const Duration(milliseconds: 200));
       }
       if (service.user != null) await service.logout();
-      await wait(t, find.text('Sign in to Relay'));
+      await wait(t, find.text('Sign in to Qanawat'));
       await t.enterText(find.byType(TextField).first, 'agent1@relay.demo');
       await t.enterText(
         find.byType(TextField).at(1),
         const String.fromEnvironment('TEST_PASSWORD'),
       );
-      await tap(t, 'Sign in to Relay');
+      await tap(t, 'Sign in to Qanawat');
       await wait(t, find.text('Your day, at a glance'));
       expect(find.text('New activation'), findsNothing);
       expect(find.text('Activate'), findsNothing);
@@ -50,11 +50,11 @@ void main() {
       await t.pump();
       await binding.takeScreenshot('client-home');
       app.router.push('/records');
-      await wait(t, find.text('Activation records'));
+      await wait(t, find.text('Historical activations'));
       app.router.pop();
       await t.pump(const Duration(milliseconds: 400));
       await tap(t, 'Stock');
-      await wait(t, find.text('My SIM stock'));
+      await wait(t, find.text('Branch SIM stock'));
       await t.pump(const Duration(milliseconds: 500));
       await binding.takeScreenshot('client-stock');
       final stock = await service.list('inventory');
@@ -107,7 +107,7 @@ void main() {
       expect(service.user, isNull);
       expect(await service.store.secure.read(key: 'relay_refresh'), isNull);
       service.dio.options.baseUrl = original;
-      await wait(t, find.text('Sign in to Relay'));
+      await wait(t, find.text('Sign in to Qanawat'));
     },
   );
 }

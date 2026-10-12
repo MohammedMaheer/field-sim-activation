@@ -62,7 +62,7 @@ async function commissionFixture(page: Page) {
           id: "sample-admin",
           name: "Sample Administrator",
           role: "Administrator",
-          permissions: ["incentive.write"],
+          permissions: ["read", "incentive.write"],
         },
       };
     else if (path === "/api/notifications") data = { items: [], unread: 0 };

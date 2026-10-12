@@ -41,6 +41,29 @@ const month = businessPeriod();
 export default function SalesManagement() {
   const { user, notify } = useContext(Context);
 
+  const granted = new Set<string>(user.permissions || []);
+  const hasRead = granted.has("read");
+  const managementRole = ["Administrator", "Operations Manager"].includes(
+    user.role,
+  );
+  const canViewStaff = managementRole && hasRead;
+  const canManageStaff =
+    canViewStaff &&
+    granted.has(
+      user.role === "Administrator" ? "settings.write" : "task.write",
+    );
+  const canCorrectSales =
+    managementRole && hasRead && granted.has("compliance.write");
+  const canRecord =
+    hasRead &&
+    granted.has("ekyc.write") &&
+    ["Field Agent", "Operations Manager"].includes(user.role);
+  const canSetTargets =
+    hasRead &&
+    granted.has("task.write") &&
+    ["Administrator", "Operations Manager", "Team Leader"].includes(user.role);
+  const canVerifySR = hasRead && granted.has("compliance.write");
+
   const queryClient = useQueryClient();
 
   const [params] = useSearchParams();
@@ -140,7 +163,7 @@ export default function SalesManagement() {
       api(
         `/sales-management/staff?branch_id=${encodeURIComponent(branchFilter)}`,
       ),
-    enabled: tab === "staff",
+    enabled: tab === "staff" && canViewStaff,
   });
 
   const branches = useQuery<Row[]>({
@@ -158,12 +181,14 @@ export default function SalesManagement() {
     queryFn: () => api(`/sales-management/performance?${filters}`),
   });
 
-  const canManage = ["Administrator", "Operations Manager"].includes(user.role);
-
-  const canRecord = ["Field Agent", "Operations Manager"].includes(user.role);
-
-  const canSetTargets = canManage || user.role === "Team Leader";
-  const canVerifySR = user.permissions?.includes("compliance.write");
+  useEffect(() => {
+    if (
+      (tab === "staff" && !canViewStaff) ||
+      (tab === "import" && !canCorrectSales) ||
+      (tab === "sr" && !canVerifySR)
+    )
+      setTab("sales");
+  }, [tab, canViewStaff, canCorrectSales, canVerifySR]);
 
   const agentOptions = (agents.data || []).filter(
     (row) => !branchFilter || row.branch_id === branchFilter,
@@ -313,7 +338,9 @@ export default function SalesManagement() {
             onChange={(e) => setPeriod(e.target.value)}
           />
         </label>
-        {user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read") && (
+        {user.permissions.includes(
+          user.role === "Field Agent" ? "read" : "report.read",
+        ) && (
           <ExportActions
             path={`/sales-management/export?${filters}`}
             name="qanawat-sales-records"
@@ -415,8 +442,8 @@ export default function SalesManagement() {
             "targets",
             "calls",
             ...(canVerifySR ? ["sr"] : []),
-            ...(canManage ? ["import"] : []),
-            ...(canManage ? ["staff"] : []),
+            ...(canCorrectSales ? ["import"] : []),
+            ...(canViewStaff ? ["staff"] : []),
           ] as Tab[]
         ).map((item) => (
           <button
@@ -463,7 +490,7 @@ export default function SalesManagement() {
             )}
           </div>
 
-          {newSale && (
+          {newSale && canRecord && (
             <form
               className="sales-form"
               onSubmit={(e) =>
@@ -567,7 +594,7 @@ export default function SalesManagement() {
             </form>
           )}
 
-          {correctingSale && canManage && (
+          {correctingSale && canCorrectSales && (
             <form
               className="sales-form compact"
               onSubmit={correctSale}
@@ -734,7 +761,7 @@ export default function SalesManagement() {
                     <th>Request ID</th>
                     <th>Status / SR verification</th>
                     <th>Recorded</th>
-                    {canManage && <th>Action</th>}
+                    {canCorrectSales && <th>Action</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -767,7 +794,7 @@ export default function SalesManagement() {
                         <ActivationStatus row={row} />
                       </td>
                       <td>{new Date(row.created_at).toLocaleDateString()}</td>
-                      {canManage && (
+                      {canCorrectSales && (
                         <td>
                           <button
                             onClick={() => {
@@ -830,7 +857,7 @@ export default function SalesManagement() {
             )}
           </div>
 
-          {newFeedback && (
+          {newFeedback && canRecord && (
             <form
               className="sales-form"
               onSubmit={(e) =>
@@ -1014,52 +1041,59 @@ export default function SalesManagement() {
       {tab === "calls" && <CallWorkspace embedded />}
       {tab === "sr" && canVerifySR && <SRVerification />}
 
-      {tab === "staff" && canManage && (
+      {tab === "staff" && canViewStaff && (
         <section className="panel sales-section">
           <h2>Sales and call staff</h2>
-          <form
-            className="sales-form compact"
-            onSubmit={(e) => {
-              const form = e.currentTarget;
-              submitForm(e, "/sales-management/staff", () => form.reset());
-            }}
-          >
-            <label>
-              Name
-              <input name="name" minLength={2} required />
-            </label>
-            <label>
-              Sign-in email
-              <input name="email" type="email" required />
-            </label>
-            <label>
-              Role
-              <select name="role" required>
-                <option>Sales Manager</option>
-                <option>Tele Verification Officer</option>
-                <option>Welcome Call Officer</option>
-              </select>
-            </label>
-            <label>
-              Branch
-              <select name="branch_id">
-                <option value="">All branches</option>
-                {branches.data?.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Password
-              <input name="password" type="password" minLength={10} required />
-            </label>
-            <button className="primary" disabled={busy}>
-              Add staff
-            </button>
-          </form>
-          {editingStaff && (
+          {canManageStaff && (
+            <form
+              className="sales-form compact"
+              onSubmit={(e) => {
+                const form = e.currentTarget;
+                submitForm(e, "/sales-management/staff", () => form.reset());
+              }}
+            >
+              <label>
+                Name
+                <input name="name" minLength={2} required />
+              </label>
+              <label>
+                Sign-in email
+                <input name="email" type="email" required />
+              </label>
+              <label>
+                Role
+                <select name="role" required>
+                  <option>Sales Manager</option>
+                  <option>Tele Verification Officer</option>
+                  <option>Welcome Call Officer</option>
+                </select>
+              </label>
+              <label>
+                Branch
+                <select name="branch_id">
+                  <option value="">All branches</option>
+                  {branches.data?.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Password
+                <input
+                  name="password"
+                  type="password"
+                  minLength={10}
+                  required
+                />
+              </label>
+              <button className="primary" disabled={busy}>
+                Add staff
+              </button>
+            </form>
+          )}
+          {editingStaff && canManageStaff && (
             <form
               className="sales-form compact"
               onSubmit={(e) =>
@@ -1119,7 +1153,7 @@ export default function SalesManagement() {
                     <th>Role</th>
                     <th>Branch</th>
                     <th>Sign-in email</th>
-                    <th>Action</th>
+                    {canManageStaff && <th>Action</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -1129,11 +1163,13 @@ export default function SalesManagement() {
                       <td>{person.role}</td>
                       <td>{person.branch}</td>
                       <td>{person.email}</td>
-                      <td>
-                        <button onClick={() => setEditingStaff(person)}>
-                          Edit assignment
-                        </button>
-                      </td>
+                      {canManageStaff && (
+                        <td>
+                          <button onClick={() => setEditingStaff(person)}>
+                            Edit assignment
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -1143,7 +1179,7 @@ export default function SalesManagement() {
         </section>
       )}
 
-      {tab === "import" && canManage && (
+      {tab === "import" && canCorrectSales && (
         <section className="panel sales-section sales-import">
           <h2>Update sale statuses</h2>
           <p>

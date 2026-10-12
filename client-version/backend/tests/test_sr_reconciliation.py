@@ -355,6 +355,42 @@ def test_email_delivery_revalidates_recipient_and_resolved_state(client, monkeyp
             db.commit()
 
 
+@pytest.mark.parametrize("recipient", ["agent", "leader"])
+def test_email_alert_is_not_sent_after_sale_read_grant_is_removed(client, monkeypatch, recipient):
+    from app import email_delivery
+    identifier = make_sale(client, "SR-REVOKED-READ")
+    with DB() as db:
+        sale = db.get(SalesRecord, identifier)
+        person = db.get(User, db.get(Agent, sale.agent_id).user_id if recipient == "agent" else sale.leader_id)
+        user_id, previous_email, role_id = person.id, person.email, person.role_id
+        person.email = f"synthetic.{recipient}@relay.example.org"
+        db.commit()
+    delivered = []
+    monkeypatch.setattr(email_delivery, "smtp_send", lambda *args: delivered.append(args))
+    monkeypatch.setenv("SMTP_ENABLED", "true")
+    monkeypatch.setenv("SMTP_HOST", "localhost")
+    monkeypatch.setenv("SMTP_FROM", "relay@example.test")
+    saved_grant = None
+    try:
+        apply_report(client, "sr_number\nOTHER\n")
+        with DB() as db:
+            grant = db.scalar(select(Permission).where(Permission.role_id == role_id, Permission.name == "read"))
+            saved_grant = {"id": grant.id, "role_id": grant.role_id, "name": grant.name, "created_at": grant.created_at}
+            db.delete(grant)
+            db.commit()
+        assert deliver_pending() == 0
+        assert not delivered
+        with DB() as db:
+            message = db.scalar(select(EmailOutbox).where(EmailOutbox.user_id == user_id))
+            assert message.status == "SKIPPED" and not message.sent_at
+    finally:
+        with DB() as db:
+            db.get(User, user_id).email = previous_email
+            if saved_grant and not db.get(Permission, saved_grant["id"]):
+                db.add(Permission(**saved_grant))
+            db.commit()
+
+
 def test_sr_excel_accepts_text_identifiers_and_rejects_formulas(client):
     from openpyxl import Workbook
     make_sale(client, "00000123")

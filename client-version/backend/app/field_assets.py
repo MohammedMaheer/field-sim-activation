@@ -10,7 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 
 from .db import Audit, Agent, Branch, FieldAsset, FieldAssetMovement, FieldAssetRequest, Movement, Outlet, Role, Session, Sim, SimProgress, StockThreshold, User, get_db, now
-from .security import active_agent, agent_for_update, assert_agent, permissions, principal, visible_agents
+from .security import active_agent, agent_for_update, assert_agent, permissions, principal, visible_agents, require
 from .services import audit
 
 router = APIRouter(prefix="/api/field-assets", tags=["Field assets"])
@@ -25,6 +25,8 @@ def role(db, user):
 def may_manage(db, user):
     if role(db, user) not in MANAGERS:
         raise HTTPException(403, "Only stock managers can change field assets")
+    require(db, user, "read")
+    require(db, user, "inventory.write")
 
 
 def asset_scope(db, user):
@@ -345,8 +347,8 @@ class AgentTransfer(BusinessInput):
 
 @router.post("/agents/{agent_id}/transfer")
 def transfer_agent(agent_id: str, body: AgentTransfer, request: Request, user=Depends(principal), db=Depends(get_db)):
-    if role(db, user) not in {"Administrator", "Operations Manager"}:
-        raise HTTPException(403, "Only administrators and backend staff can transfer agents")
+    from .organization import administrator
+    administrator(db, user)
     agent = agent_for_update(db, agent_id)
     outlet = db.scalar(select(Outlet).where(Outlet.branch_id == body.branch_id).order_by(Outlet.created_at).limit(1))
     if not agent or not outlet:
@@ -403,6 +405,8 @@ class AgentExit(BusinessInput):
 def exit_agent(agent_id: str, body: AgentExit, request: Request, user=Depends(principal), db=Depends(get_db)):
     if role(db, user) != "Administrator":
         raise HTTPException(403, "Only administrators can close agent access")
+    from .organization import administrator
+    administrator(db, user)
     agent = agent_for_update(db, agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
@@ -566,8 +570,12 @@ def requests(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
 
 @router.post("/requests", status_code=201)
 def create_request(body: RequestCreate, request: Request, user=Depends(principal), db=Depends(get_db)):
-    if role(db, user) not in {"Field Agent", "Team Leader", "Administrator", "Operations Manager"}:
+    name = role(db, user)
+    if name not in {"Field Agent", "Team Leader", "Administrator", "Operations Manager"}:
         raise HTTPException(403, "Your role cannot request agent stock")
+    require(db, user, "read")
+    require(db, user, "inventory.self" if name == "Field Agent" else
+            "task.write" if name == "Team Leader" else "inventory.write")
     assert_agent(db, user, body.agent_id)
     agent = db.get(Agent, body.agent_id)
     outlet = db.get(Outlet, agent.outlet_id)

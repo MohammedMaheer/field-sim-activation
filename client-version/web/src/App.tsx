@@ -108,6 +108,8 @@ import {
   setAccess,
   stream,
   Row,
+  canManageOrganization,
+  canManageMasterData,
 } from "./api";
 import {
   Badge,
@@ -1008,6 +1010,7 @@ function LiveOperations() {
       <Panel
         title="Field activity"
         subtitle="Latest synchronized status from your assigned teams"
+        className="live-roster"
       >
         <DataTable
           rows={agents.filter((a) =>
@@ -1112,7 +1115,7 @@ function AgentDrawer({
 
           "Inventory",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
-          ...(["Administrator", "Operations Manager"].includes(user.role)
+          ...(canManageOrganization(user)
             ? ["Manage"]
             : []),
         ].map((t) => (
@@ -1131,7 +1134,7 @@ function AgentDrawer({
       >
         View product targets
       </Link>
-      {tab === "Manage" ? (
+      {tab === "Manage" && canManageOrganization(user) ? (
         <AgentManagement
           agentId={a.id}
           onSaved={() => {
@@ -1434,10 +1437,10 @@ function ResourcePage({ resource }: { resource: string }) {
   if (error) return <ErrorState error={error} retry={refetch} />;
   return (
     <>
-      {setup && (
+      {setup && canManageOrganization(user) && (
         <OrganizationSetup initial={setup} onClose={() => setSetup(null)} />
       )}
-      {manageRecords && (
+      {manageRecords && canManageMasterData(user, resource) && (
         <Drawer
           title={
             resource === "inventory"
@@ -1449,7 +1452,7 @@ function ResourcePage({ resource }: { resource: string }) {
           <Administration embedded section={resource} />
         </Drawer>
       )}
-      {importStock && (
+      {importStock && user.role === 'Administrator' && user.permissions.includes('inventory.write') && (
         <InventoryImport
           onClose={() => setImportStock(false)}
           onImported={() =>
@@ -1462,7 +1465,7 @@ function ResourcePage({ resource }: { resource: string }) {
         title={config.title}
         description={config.description}
       >
-        {["Administrator", "Operations Manager"].includes(user.role) &&
+        {canManageOrganization(user) &&
           ["agents", "branches"].includes(resource) && (
             <button
               className="primary"
@@ -1486,7 +1489,7 @@ function ResourcePage({ resource }: { resource: string }) {
             </>
           )}
         {resource === "customers" &&
-          ["Administrator", "Operations Manager"].includes(user.role) && (
+          canManageOrganization(user) && (
             <button onClick={() => setManageRecords(true)}>
               <Settings size={16} /> Manage customers
             </button>
@@ -1606,7 +1609,7 @@ function BranchDrawer({
           completed_sales: branch.closed_sales,
         }}
       />
-      {["Administrator", "Operations Manager"].includes(user.role) && (
+      {canManageOrganization(user) && (
         <BranchLeaderEditor branchId={branch.id} />
       )}
       {isPending ? (

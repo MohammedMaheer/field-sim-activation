@@ -10,7 +10,7 @@ from .db import Base, Agent, Branch, Customer, FieldTask, Incentive, Movement, O
 from .stock_categories import validate_category
 from .organization import administrator
 from .proposal import valid_amount, valid_period
-from .security import active_agent, lifecycle_row_for_update, principal
+from .security import active_agent, lifecycle_row_for_update, principal, require
 from .services import audit, raw
 
 router = APIRouter(prefix="/api/administration", tags=["Administration"])
@@ -35,8 +35,12 @@ class Change(BaseModel):
     reason: str = Field(min_length=5, max_length=300)
 
 
-def locked(db, user):
-    administrator(db, user)
+def locked(db, user, kind):
+    administrator(db, user, write=False)
+    if kind in {"inventory", "incentives"}:
+        require(db, user, "inventory.write" if kind == "inventory" else "incentive.write")
+    else:
+        administrator(db, user)
     # Serializes admin master-data edits/deletions and organization provisioning.
     db.execute(select(Role).where(Role.id == user.role_id).with_for_update()).scalar_one()
 
@@ -63,7 +67,7 @@ def view(row, kind, db):
 
 @router.get("/{kind}")
 def listing(kind: Kind, user=Depends(principal), db=Depends(get_db)):
-    administrator(db, user)
+    administrator(db, user, write=False)
     query = select(MODELS[kind]).order_by(MODELS[kind].created_at.desc())
     if kind == "teams":
         query = query.join(Role).where(Role.name == "Team Leader")
@@ -180,7 +184,7 @@ def validated(db, kind, values, row=None):
 
 @router.post("/{kind}", status_code=201)
 def create(kind: Kind, body: Change, request: Request, user=Depends(principal), db=Depends(get_db)):
-    locked(db, user)
+    locked(db, user, kind)
     if kind in {"branches", "teams", "outlets", "agents"}:
         raise HTTPException(422, "Use field network setup to create this record")
     values = validated(db, kind, body.values)
@@ -204,7 +208,7 @@ def create(kind: Kind, body: Change, request: Request, user=Depends(principal), 
 
 @router.patch("/{kind}/{record_id}")
 def update(kind: Kind, record_id: str, body: Change, request: Request, user=Depends(principal), db=Depends(get_db)):
-    locked(db, user)
+    locked(db, user, kind)
     row = item(db, kind, record_id)
     values = validated(db, kind, body.values, row)
     before = view(row, kind, db)
@@ -232,7 +236,7 @@ def update(kind: Kind, record_id: str, body: Change, request: Request, user=Depe
 def remove(kind: Kind, record_id: str, body: Change, request: Request, user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name != "Administrator":
         raise HTTPException(403, "Only administrators can permanently delete records")
-    locked(db, user)
+    locked(db, user, kind)
     row = item(db, kind, record_id)
     if kind in {"inventory", "tasks", "incentives"}:
         raise HTTPException(409, "Use stock movements, task completion or incentive history; these records are retained")

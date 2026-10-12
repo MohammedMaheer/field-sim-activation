@@ -1506,14 +1506,14 @@ class AgentManagement(BaseModel):
     reason: str = Field(min_length=5, max_length=300)
 
 
-def admin_only(db, user):
-    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
-        raise HTTPException(403, "Only an administrator can manage agent assignments")
+def admin_only(db, user, *, write=True):
+    from .organization import administrator
+    administrator(db, user, write=write)
 
 
 @app.get("/api/agents/{agent_id}/management")
 def agent_management(agent_id: str, user=Depends(principal), db=Depends(get_db)):
-    admin_only(db, user)
+    admin_only(db, user, write=False)
     assert_agent(db, user, agent_id)
     return {
         "agent": agent_view(db, db.get(Agent, agent_id)),

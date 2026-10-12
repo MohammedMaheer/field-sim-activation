@@ -19,8 +19,13 @@ String salesReportingPeriod(DateTime instant) => instant
     .substring(0, 7);
 
 class SalesManagementScreen extends ConsumerStatefulWidget {
-  const SalesManagementScreen({super.key, this.selectedId});
+  const SalesManagementScreen({
+    super.key,
+    this.selectedId,
+    this.initialTab = 0,
+  });
   final String? selectedId;
+  final int initialTab;
   @override
   ConsumerState<SalesManagementScreen> createState() =>
       _SalesManagementScreenState();
@@ -43,6 +48,7 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
   @override
   void initState() {
     super.initState();
+    tab = widget.initialTab;
     load().then((_) {
       if (mounted && widget.selectedId != null) {
         saleDetails({'id': widget.selectedId});
@@ -512,12 +518,21 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
     ) {
       load();
     });
-    final isAgent = ref.watch(serviceProvider).user?['agent_id'] != null;
-    final canSet = [
-      'Administrator',
-      'Operations Manager',
-      'Team Leader',
-    ].contains(ref.watch(serviceProvider).user?['role']);
+    final currentUser = ref.watch(serviceProvider).user;
+    final grants = (currentUser?['permissions'] as List? ?? []).cast<String>();
+    final isAgent =
+        currentUser?['agent_id'] != null &&
+        currentUser?['role'] == 'Field Agent' &&
+        grants.contains('read') &&
+        grants.contains('ekyc.write');
+    final canSet =
+        [
+          'Administrator',
+          'Operations Manager',
+          'Team Leader',
+        ].contains(currentUser?['role']) &&
+        grants.contains('read') &&
+        grants.contains('task.write');
     final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
     final compact = MediaQuery.sizeOf(context).width < 360 || textScale > 1.2;
     return Scaffold(

@@ -38,7 +38,7 @@ void main() {
       for (final screen in ['Home', 'Stock']) {
         if (screen == 'Stock') {
           await t.tap(find.text('Stock').last);
-          await wait(find.text('My SIM stock'));
+          await wait(find.text('Branch SIM stock'));
         }
         await t.pump(const Duration(milliseconds: 500));
         // Observe real scheduled sync over more than one 20-second interval.

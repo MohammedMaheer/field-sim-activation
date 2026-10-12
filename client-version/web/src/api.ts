@@ -1,4 +1,14 @@
 export type Row = Record<string, any>;
+export function canManageOrganization(user: Row): boolean {
+  return ['Administrator', 'Operations Manager'].includes(user.role) &&
+    user.permissions?.includes('read') &&
+    user.permissions?.includes(user.role === 'Administrator' ? 'settings.write' : 'task.write');
+}
+export function canManageMasterData(user: Row, kind: string): boolean {
+  if (!['Administrator', 'Operations Manager'].includes(user.role) || !user.permissions?.includes('read')) return false;
+  return kind === 'inventory' ? user.permissions.includes('inventory.write') :
+    kind === 'incentives' ? user.permissions.includes('incentive.write') : canManageOrganization(user);
+}
 let access = "";
 let refreshPromise: Promise<any> | null = null;
 export function setAccess(token: string) {

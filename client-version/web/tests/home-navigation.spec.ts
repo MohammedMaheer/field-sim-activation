@@ -15,7 +15,8 @@ test('dashboard shortcuts open their matching destinations', async ({page,reques
  await expect(page.getByText('Inventory',{exact:true}).first()).toBeVisible();
  await page.getByRole('button',{name:'Back',exact:true}).click();
  await page.getByRole('button',{name:/Daily target/}).click();
- await expect(page.getByText('Daily report',{exact:true}).first()).toBeVisible();
+ await expect(page.getByText('Sales management',{exact:true}).first()).toBeVisible();
+ await expect(page.getByRole('tab',{name:'Targets',exact:true}).or(page.getByRole('button',{name:'Targets',exact:true}))).toBeVisible();
  await page.getByRole('button',{name:'Back',exact:true}).click();
  await page.getByRole('button',{name:/Awaiting verification/}).click();
  await expect(page.getByText('Transactions',{exact:true}).first()).toBeVisible();

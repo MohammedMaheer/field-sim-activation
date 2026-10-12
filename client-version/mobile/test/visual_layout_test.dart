@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/main.dart' as app;
 import 'package:relay_agent/services.dart';
+import 'package:relay_agent/role_access.dart';
 
 // Optional visual evidence run. The scoped synthetic API snapshot lives outside Git.
 // Run with --dart-define=VISUAL_FIXTURE=../output/qa/mobile-visual-fixture.json.
@@ -24,6 +25,7 @@ class MemoryStore extends OfflineStore {
 
 class VisualService extends RelayService {
   final memoryStore = MemoryStore();
+  final missingRequests = <String>[];
   @override
   OfflineStore get store => memoryStore;
   VisualService(Json fixture) {
@@ -32,6 +34,7 @@ class VisualService extends RelayService {
       InterceptorsWrapper(
         onRequest: (options, handler) {
           if (!fixture.containsKey(options.path)) {
+            missingRequests.add(options.path);
             handler.reject(
               DioException(
                 requestOptions: options,
@@ -83,14 +86,19 @@ void main() {
       ),
     );
     Future<void> shot(String name) async {
-      await t.pumpAndSettle();
+      // Live scanner motion is intentionally continuous. Waiting for every
+      // animation to stop would time out before evaluating the capture page.
+      for (var frame = 0; frame < 15; frame++) {
+        await t.pump(const Duration(milliseconds: 100));
+      }
+      expect(service.missingRequests, isEmpty, reason: name);
       expect(t.takeException(), isNull, reason: name);
       final target =
           boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary;
       await t.runAsync(() async {
         final image = await target.toImage();
         final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
-        final file = File('../output/qa/flutter-render/$name.png');
+        final file = File('../output/qa/audit77-mobile-render/$name.png');
         file.parent.createSync(recursive: true);
         file.writeAsBytesSync(bytes!.buffer.asUint8List());
         image.dispose();
@@ -103,7 +111,7 @@ void main() {
     await shot('home');
     await t.drag(find.byType(Scrollable).first, const Offset(0, -650));
     await shot('home-lower');
-    for (final tab in ['Orders', 'Stock', 'Profile']) {
+    for (final tab in ['Activations', 'Stock', 'Profile']) {
       await t.tap(find.text(tab).last);
       await shot(tab.toLowerCase());
     }
@@ -134,13 +142,46 @@ void main() {
       '/customers',
       '/reports',
       '/support',
+      '/sales-management',
+      '/assets',
+      '/notifications',
+      '/drafts',
     ]) {
+      if (!canVisitMobilePage(path, service.user)) continue;
       app.router.push(path);
       await shot(path.substring(1));
-      if (path == '/incentives' || path == '/customers') {
+      if (path == '/incentives') {
+        await t.tap(find.text('Rate tables'));
+        expect(
+          DefaultTabController.of(t.element(find.byType(TabBar))).index,
+          1,
+        );
+        await shot('incentive-rates');
+        await t.tap(find.text('History'));
+        expect(
+          DefaultTabController.of(t.element(find.byType(TabBar))).index,
+          2,
+        );
+        await shot('incentive-history');
+      }
+      if (((path == '/incentives' &&
+                  (fixture['/incentives'] as List).isNotEmpty) ||
+              path == '/customers') &&
+          find.byType(ListTile).evaluate().isNotEmpty) {
         await t.tap(find.byType(ListTile).first);
         await shot('${path.substring(1)}-details');
-        await t.tap(find.byTooltip('Close details'));
+        if (path == '/customers') {
+          await t.scrollUntilVisible(
+            find.widgetWithText(TextButton, 'Close'),
+            200,
+            scrollable: find.byType(Scrollable).last,
+            maxScrolls: 60,
+          );
+          await shot('customer-history');
+          await t.tap(find.widgetWithText(TextButton, 'Close'));
+        } else {
+          await t.tap(find.byTooltip('Close details'));
+        }
         await t.pumpAndSettle();
       }
       if (path == '/support') {

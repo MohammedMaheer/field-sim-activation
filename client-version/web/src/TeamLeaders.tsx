@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { CheckCheck, Plus, RefreshCw, Users, Store } from "lucide-react";
 import { Context, useResource } from "./App";
-import { api, Row } from "./api";
+import { api, Row, canManageOrganization } from "./api";
 import { Loading, ErrorState, Badge } from "./components";
 import OrganizationSetup, { TeamLeaderEditor } from "./OrganizationSetup";
 import { useBranchScope } from "./BranchScope";
@@ -17,7 +17,7 @@ export default function TeamLeaders() {
   const [setup, setSetup] = useState(false);
   const [editing, setEditing] = useState("");
   const { branch, setBranch } = useBranchScope();
-  const canManage = ["Administrator", "Operations Manager"].includes(user.role);
+  const canManage = canManageOrganization(user);
   const [selected, setSelected] = useState<Row | null>(null);
   const queue = useQuery<Row[]>({
     queryKey: ["leader-confirmations", branch],
@@ -70,10 +70,10 @@ export default function TeamLeaders() {
           )}
         </div>
       </header>
-      {editing && (
+      {editing && canManage && (
         <TeamLeaderEditor leaderId={editing} onClose={() => setEditing("")} />
       )}
-      {setup && (
+      {setup && canManage && (
         <OrganizationSetup initial="teams" onClose={() => setSetup(false)} />
       )}
       {leaders.isPending ? (

@@ -217,12 +217,19 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
       serviceProvider.select((service) => service.branchId),
       (_, _) => load(),
     );
+    final currentUser = ref.watch(serviceProvider).user;
+    final grants = (currentUser?['permissions'] as List? ?? []).cast<String>();
+    final canRequest =
+        currentUser?['agent_id'] != null &&
+        currentUser?['role'] == 'Field Agent' &&
+        grants.contains('read') &&
+        grants.contains('inventory.self');
     return Scaffold(
       appBar: AppBar(
         title: const Text('Assets & supplies'),
         actions: [IconButton(onPressed: load, icon: const Icon(Icons.refresh))],
       ),
-      floatingActionButton: ref.watch(serviceProvider).user?['agent_id'] != null
+      floatingActionButton: canRequest
           ? FloatingActionButton.extended(
               onPressed: requestAsset,
               icon: const Icon(Icons.add),

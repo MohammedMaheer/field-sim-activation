@@ -19,7 +19,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.engine import make_url
 
 qa_name = os.environ.get("RELAY_QA_DATABASE", "")
-if not re.fullmatch(r"relay_(?:ocr\d+_qa|rigorous_qa_\d+)", qa_name):
+if not re.fullmatch(r"relay_(?:ocr\d+_qa|rigorous_qa_\d+|audit77_root)", qa_name):
     raise RuntimeError("OCR contention tests require an explicitly isolated QA database")
 source = make_url(os.environ["DATABASE_URL"])
 if source.database != qa_name:

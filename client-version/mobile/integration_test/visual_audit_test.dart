@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:relay_agent/main.dart' as app;
 import 'package:relay_agent/services.dart';
+import 'package:relay_agent/role_access.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -33,7 +34,7 @@ void main() {
         await t.pump(const Duration(milliseconds: 200));
       }
       if (s.user != null) await s.logout();
-      await wait(find.text('Sign in to Relay'));
+      await wait(find.text('Sign in to Qanawat'));
       await binding.convertFlutterSurfaceToImage();
       await t.pump();
       await shot('login');
@@ -47,7 +48,7 @@ void main() {
       await shot('home');
       await t.drag(find.byType(Scrollable).first, const Offset(0, -650));
       await shot('home-lower');
-      for (final tab in ['Orders', 'Stock', 'Profile']) {
+      for (final tab in ['Activations', 'Stock', 'Profile']) {
         await t.tap(find.text(tab).last);
         await t.pump(const Duration(seconds: 2));
         await shot(tab.toLowerCase());
@@ -61,18 +62,34 @@ void main() {
         '/customers',
         '/reports',
         '/support',
+        '/sales-management',
+        '/assets',
+        '/notifications',
+        '/drafts',
       ]) {
+        if (!canVisitMobilePage(path, s.user)) continue;
         app.router.push(path);
         await t.pump(const Duration(seconds: 3));
         await shot(path.substring(1));
         if (path == '/customers' || path == '/incentives') {
-          await wait(find.byType(ListTile));
-          final tile = find.byType(ListTile).first;
-          await t.tap(tile);
-          await wait(find.byTooltip('Close details'));
-          await shot('${path.substring(1)}-details');
-          await t.tap(find.byTooltip('Close details'));
-          await t.pump(const Duration(milliseconds: 400));
+          if (find.byType(ListTile).evaluate().isNotEmpty) {
+            final tile = find.byType(ListTile).first;
+            await t.tap(tile);
+            await shot('${path.substring(1)}-details');
+            if (path == '/customers') {
+              await t.scrollUntilVisible(
+                find.widgetWithText(TextButton, 'Close'),
+                200,
+                scrollable: find.byType(Scrollable).last,
+                maxScrolls: 60,
+              );
+              await t.tap(find.widgetWithText(TextButton, 'Close'));
+            } else {
+              await wait(find.byTooltip('Close details'));
+              await t.tap(find.byTooltip('Close details'));
+            }
+            await t.pump(const Duration(milliseconds: 400));
+          }
         }
         if (path == '/support') {
           await t.drag(find.byType(Scrollable).first, const Offset(0, -650));

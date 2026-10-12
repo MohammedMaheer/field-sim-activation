@@ -1,6 +1,6 @@
 """Deterministic lifecycle races; run only against an isolated PostgreSQL QA DB.
 
-Set RELAY_QA_DATABASE to a relay_rigorous_qa_* database. DATABASE_URL supplies
+Set RELAY_QA_DATABASE to a relay_rigorous_qa_* or relay_audit77_root database. DATABASE_URL supplies
 the connection and is rewritten to that explicitly allowed database. Each test
 uses fresh synthetic records and removes its business records afterwards;
 the append-only audit history remains intact.
@@ -22,7 +22,7 @@ from fastapi import HTTPException
 
 
 qa_name = os.environ.get("RELAY_QA_DATABASE", "")
-if not re.fullmatch(r"relay_rigorous_qa_\d+", qa_name):
+if not re.fullmatch(r"relay_(?:rigorous_qa_\d+|audit77_root)", qa_name):
     raise RuntimeError("This check requires an explicitly named isolated QA database")
 os.environ["DATABASE_URL"] = make_url(os.environ["DATABASE_URL"]).set(database=qa_name).render_as_string(hide_password=False)
 
@@ -97,7 +97,7 @@ def main():
                 with DB() as db:
                     db.execute(text("SET LOCAL application_name = 'relay_lifecycle_transfer_check'"))
                     db.execute(text("SET LOCAL statement_timeout = '5s'"))
-                    return transfer_agent(agent_id, AgentTransfer(branch_id=branch_ids[1], stock_action="TRANSFER",
+                    return transfer_agent(agent_id, AgentTransfer(branch_id=branch_ids[1], leader_id=account_ids[1], stock_action="TRANSFER",
                         reason="Deterministic synthetic agent transfer"), request, user=db.get(User, admin_id), db=db)
 
             future = executor.submit(transfer)
@@ -145,7 +145,7 @@ def main():
 
             def move_before_lock(db, record_id):
                 with DB() as moving:
-                    transfer_agent(agent_id, AgentTransfer(branch_id=branch_ids[destination], stock_action="TRANSFER",
+                    transfer_agent(agent_id, AgentTransfer(branch_id=branch_ids[destination], leader_id=account_ids[destination], stock_action="TRANSFER",
                         reason="Transfer between target scope checks"), request, user=moving.get(User, admin_id), db=moving)
                 return original_lock(db, record_id)
 

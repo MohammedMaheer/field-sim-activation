@@ -23,7 +23,7 @@ from .db import (
     Agent, Branch, CallAttempt, NoSaleFeedback, Outlet, Role, SalesCallTask, SalesRecord,
     SalesTarget, Session, User, Customer, Sim, SimProgress, Movement, KycCapture, get_db, now, business_date,
 )
-from .security import agent_for_update, assert_agent, cipher, password_hash, permissions, principal
+from .security import agent_for_update, assert_agent, cipher, password_hash, permissions, principal, require
 from .services import audit
 
 router = APIRouter(prefix="/api/sales-management", tags=["Sales management"])
@@ -44,6 +44,7 @@ def router_required(order_type, details):
 def staff(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only administrators and backend staff can manage sales staff")
+    require(db, user, "read")
     query = select(User).join(Role).where(Role.name.in_(STAFF_ROLES))
     if branch_id:
         query = query.where(or_(User.branch_id == branch_id, User.branch_id.is_(None), Role.name == "Sales Manager"))
@@ -71,8 +72,8 @@ class StaffCreate(BusinessInput):
 
 @router.post("/staff", status_code=201)
 def create_staff(body: StaffCreate, request: Request, user=Depends(principal), db=Depends(get_db)):
-    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
-        raise HTTPException(403, "Only administrators and backend staff can manage sales staff")
+    from .organization import administrator
+    administrator(db, user)
     email = body.email.strip().lower()
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
         raise HTTPException(422, "Enter a valid email address")
@@ -103,8 +104,8 @@ class StaffAssignment(BusinessInput):
 
 @router.patch("/staff/{staff_id}")
 def assign_staff(staff_id: str, body: StaffAssignment, request: Request, user=Depends(principal), db=Depends(get_db)):
-    if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
-        raise HTTPException(403, "Only administrators and backend staff can manage sales staff")
+    from .organization import administrator
+    administrator(db, user)
     person = db.get(User, staff_id)
     if not person or db.get(Role, person.role_id).name not in STAFF_ROLES:
         raise HTTPException(404, "Sales staff account not found")
@@ -521,6 +522,8 @@ class SaleCorrection(BusinessInput):
 def correct_sale(sale_id: str, body: SaleCorrection, request: Request, user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only backend management can correct a sale")
+    require(db, user, "compliance.write")
+    require(db, user, "read")
     row = db.get(SalesRecord, sale_id)
     if not row or not permitted(db, user, row):
         raise HTTPException(404, "Sale not found")
@@ -620,6 +623,8 @@ def save_target(body: TargetWrite, request: Request, user=Depends(principal), db
     role = db.get(Role, user.role_id).name
     if role not in {"Administrator", "Operations Manager", "Team Leader"}:
         raise HTTPException(403, "Only management or the assigned team leader can set targets")
+    require(db, user, "task.write")
+    require(db, user, "read")
     if not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", body.period):
         raise HTTPException(422, "Period must use YYYY-MM")
     assert_agent(db, user, body.agent_id)
@@ -654,8 +659,9 @@ class CallWrite(BusinessInput):
 def call_stage_access(db, user, stage):
     role = db.get(Role, user.role_id).name
     required = "call.tele.write" if stage == "TELE_VERIFICATION" else "call.welcome.write"
+    readable = "call.tele.read" if stage == "TELE_VERIFICATION" else "call.welcome.read"
     granted = permissions(db, user)
-    if not ((role in {"Administrator", "Operations Manager", "Compliance Officer"} and "compliance.write" in granted) or required in granted):
+    if not ((role in {"Administrator", "Operations Manager", "Compliance Officer"} and {"read", "compliance.write"} <= granted) or {required, readable} <= granted):
         raise HTTPException(403, "Your role cannot record this call stage")
 
 
@@ -875,6 +881,8 @@ def parse_status_file(body, columns=("sale_id", "current_status", "new_status"))
 def status_file(body: StatusFile, request: Request, user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only backend management can update sales statuses")
+    require(db, user, "compliance.write")
+    require(db, user, "read")
     if body.apply:
         db.execute(select(Role).where(Role.name == "Administrator").with_for_update()).scalar_one()
     errors, changes, seen = [], [], set()
@@ -950,6 +958,8 @@ def target_template(period: str = "", format: Literal["csv", "xlsx"] = "xlsx", u
 def target_file(body: StatusFile, request: Request, user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager", "Team Leader"}:
         raise HTTPException(403, "Your role cannot upload targets")
+    require(db, user, "task.write")
+    require(db, user, "read")
     from .security import visible_agents
     allowed = set(visible_agents(db, user))
     if body.apply:

@@ -1103,6 +1103,24 @@ p {
   overflow: auto;
   width: 100%;
 }
+
+.live-roster td[data-label="Sales agent"],
+.live-roster td[data-label="Outlet / branch"] {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 220px;
+}
+.live-roster .person-cell > span:last-child {
+  min-width: 0;
+  max-width: 190px;
+}
+@media (min-width: 901px) {
+  .live-roster th,
+  .live-roster td {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
 table {
   border-collapse: collapse;
   width: 100%;

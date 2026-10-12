@@ -14,7 +14,10 @@ export async function mobileSignIn(page: Page, email = 'agent1@relay.demo') {
       .or(page.getByRole('menuitem', {name: accountName}))
       .or(page.getByRole('button', {name: accountName}));
     const popup = page.getByRole('menu', {name: 'Popup menu'});
-    if (await popup.isVisible()) {
+    // Flutter publishes popup semantics after its opening animation. Waiting
+    // here ensures scrolling is not skipped for accounts below the first page.
+    await expect(popup).toBeVisible();
+    {
       await popup.hover();
       await page.mouse.wheel(0, -2000);
       for (let attempt = 0; attempt < 12 && !(await accountOption.last().isVisible()); attempt += 1) {

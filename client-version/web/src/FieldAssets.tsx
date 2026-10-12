@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import { Context } from "./App";
-import { api, post, Row } from "./api";
+import { api, post, Row, canManageOrganization } from "./api";
 import { ErrorState, Loading } from "./components";
 import "./sales-management.css";
 
@@ -135,7 +135,11 @@ export default function FieldAssets() {
     "Administrator",
     "Operations Manager",
     "Inventory Manager",
-  ].includes(user.role);
+  ].includes(user.role) && user.permissions?.includes('read') && user.permissions?.includes('inventory.write');
+  const canManageStaff = canManageOrganization(user);
+  const canRequest = ['Field Agent', 'Team Leader', 'Administrator', 'Operations Manager'].includes(user.role) &&
+    user.permissions?.includes('read') && user.permissions?.includes(user.role === 'Field Agent' ? 'inventory.self' :
+      user.role === 'Team Leader' ? 'task.write' : 'inventory.write');
   const agentId = user.agent_id as string | undefined;
   const categoryOptions: Record<string, string> = {
     ...categories,
@@ -401,7 +405,7 @@ export default function FieldAssets() {
               </button>
             )}
           </div>
-          {add && (
+          {add && canManage && (
             <form
               className="sales-form compact"
               onSubmit={(e) =>
@@ -541,7 +545,7 @@ export default function FieldAssets() {
               </button>
             </form>
           )}
-          {issue && (
+          {issue && canManage && (
             <form
               className="sales-form compact"
               onSubmit={(e) =>
@@ -677,7 +681,7 @@ export default function FieldAssets() {
             <h2>Asset requests</h2>
             {exportReport("requests")}
           </div>
-          {agentId && (
+          {agentId && canRequest && (
             <form
               className="sales-form compact"
               onSubmit={(e) =>
@@ -1085,7 +1089,7 @@ export default function FieldAssets() {
                   ))}
                 </div>
               )}
-              {["Administrator", "Operations Manager"].includes(user.role) &&
+              {canManageStaff &&
                 !["CLOSED", "RELOCATED"].includes(lifecycle.data.status) && (
                   <form
                     className="sales-form compact"
@@ -1173,7 +1177,7 @@ export default function FieldAssets() {
                   {checklist.data.next_action} ·{" "}
                   {checklist.data.outstanding.length} items
                 </p>
-                {["Administrator", "Operations Manager"].includes(user.role) &&
+                {canManageStaff &&
                   checkAgent && (
                     <form
                       className="sales-form compact"

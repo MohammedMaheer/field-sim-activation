@@ -4,7 +4,7 @@ import { useContext, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { Plus, Pencil, Trash2, Settings2 } from "lucide-react";
-import { api, Row } from "./api";
+import { api, Row, canManageMasterData } from "./api";
 import { Context } from "./App";
 import { DataTable, Drawer, ErrorState, Loading } from "./components";
 import RecordOverview from "./RecordOverview";
@@ -73,7 +73,7 @@ export default function Administration({
     [packScanner, setPackScanner] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  const allowed = ["Administrator", "Operations Manager"].includes(user.role);
+  const allowed = canManageMasterData(user, kind);
   const q = useQuery<Row[]>({
     queryKey: ["administration", kind],
     queryFn: () => api(`/administration/${kind}`),
@@ -368,7 +368,7 @@ export default function Administration({
           />
         )}
       </section>
-      {editing && (
+      {editing && allowed && (
         <Drawer
           title={`${editing.id ? "Edit" : "Add"} ${kind === "inventory" ? "SIM" : kind === "branches" ? "branch" : sections[kind].replace(/s$/, "").toLowerCase()}`}
           onClose={() => !busy && setEditing(null)}
@@ -496,7 +496,7 @@ export default function Administration({
           </form>
         </Drawer>
       )}
-      {removing && (
+      {removing && allowed && user.role === 'Administrator' && (
         <Drawer
           title="Delete record"
           onClose={() => !busy && setRemoving(null)}
