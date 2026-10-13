@@ -711,6 +711,8 @@
 .commission-policies,
 .commission-policy,
 .incentive-recorded-history {
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid #ded5eb;
   background: #fff;
   border-radius: 12px;
@@ -720,6 +722,7 @@
 .commission-policies summary,
 .commission-policy summary,
 .incentive-recorded-history summary {
+  overflow-wrap: anywhere;
   font-weight: 600;
   cursor: pointer;
   line-height: 1.5;
