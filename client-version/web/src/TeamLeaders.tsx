@@ -14,8 +14,11 @@ export default function TeamLeaders() {
   const { user } = useContext(Context);
   const leaders = useResource("team-leaders");
   const agents = useResource("agents");
-  const [setup, setSetup] = useState(false);
-  const [editing, setEditing] = useState("");
+  const [setup, setSetup] = useState<"new" | "existing" | null>(null);
+  const [editing, setEditing] = useState<{
+    id: string;
+    mode: "details" | "branch";
+  } | null>(null);
   const { branch, setBranch } = useBranchScope();
   const canManage = canManageOrganization(user);
   const [selected, setSelected] = useState<Row | null>(null);
@@ -64,17 +67,30 @@ export default function TeamLeaders() {
             <RefreshCw size={16} /> Refresh
           </button>
           {canManage && (
-            <button className="primary" onClick={() => setSetup(true)}>
-              <Plus size={16} /> Manage team leaders
-            </button>
+            <>
+              <button onClick={() => setSetup("existing")}>
+                Assign existing team leader
+              </button>
+              <button className="primary" onClick={() => setSetup("new")}>
+                <Plus size={16} /> Add team leader
+              </button>
+            </>
           )}
         </div>
       </header>
       {editing && canManage && (
-        <TeamLeaderEditor leaderId={editing} onClose={() => setEditing("")} />
+        <TeamLeaderEditor
+          leaderId={editing.id}
+          mode={editing.mode}
+          onClose={() => setEditing(null)}
+        />
       )}
       {setup && canManage && (
-        <OrganizationSetup initial="teams" onClose={() => setSetup(false)} />
+        <OrganizationSetup
+          initial="teams"
+          assignExisting={setup === "existing"}
+          onClose={() => setSetup(null)}
+        />
       )}
       {leaders.isPending ? (
         <Loading />
@@ -100,19 +116,28 @@ export default function TeamLeaders() {
                   </span>
                   <div>
                     <h2>{leader.name}</h2>
-                    <Link
-                      onClick={() => setBranch(leader.branch_id)}
-                      to={`/branches?selected=${encodeURIComponent(leader.branch_id)}`}
-                    >
-                      <Store size={14} />
-                      {leader.branch}
-                    </Link>
+                    {leader.branch_id ? (
+                      <Link
+                        onClick={() => setBranch(leader.branch_id)}
+                        to={`/branches?selected=${encodeURIComponent(leader.branch_id)}`}
+                      >
+                        <Store size={14} />
+                        {leader.branch}
+                      </Link>
+                    ) : (
+                      <span className="assignment-help">
+                        Branch not assigned
+                      </span>
+                    )}
                   </div>
                 </div>
+                {leader.historical_assignment && <p className="cell-sub">Historical sales · Current branch: {leader.current_branch || "Not assigned"}</p>}
                 <div className="leader-card-metrics">
                   <Link
-                    onClick={() => setBranch(leader.branch_id)}
-                    to={`/branches?selected=${encodeURIComponent(leader.branch_id)}`}
+                    onClick={() =>
+                      leader.branch_id && setBranch(leader.branch_id)
+                    }
+                    to={`/agents?leader=${encodeURIComponent(leader.leader_id)}`}
                   >
                     <b>{leader.agents}</b>
                     <span>Sales agents</span>
@@ -126,10 +151,23 @@ export default function TeamLeaders() {
                     <span>SIM stock</span>
                   </div>
                 </div>
-                {canManage && (
-                  <button onClick={() => setEditing(leader.leader_id)}>
-                    Edit team leader
-                  </button>
+                {canManage && !leader.historical_assignment && (
+                  <div className="leader-management-actions">
+                    <button
+                      onClick={() =>
+                        setEditing({ id: leader.leader_id, mode: "details" })
+                      }
+                    >
+                      Edit details
+                    </button>
+                    <button
+                      onClick={() =>
+                        setEditing({ id: leader.leader_id, mode: "branch" })
+                      }
+                    >
+                      {leader.branch_id ? "Change branch" : "Assign branch"}
+                    </button>
+                  </div>
                 )}
                 <Link className="button" to="/kyc-capture">
                   <CheckCheck size={16} /> Backend verification

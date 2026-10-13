@@ -87,6 +87,7 @@ def test_recognized_package_and_charges_cannot_change_after_order_read(database)
             'Request ID: REQ-12345', 'MSISDN: 0501234567', 'Basic Plan: AED 325 Monthly - AED 0 Prepayment']), image, 'user-a', db)
     assert parsed['order_check'] and 'plan_id' not in parsed
     intake = captures.Intake(**parsed, order_image=image, capture_mode='SCREENSHOT_SALE')
+    assert 'sr_status' not in intake.model_dump(), 'Scanner UI status is not stored as a sale field'
     captures.check_order_evidence(intake, SimpleNamespace(id='user-a'))
     intake.monthly_cost = '3250'
     with pytest.raises(HTTPException):
@@ -98,6 +99,75 @@ def test_receipt_low_confidence_or_conflicting_sr_keeps_raw_text_without_sr_proo
         parsed = captures.parse_receipt_result(extracted, photo(), 'user-a')
         assert not parsed['fields'] and not parsed['sr_check']
         assert parsed['lines'] and parsed['_ocr']['warnings']
+        assert parsed['sr_status'] == 'UNCLEAR'
+
+
+@pytest.mark.parametrize('texts, expected', [
+    (['SR: 000012345678'], '000012345678'),
+    (['SR#0012345678'], '0012345678'),
+    (['S.R. No.: 1-987654321'], '1-987654321'),
+    (['SR ID', 'SR-99887766'], 'SR-99887766'),
+    (['Service Request (SR) No.', '', '000098765432'], '000098765432'),
+    (['Service Request: 000011112222'], '000011112222'),
+    (['Payment receipt | SR Number: 0000345678 | Request ID: 1570837383'], '0000345678'),
+    (['SR No . : 0000 1234 5678'], '000012345678'),
+    (['SR Number: 00001234', 'SR No: 0000-1234'], '00001234'),
+    (['رقم طلب الخدمة: ١٢٣٤٥٦٧٨٩٠'], '1234567890'),
+    (['رقم طلب الخدمة: \u200f٠٠٠١٢٣٤٥٦٧٨٩\u200e'], '000123456789'),
+    (['SR Number: ０００１２３４５６７８９'], '000123456789'),
+])
+def test_receipt_sr_printed_label_variants_preserve_identifiers(texts, expected):
+    parsed = captures.parse_receipt_result(result(texts), photo(), 'user-a')
+    assert parsed['fields'] == {'sr_number': expected}
+    assert parsed['sr_status'] == 'READ' and parsed['sr_check']
+    proof = json.loads(captures.cipher.decrypt(parsed['sr_check'].encode()))
+    assert proof['sr_number'] == expected and proof['user'] == 'user-a'
+    assert not parsed['_ocr']['warnings']
+
+
+@pytest.mark.parametrize('texts, status', [
+    (['Order created successfully with request Id [1570837383]'], 'NOT_PRESENT'),
+    (['Request ID: 000012345678'], 'NOT_PRESENT'),
+    (['Transaction reference: 000012345678'], 'NOT_PRESENT'),
+    (['1570837383'], 'NOT_PRESENT'),
+    (['SR Number', 'Request ID: 1570837383'], 'UNCLEAR'),
+    (['SR Number: not recorded'], 'UNCLEAR'),
+    (['SR No: 12345 invoice 99999'], 'UNCLEAR'),
+    (['Service Request is 1234567'], 'UNCLEAR'),
+    (['SR Number: pending 12345'], 'UNCLEAR'),
+    (['SR No.: 1234/'], 'UNCLEAR'),
+    (['SR Number: =1234567'], 'UNCLEAR'),
+    (['SR: 1234.50'], 'UNCLEAR'),
+    (['SR Number: 00001111; SR ID: 00002222'], 'UNCLEAR'),
+    (['Service Request Number: 00001111', 'SR No: unreadable'], 'UNCLEAR'),
+])
+def test_sr_missing_or_unclear_never_falls_back_to_request_id(texts, status):
+    parsed = captures.parse_receipt_result(result(texts), photo(), 'user-a')
+    assert parsed['fields'] == {} and parsed['sr_check'] == ''
+    assert parsed['sr_status'] == status
+    assert bool(parsed['_ocr']['warnings']) == (status == 'UNCLEAR')
+
+
+def test_low_confidence_wrapped_sr_value_does_not_issue_receipt_proof():
+    extracted = result(['Service Request No.', '000034567890'])
+    extracted['lines'][1]['confidence'] = 27
+    parsed = captures.parse_receipt_result(extracted, photo(), 'user-a')
+    assert parsed['sr_status'] == 'UNCLEAR'
+    assert parsed['fields'] == {} and parsed['sr_check'] == ''
+
+
+def test_order_ocr_auto_parses_sr_and_binds_it_independently_of_request(database):  # noqa: F811
+    image = photo()
+    with captures.DB() as db:
+        parsed = captures.parse_order_result(result(['Order Details', 'Package Name: Printed plan',
+            'Request ID: 1570837383', 'MSISDN: 0501234567', 'Service Request (SR): 000065432198']), image, 'user-a', db)
+    assert parsed['sr_number'] == '000065432198' and parsed['order_reference'] == '1570837383'
+    assert parsed['sr_status'] == 'READ' and parsed['order_check']
+    intake = captures.Intake(**parsed, order_image=image, capture_mode='SCREENSHOT_SALE')
+    captures.check_order_evidence(intake, SimpleNamespace(id='user-a'))
+    intake.sr_number = intake.order_reference
+    with pytest.raises(HTTPException):
+        captures.check_order_evidence(intake, SimpleNamespace(id='user-a'))
 
 
 def test_invalid_passport_check_digits_do_not_autofill_or_issue_proof():
@@ -129,6 +199,24 @@ def test_receipt_attachment_bound_matches_the_four_mb_upload_contract():
     encoded = base64.b64encode(stream.getvalue()).decode()
     assert 1_000_000 < len(encoded) < 5_333_336
     assert captures.Intake(payment_image=encoded).payment_image == encoded
+    assert captures.ReceiptImage(image_base64=encoded).image_base64 == encoded
     assert captures.Intake.model_json_schema()['properties']['payment_image']['maxLength'] == 5_333_336
     with pytest.raises(ValidationError):
         captures.Intake(payment_image='a' * 5_333_337)
+    with pytest.raises(ValidationError):
+        captures.ReceiptImage(image_base64='a' * 5_333_337)
+
+
+def test_compatibility_receipt_reader_accepts_large_real_photo_without_losing_sr(client, monkeypatch):  # noqa: F811
+    import random
+    image = Image.frombytes('RGB', (700, 500), random.Random(79).randbytes(700 * 500 * 3))
+    stream = io.BytesIO()
+    image.save(stream, 'PNG')
+    encoded = base64.b64encode(stream.getvalue()).decode()
+    assert len(encoded) > 1_333_336
+    login(client, 'agent1')
+    monkeypatch.setattr(captures.extractor, 'extract', lambda _: result(['SR No.: 000099887766']))
+    response = client.post('/api/kyc-captures/receipt-fields', json={'image_base64': encoded})
+    assert response.status_code == 200, response.text
+    assert response.json()['fields']['sr_number'] == '000099887766'
+    assert response.json()['sr_check'] and response.json()['sr_status'] == 'READ'

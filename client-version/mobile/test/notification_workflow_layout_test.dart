@@ -191,8 +191,8 @@ void main() {
           await tester.tap(find.widgetWithText(ChoiceChip, 'Support'));
           await frames(tester);
           expect(find.text(noticeTitle), findsNothing);
-          await tester.ensureVisible(find.text('Read shown'));
-          await tester.tap(find.text('Read shown'));
+          await tester.ensureVisible(find.text('Mark shown as read'));
+          await tester.tap(find.text('Mark shown as read'));
           await frames(tester);
           expect(service.marks.last, {
             'ids': ['support-1'],

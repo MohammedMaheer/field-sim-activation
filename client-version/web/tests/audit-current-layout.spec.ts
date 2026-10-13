@@ -103,7 +103,7 @@ test("current record details and add/edit forms stay aligned at desktop and narr
     for (const [route, button] of [
       ["branches", "Add branch"],
       ["agents", "Add sales agent"],
-      ["team-leaders", "Manage team leaders"],
+      ["team-leaders", "Add team leader"],
       ["plans", "Add plan"],
     ]) {
       await page.goto("/" + route);
@@ -126,7 +126,7 @@ test("current record details and add/edit forms stay aligned at desktop and narr
     );
     await page.goto("/team-leaders");
     await page
-      .getByRole("button", { name: "Edit team leader", exact: true })
+      .getByRole("button", { name: "Edit details", exact: true })
       .first()
       .click();
     await checkDialog(

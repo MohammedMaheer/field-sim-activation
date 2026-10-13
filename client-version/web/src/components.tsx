@@ -463,6 +463,7 @@ export function Drawer({
         <div className="drawer-head">
           <h2>{title}</h2>
           <button
+            type="button"
             className="icon-btn"
             aria-label="Close details"
             onClick={onClose}

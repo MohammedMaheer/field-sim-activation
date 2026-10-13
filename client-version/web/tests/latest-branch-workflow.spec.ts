@@ -3,13 +3,23 @@ import { previewBuild } from "./preview";
 import { mockStageResult } from "./ocr-mock";
 import path from "node:path";
 
-test("administrator inventory import follows the effective write grant", async ({page}) => {
+test("administrator inventory import follows the effective write grant", async ({
+  page,
+}) => {
   await fixture(page, "Administrator", ["read", "report.read"]);
   await page.goto("/inventory");
-  await expect(page.getByRole("heading", {name: "SIM inventory", exact: true})).toBeVisible();
-  await expect(page.getByRole("button", {name: "Add SIM", exact: true})).toHaveCount(0);
-  await expect(page.getByRole("button", {name: "Import Excel", exact: true})).toHaveCount(0);
-  await expect(page.getByRole("button", {name: "Refresh", exact: true})).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "SIM inventory", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Add SIM", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Import Excel", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Refresh", exact: true }),
+  ).toBeVisible();
 });
 
 const branches = [
@@ -164,8 +174,20 @@ async function fixture(page: Page, role = "Administrator", grants?: string[]) {
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       url = new URL(request.url());
-    const job = url.pathname === '/api/kyc-captures/ocr-jobs' ? request.postDataJSON() : null;
-    const path = job ? '/api/kyc-captures/' + ({DOCUMENT: 'read-document', ORDER: 'read-order', RECEIPT: 'receipt-fields'} as Record<string,string>)[job.stage] : url.pathname;
+    const job =
+      url.pathname === "/api/kyc-captures/ocr-jobs"
+        ? request.postDataJSON()
+        : null;
+    const path = job
+      ? "/api/kyc-captures/" +
+        (
+          {
+            DOCUMENT: "read-document",
+            ORDER: "read-order",
+            RECEIPT: "receipt-fields",
+          } as Record<string, string>
+        )[job.stage]
+      : url.pathname;
     if (
       ["PUT", "PATCH", "POST", "DELETE"].includes(request.method()) &&
       !path.startsWith("/api/auth/")
@@ -335,7 +357,16 @@ async function fixture(page: Page, role = "Administrator", grants?: string[]) {
       });
       return;
     }
-    await route.fulfill({ json: job ? {id: job.operation_id, stage: job.stage, status: 'COMPLETED', result: data} : data });
+    await route.fulfill({
+      json: job
+        ? {
+            id: job.operation_id,
+            stage: job.stage,
+            status: "COMPLETED",
+            result: data,
+          }
+        : data,
+    });
   });
   return writes;
 }
@@ -502,7 +533,10 @@ test("multiple branch leaders can be selected and team leaders edited", async ({
     .getByLabel("Reason for change", { exact: true })
     .fill("Additional branch team leader");
   await page
-    .getByRole("button", { name: "Save team leaders", exact: true })
+    .getByRole("button", { name: "Review team leader changes", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Confirm team leader changes", exact: true })
     .click();
   await expect
     .poll(
@@ -519,20 +553,17 @@ test("multiple branch leaders can be selected and team leaders edited", async ({
     .filter({
       has: page.getByRole("heading", { name: "Avery Reed", exact: true }),
     })
-    .getByRole("button", { name: "Edit team leader", exact: true })
+    .getByRole("button", { name: "Edit details", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog
     .getByLabel("Team leader name", { exact: true })
     .fill("Avery Rowan");
   await dialog
-    .getByRole("combobox", { name: "Branch", exact: true })
-    .selectOption("branch-b");
-  await dialog
     .getByLabel("Reason for change", { exact: true })
-    .fill("Approved branch leader assignment");
+    .fill("Corrected team leader name");
   await dialog
-    .getByRole("button", { name: "Save team leader", exact: true })
+    .getByRole("button", { name: "Save team leader details", exact: true })
     .click();
   await expect
     .poll(
@@ -543,11 +574,41 @@ test("multiple branch leaders can be selected and team leaders edited", async ({
     .toEqual({
       name: "Avery Rowan",
       email: "avery@relay.demo",
-      branch_id: "branch-b",
     });
   await expect(
     page.getByRole("heading", { name: "Avery Rowan", exact: true }),
   ).toBeVisible();
+  await page
+    .locator(".leader-card")
+    .filter({
+      has: page.getByRole("heading", { name: "Avery Rowan", exact: true }),
+    })
+    .getByRole("button", { name: "Change branch", exact: true })
+    .click();
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption("branch-b");
+  await dialog
+    .getByLabel("Reason for change", { exact: true })
+    .fill("Approved branch leader assignment");
+  await dialog
+    .getByRole("button", { name: "Review branch change", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Confirm branch change", exact: true })
+    .click();
+  await expect
+    .poll(
+      () =>
+        writes
+          .filter((row) => row.path === "/api/administration/teams/leader-b")
+          .at(-1)?.body.values,
+    )
+    .toEqual({
+      name: "Avery Rowan",
+      email: "avery@relay.demo",
+      branch_id: "branch-b",
+    });
   await fits(page);
   await page.screenshot({
     animations: "disabled",
@@ -577,7 +638,7 @@ test("editing an unassigned team leader preserves the original null branch", asy
   );
   await page.goto("/team-leaders");
   await page
-    .getByRole("button", { name: "Edit team leader", exact: true })
+    .getByRole("button", { name: "Assign branch", exact: true })
     .click();
   const dialog = page.getByRole("dialog");
   await dialog
@@ -587,7 +648,10 @@ test("editing an unassigned team leader preserves the original null branch", asy
     .getByLabel("Reason for change", { exact: true })
     .fill("Approved initial branch assignment");
   await dialog
-    .getByRole("button", { name: "Save team leader", exact: true })
+    .getByRole("button", { name: "Review branch change", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Confirm branch change", exact: true })
     .click();
   await expect
     .poll(
@@ -716,27 +780,74 @@ test("Sales Manager SR workspace is read-only", async ({ page }) => {
   expect(writes).toHaveLength(0);
 });
 
-test("revoked Sales Manager read access hides record pages and direct SR access", async ({ page }) => {
+test("revoked Sales Manager read access hides record pages and direct SR access", async ({
+  page,
+}) => {
   await fixture(page, "Sales Manager", ["report.read"]);
   await page.goto("/sr-verification");
-  await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "This page is not available for your role",
+      exact: true,
+    }),
+  ).toBeVisible();
   const nav = page.getByRole("navigation", { name: "Main navigation" });
-  for (const name of ["Sales management", "SR verification", "Transaction history", "SIM inventory"])
+  for (const name of [
+    "Sales management",
+    "SR verification",
+    "Transaction history",
+    "SIM inventory",
+  ])
     await expect(nav.getByRole("link", { name, exact: true })).toHaveCount(0);
   await page.goto("/sales");
-  await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("heading", {
+      name: "This page is not available for your role",
+      exact: true,
+    }),
+  ).toBeVisible();
 });
 
-for (const role of ["Administrator", "Operations Manager", "Team Leader", "Field Agent", "Compliance Officer", "Inventory Manager", "Branch Manager"]) {
-  test(`${role}: revoked read hides general navigation and denies direct inventory access`, async ({ page }) => {
-    await fixture(page, role, ["report.read", "settings.write", "compliance.write"]);
+for (const role of [
+  "Administrator",
+  "Operations Manager",
+  "Team Leader",
+  "Field Agent",
+  "Compliance Officer",
+  "Inventory Manager",
+  "Branch Manager",
+]) {
+  test(`${role}: revoked read hides general navigation and denies direct inventory access`, async ({
+    page,
+  }) => {
+    await fixture(page, role, [
+      "report.read",
+      "settings.write",
+      "compliance.write",
+    ]);
     await page.goto("/inventory");
-    await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: "This page is not available for your role",
+        exact: true,
+      }),
+    ).toBeVisible();
     const nav = page.getByRole("navigation", { name: "Main navigation" });
-    for (const name of ["Sales management", "SIM inventory", "Customers", "Team leaders", "Branches"])
+    for (const name of [
+      "Sales management",
+      "SIM inventory",
+      "Customers",
+      "Team leaders",
+      "Branches",
+    ])
       await expect(nav.getByRole("link", { name, exact: true })).toHaveCount(0);
     await page.goto("/customers");
-    await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("heading", {
+        name: "This page is not available for your role",
+        exact: true,
+      }),
+    ).toBeVisible();
   });
 }
 
@@ -775,15 +886,34 @@ test("call-only role can scope its queue without wider workspace access", async 
   });
 });
 
-for (const role of ["Administrator", "Operations Manager", "Compliance Officer"]) {
-  test(`${role}: backend caller with revoked read cannot open or poll the call queue`, async ({ page }) => {
+for (const role of [
+  "Administrator",
+  "Operations Manager",
+  "Compliance Officer",
+]) {
+  test(`${role}: backend caller with revoked read cannot open or poll the call queue`, async ({
+    page,
+  }) => {
     const paths: string[] = [];
-    page.on("request", (request) => paths.push(new URL(request.url()).pathname));
+    page.on("request", (request) =>
+      paths.push(new URL(request.url()).pathname),
+    );
     await fixture(page, role, ["compliance.write"]);
     await page.goto("/call-work");
-    await expect(page.getByRole("heading", { name: "This page is not available for your role", exact: true })).toBeVisible();
-    await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Call work queue", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: "Call work queue", exact: true })).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", {
+        name: "This page is not available for your role",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page
+        .getByRole("navigation", { name: "Main navigation" })
+        .getByRole("link", { name: "Call work queue", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("heading", { name: "Call work queue", exact: true }),
+    ).toHaveCount(0);
     expect(paths).not.toContain("/api/sales-management/call-tasks");
     expect(paths).not.toContain("/api/sales-management/call-tasks/summary");
   });
@@ -883,9 +1013,9 @@ test("optional receipt reads printed SR and duplicate submission stays reviewabl
 }) => {
   const writes = await fixture(page, "Operations Manager");
   await mockStageResult(page, "RECEIPT", () => ({
-        fields: { sr_number: "SR-PRINTED-456" },
-        sr_check: "synthetic-receipt-proof",
-        lines: ["SR Number: SR-PRINTED-456"],
+    fields: { sr_number: "SR-PRINTED-456" },
+    sr_check: "synthetic-receipt-proof",
+    lines: ["SR Number: SR-PRINTED-456"],
   }));
   await page.route("**/api/kyc-captures/sale-submissions", async (route) => {
     writes.push({
@@ -959,24 +1089,24 @@ test("a replacement receipt without SR restores the captured order SR", async ({
 }) => {
   const writes = await fixture(page, "Operations Manager");
   await mockStageResult(page, "ORDER", () => ({
-        order_type: "NEW",
-        package_name: "Freedom 325",
-        plan_name: "Freedom 325",
-        plan_id: "plan-a",
-        msisdn: "0500000000",
-        order_reference: "REQUEST-ONLY-123",
-        sr_number: "SR-ORDER-123",
-        order_check: "synthetic-order-check",
+    order_type: "NEW",
+    package_name: "Freedom 325",
+    plan_name: "Freedom 325",
+    plan_id: "plan-a",
+    msisdn: "0500000000",
+    order_reference: "REQUEST-ONLY-123",
+    sr_number: "SR-ORDER-123",
+    order_check: "synthetic-order-check",
   }));
   let receiptNumber = 0;
   await mockStageResult(page, "RECEIPT", () =>
-        ++receiptNumber === 1
-          ? {
-              fields: { sr_number: "SR-RECEIPT-456" },
-              sr_check: "first-receipt-proof",
-              lines: [],
-            }
-          : { fields: {}, sr_check: "", lines: [] },
+    ++receiptNumber === 1
+      ? {
+          fields: { sr_number: "SR-ORDER-123" },
+          sr_check: "first-receipt-proof",
+          lines: [],
+        }
+      : { fields: {}, sr_check: "", lines: [] },
   );
   await page.route("**/api/kyc-captures/sale-submissions", async (route) => {
     writes.push({
@@ -1013,7 +1143,9 @@ test("a replacement receipt without SR restores the captured order SR", async ({
   await expect(page.getByText("SR-ORDER-123", { exact: true })).toBeVisible();
   const upload = page.getByLabel("Upload screenshot", { exact: true });
   await upload.setInputFiles(sample);
-  await expect(page.getByText("SR-RECEIPT-456", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("status").filter({ hasText: "SR number read from receipt" }),
+  ).toBeVisible();
   await upload.setInputFiles({
     name: "replacement-receipt.png",
     mimeType: "image/png",
@@ -1034,4 +1166,157 @@ test("a replacement receipt without SR restores the captured order SR", async ({
   )?.body.intake;
   expect(intake.sr_number).toBe("SR-ORDER-123");
   expect(intake).not.toHaveProperty("receipt_sr_check");
+});
+
+async function capturedSaleReview(page: Page, orderSR = "") {
+  await mockStageResult(page, "ORDER", () => ({
+    order_type: "NEW",
+    package_name: "Freedom 325",
+    plan_name: "Freedom 325",
+    plan_id: "plan-a",
+    msisdn: "0500000000",
+    order_reference: "REQUEST-ONLY-123",
+    sr_number: orderSR,
+    order_check: "synthetic-order-check",
+  }));
+  await page.goto("/kyc-capture");
+  await page
+    .getByRole("button", { name: "New transaction capture", exact: true })
+    .click();
+  const sample = path.resolve("tests/fixtures/transaction-sample.png");
+  await page
+    .getByLabel("Customer details screen", { exact: true })
+    .setInputFiles(sample);
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveValue(
+    "Jordan Vale",
+  );
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await page
+    .getByLabel("Order details screen", { exact: true })
+    .setInputFiles(sample);
+  await expect(page.getByLabel("Request ID", { exact: true })).toHaveValue(
+    "REQUEST-ONLY-123",
+  );
+  await expect(
+    page.getByRole("textbox", { name: "SR number", exact: true }),
+  ).toHaveCount(0);
+  const sr = page.getByRole("status", {
+    name: "SR number from OCR",
+    exact: true,
+  });
+  await expect(sr).toContainText(orderSR || "Not recorded");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Review & submit sale", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByPlaceholder("Order request ID")).toHaveCount(0);
+  return sample;
+}
+
+test("conflicting receipt is clear and removable without changing captured order SR", async ({
+  page,
+}) => {
+  const writes = await fixture(page, "Operations Manager");
+  await mockStageResult(page, "RECEIPT", () => ({
+    fields: { sr_number: "SR-WRONG-456" },
+    sr_check: "wrong-proof",
+    sr_status: "READ",
+  }));
+  const sample = await capturedSaleReview(page, "SR-ORDER-123");
+  await page
+    .getByLabel("Upload screenshot", { exact: true })
+    .setInputFiles(sample);
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Receipt SR does not match the order" }),
+  ).toBeVisible();
+  await expect(page.getByText("SR-ORDER-123", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Submit sale", exact: true }),
+  ).toBeDisabled();
+  expect(
+    writes.filter((row) => row.path === "/api/kyc-captures/sale-submissions"),
+  ).toHaveLength(0);
+  await page.getByRole("button", { name: "View receipt", exact: true }).click();
+  await expect(
+    page.getByRole("heading", { name: "Receipt preview", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Close details", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Remove receipt", exact: true })
+    .click();
+  await expect(
+    page
+      .getByRole("alert")
+      .filter({ hasText: "Receipt SR does not match the order" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Submit sale", exact: true }),
+  ).toBeEnabled();
+  await fits(page);
+  await page.screenshot({
+    path: "../output/qa/usability79-web-sr-conflict-resolved.png",
+    animations: "disabled",
+  });
+});
+
+test("failed automatic receipt reading can be retried and fills SR without typing", async ({
+  page,
+}) => {
+  await fixture(page, "Operations Manager");
+  let attempts = 0;
+  await page.route("**/api/kyc-captures/ocr-jobs", async (route) => {
+    const body = route.request().postDataJSON();
+    if (body.stage !== "RECEIPT") return route.fallback();
+    attempts++;
+    return route.fulfill({
+      json:
+        attempts === 1
+          ? {
+              id: body.operation_id,
+              stage: "RECEIPT",
+              status: "FAILED",
+              error: "Receipt could not be read. Try again.",
+            }
+          : {
+              id: body.operation_id,
+              stage: "RECEIPT",
+              status: "COMPLETED",
+              result: {
+                fields: { sr_number: "SR-AUTO-456" },
+                sr_check: "auto-proof",
+                sr_status: "READ",
+              },
+            },
+    });
+  });
+  const sample = await capturedSaleReview(page);
+  await page
+    .getByLabel("Upload screenshot", { exact: true })
+    .setInputFiles(sample);
+  await expect(
+    page.getByRole("button", { name: "Read SR again", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Read SR again", exact: true })
+    .click();
+  await expect(
+    page.getByRole("status").filter({ hasText: "SR number read from receipt" }),
+  ).toBeVisible();
+  await expect(page.getByText("SR-AUTO-456", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Read SR again", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Submit sale", exact: true }),
+  ).toBeEnabled();
+  expect(attempts).toBe(2);
+  await fits(page);
+  await page.screenshot({
+    path: "../output/qa/usability79-web-auto-sr.png",
+    animations: "disabled",
+  });
 });

@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Context, useResource } from "./App";
 import { api, post, patch, download, Row } from "./api";
-import { ocrOperation, readStageOcr, ocrWarning } from './ocrJobs';
+import { ocrOperation, readStageOcr, ocrWarning, OcrOperation, OcrTemporaryFailure } from './ocrJobs';
 import { Badge, Panel, ErrorState, Loading, Drawer } from "./components";
 
 export default function KycCapture() {
@@ -56,6 +56,11 @@ export default function KycCapture() {
     [file, setFile] = useState<File | null>(null);
   const [receiptReading, setReceiptReading] = useState(false);
   const [receiptMessage, setReceiptMessage] = useState("");
+  const [receiptRetry, setReceiptRetry] = useState(false);
+  const [receiptConflict, setReceiptConflict] = useState(false);
+  const [receiptReadAttempt, setReceiptReadAttempt] = useState(0);
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
+  const receiptRequest = useRef<OcrOperation | undefined>(undefined);
   const [operation, setOperation] = useState(() => crypto.randomUUID()),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -124,6 +129,11 @@ export default function KycCapture() {
     return () => URL.revokeObjectURL(url);
   }, [file]);
   function replaceReceipt(receipt: File | null) {
+    setReceiptPreviewOpen(false);
+    receiptRequest.current = undefined;
+    setReceiptRetry(false);
+    setReceiptConflict(false);
+    setReceiptReadAttempt(0);
     setFile(receipt);
     setIntake((current) => {
       if (!current.receipt_sr_check) return current;
@@ -138,6 +148,7 @@ export default function KycCapture() {
   useEffect(() => {
     let current = true;
     setReceiptMessage("");
+    setReceiptRetry(false);
     if (!file) {
       setReceiptReading(false);
       return;
@@ -155,25 +166,41 @@ export default function KycCapture() {
         reader.onerror = () => reject(new Error("Could not read this receipt"));
         reader.readAsDataURL(file);
       });
-      const result = await readStageOcr(ocrOperation('RECEIPT', image_base64), {
+      if (!current) return;
+      const request = receiptRequest.current?.image === image_base64
+        ? receiptRequest.current
+        : (receiptRequest.current = ocrOperation('RECEIPT', image_base64));
+      const result = await readStageOcr(request, {
         isCurrent: () => current,
         onStatus: message => { if (current) setReceiptMessage(message); },
       });
       if (!current) return;
       if (result.fields?.sr_number && result.sr_check) {
+        const srKey = (value: string) => value.replace(/[^a-z0-9_]/gi, '').toLowerCase();
+        if (capturedOrderSR.current && srKey(capturedOrderSR.current) !== srKey(result.fields.sr_number)) {
+          setReceiptConflict(true);
+          setReceiptMessage('Receipt SR does not match the order. Replace or remove this receipt.');
+          return;
+        }
         setIntake((value) => ({
           ...value,
           sr_number: result.fields.sr_number,
           receipt_sr_check: result.sr_check,
         }));
         setReceiptMessage("SR number read from receipt");
-      } else setReceiptMessage(ocrWarning(result) || "Receipt attached · SR number not found");
+      } else {
+        setReceiptRetry(result.sr_status === 'UNCLEAR');
+        setReceiptMessage(ocrWarning(result) || "Receipt attached · SR number not found");
+      }
     })()
       .catch((failure: any) => {
-        if (current)
+        if (current) {
+          if (!(failure instanceof OcrTemporaryFailure)) receiptRequest.current = undefined;
+          setReceiptRetry(true);
           setReceiptMessage(
             failure.message || "Receipt attached · SR could not be read",
           );
+        }
       })
       .finally(() => {
         if (current) setReceiptReading(false);
@@ -181,7 +208,7 @@ export default function KycCapture() {
     return () => {
       current = false;
     };
-  }, [file]);
+  }, [file, receiptReadAttempt]);
   async function run(action: () => Promise<any>) {
     setBusy(true);
     setError("");
@@ -252,7 +279,9 @@ export default function KycCapture() {
         <div>
           <div className="eyebrow">TRANSACTIONS</div>
           <h1>
-            {canReview
+            {showUpload && canWrite && !selected
+              ? "New transaction"
+              : canReview
               ? "Backend verification"
               : canWrite
                 ? "New transaction"
@@ -561,7 +590,7 @@ export default function KycCapture() {
                         ))}
                       </select>
                     </label>
-                    <label>
+                    {intake.capture_mode !== 'SCREENSHOT_SALE' && <label>
                       Reference
                       <input
                         maxLength={120}
@@ -572,7 +601,7 @@ export default function KycCapture() {
                           setOperation(crypto.randomUUID());
                         }}
                       />
-                    </label>
+                    </label>}
                     <div className="capture-picker">
                       <ImageIcon size={28} />
                       <b>{file?.name || "Payment receipt · optional"}</b>
@@ -602,25 +631,31 @@ export default function KycCapture() {
                             }}
                           />
                         </label>
+                        {file && <button type="button" disabled={busy || receiptReading} onClick={() => replaceReceipt(null)}>Remove receipt</button>}
                       </div>
                     </div>
                     {(receiptReading || receiptMessage) && (
-                      <p role="status" className="receipt-sr-status">
+                      <p role={receiptConflict ? "alert" : "status"} className={receiptConflict ? "capture-error" : "receipt-sr-status"}>
                         {receiptReading
                           ? "Reading receipt SR number…"
                           : receiptMessage}
                       </p>
                     )}
-                    {preview && (
-                      <img
-                        className="capture-preview"
-                        src={preview}
-                        alt="Selected payment receipt"
-                      />
+                    {receiptRetry && !receiptReading && (
+                      <button type="button" disabled={busy} onClick={() => setReceiptReadAttempt(attempt => attempt + 1)}>
+                        <RefreshCw size={16} /> Read SR again
+                      </button>
                     )}
+                    {preview && <button type="button" className="receipt-preview-toggle" aria-label="View receipt" onClick={() => setReceiptPreviewOpen(true)}>
+                      <img src={preview} alt="Selected payment receipt" />
+                      <span>View receipt</span>
+                    </button>}
+                    {receiptPreviewOpen && preview && <Drawer title="Receipt preview" onClose={() => setReceiptPreviewOpen(false)}>
+                      <img className="receipt-preview-full" src={preview} alt="Selected payment receipt" />
+                    </Drawer>}
                     <button
                       className="primary"
-                      disabled={busy || receiptReading || !agents.data?.length}
+                      disabled={busy || receiptReading || receiptConflict || !agents.data?.length}
                     >
                       {busy ? "Submitting…" : "Submit sale"}
                     </button>

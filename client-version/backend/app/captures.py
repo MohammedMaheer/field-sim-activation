@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import re
+import unicodedata
 import uuid
 from datetime import datetime
 from typing import Literal
@@ -368,6 +369,7 @@ def check_receipt_sr(intake, user):
 def check_order_evidence(intake, user):
     if intake.capture_mode not in {"SCREENSHOT_ORDER", "SCREENSHOT_SALE"}:
         return
+    receipt_mismatch = False
     try:
         proof = json.loads(cipher.decrypt(intake.order_check.encode()))
 
@@ -383,8 +385,6 @@ def check_order_evidence(intake, user):
                 normalize(proof["fields"][key]) == normalize(getattr(intake, key))
                 for key in ORDER_KEYS
             )
-            and (intake.receipt_sr_check or not proof["fields"].get("sr_number")
-                 or normalize(proof["fields"]["sr_number"]) == normalize(intake.sr_number))
             and (proof.get("version", 1) < 2 or all(
                 evidence_value(value) == evidence_value(getattr(intake, key))
                 for key, value in proof["fields"].items()
@@ -392,9 +392,16 @@ def check_order_evidence(intake, user):
             ))
         )
         if valid:
-            return
+            order_sr = proof["fields"].get("sr_number")
+            if not order_sr or normalize(order_sr) == normalize(intake.sr_number):
+                return
+            # A separately signed receipt SR cannot replace a different SR
+            # explicitly captured on the order screen.
+            receipt_mismatch = bool(intake.receipt_sr_check)
     except Exception:
         pass
+    if receipt_mismatch:
+        raise HTTPException(422, "The receipt SR number does not match the captured order. Upload the matching receipt or remove it.")
     raise HTTPException(422, "Order details weren't captured clearly. Scan the order screen again.")
 
 
@@ -500,6 +507,10 @@ def discard_named_draft(draft_id: str, user=Depends(principal), db=Depends(get_d
 
 class IdentityImage(BaseModel):
     image_base64: str = Field(max_length=1_333_336)
+
+
+class ReceiptImage(BaseModel):
+    image_base64: str = Field(max_length=5_333_336)
 
 
 def ocr_lines(result):
@@ -747,11 +758,14 @@ def order_fields(lines, warnings=None):
         values["order_type"] = category
     else:
         values.pop("order_type", None)
-    sr = receipt_sr_number(lines)
+    sr_reading = receipt_sr_reading(lines)
+    sr = sr_reading["number"]
     if sr:
         values["sr_number"] = sr
     else:
         values.pop("sr_number", None)
+    if sr_reading["status"] == "UNCLEAR":
+        warnings.append("SR number is unclear or conflicting. Take a clearer photo; backend SR verification remains pending.")
     return values
 
 
@@ -776,6 +790,7 @@ def parse_order_result(result, image_base64, user_id, db):
     lines = ocr_lines(result)
     warnings = []
     fields = order_fields(lines, warnings)
+    fields["sr_status"] = receipt_sr_reading(lines)["status"]
     fields["order_fields"] = [
         {"label": str(field.get("label", ""))[:120], "value": str(field.get("value", ""))[:1000]}
         for row in result.get("rows", []) if isinstance(row, dict)
@@ -809,35 +824,99 @@ def parse_order_result(result, image_base64, user_id, db):
     return fields
 
 
-def receipt_sr_number(lines):
-    """Read a labelled SR only; order/request IDs are different business fields."""
+SR_LABEL = re.compile(
+    r"(?<![\w])(?:"
+    r"S\.?\s*R\.?\s*(?:number|no\s*\.?|num\.?|id|#)"
+    r"|S\.?\s*R\.?(?=\s*[:：=])"
+    r"|service\s+request(?:\s*\(\s*S\.?\s*R\.?\s*\))?"
+    r"(?:\s*(?:number|no\s*\.?|num\.?|id|#))?"
+    r"|رقم\s+طلب\s+الخدمة"
+    r")(?![^\W\d])\s*[:：=#–—-]?\s*",
+    re.I,
+)
+SR_FOLLOWING_FIELD = re.compile(
+    r"(?:\s+|[|;]\s*)(?:request\s*(?:id|number)|order\s*(?:id|number)|"
+    r"receipt\s*(?:number|no\.?)|date|time|amount|total|msisdn|phone\s+number|customer(?:\s+name)?)"
+    r"\s*[:：=]",
+    re.I,
+)
+
+
+def sr_text(value):
+    """Normalize digit glyphs and spacing, never substitute guessed OCR letters."""
+    text = unicodedata.normalize("NFKC", str(value))
+    return "".join(str(unicodedata.decimal(char)) if char.isdecimal() else char
+                   for char in text if unicodedata.category(char) != "Cf")
+
+
+def sr_identifier(value):
+    value = value.strip()
+    # A label's identifier can wrap or split into digit groups. Ordinary words,
+    # another labelled field, formula text and decimal amounts are not an SR.
+    if re.match(r"(?:is|not|pending|unavailable|unknown|unclear|missing)\b", value, re.I):
+        return ""
+    numeric = r"(?:[A-Za-z][A-Za-z0-9]{0,11}[\s/-]*)?\d(?:[\d\s/-]*\d)?"
+    token = r"[A-Za-z0-9]+(?:[-/][A-Za-z0-9]+)*"
+    if (not re.fullmatch(f"(?:{numeric}|{token})", value)
+            or not re.search(r"\d", value)):
+        return ""
+    compact = re.sub(r"\s+", "", value)
+    return compact if 4 <= len(compact) <= 120 else ""
+
+
+def receipt_sr_reading(lines):
+    """Read explicit SR labels, retaining missing/unclear as separate UI states.
+
+    A request ID, success message or a bare number never establishes an SR.
+    Multiple printed candidates and low-confidence candidates stay pending;
+    neither the parser nor backend review guesses between them.
+    """
     lines = ocr_lines({"lines": lines})
-    texts = [line["text"] for line in lines]
-    found = set()
+    texts = [sr_text(line["text"]) for line in lines]
+    found, labelled, unclear = {}, False, False
     for index, text in enumerate(texts):
-        match = re.match(r"^(?:SR\s*(?:number|no\.?|#)|service\s+request\s*(?:number|no\.?|#))\s*[:：-]?\s*(.*)$", text, re.I)
-        if not match:
-            continue
-        if text and texts[index] and lines[index].get("confidence") is not None:
-            try:
-                if float(lines[index]["confidence"]) < 50:
-                    return ""
-            except (TypeError, ValueError):
-                return ""
-        value = match.group(1).strip() or (texts[index + 1] if index + 1 < len(texts) else "")
-        if not match.group(1).strip() and index + 1 < len(texts) and lines[index + 1].get("confidence") is not None:
-            try:
-                if float(lines[index + 1]["confidence"]) < 50:
-                    return ""
-            except (TypeError, ValueError):
-                return ""
-        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9\s/-]{3,119}", value) and re.search(r"\d", value):
-            found.add(re.sub(r"\s+", "", value))
-    return next(iter(found)) if len(found) == 1 else ""
+        matches = list(SR_LABEL.finditer(text))
+        for offset, match in enumerate(matches):
+            labelled = True
+            end = matches[offset + 1].start() if offset + 1 < len(matches) else len(text)
+            value = text[match.end():end].strip(" |;")
+            following = SR_FOLLOWING_FIELD.search(value)
+            if following:
+                value = value[:following.start()].strip()
+            value_line = index
+            if not value:
+                # A printed label and identifier often occupy adjacent lines.
+                # Skip only empty lines; do not search unrelated receipt text.
+                value_line = next((position for position in range(index + 1, min(index + 4, len(lines)))
+                                   if texts[position]), index)
+                value = texts[value_line] if value_line != index else ""
+            confident = True
+            for position in {index, value_line}:
+                confidence = lines[position].get("confidence")
+                if confidence is not None:
+                    try:
+                        confident &= float(confidence) >= 50
+                    except (TypeError, ValueError):
+                        confident = False
+            candidate = sr_identifier(value)
+            if not candidate or not confident:
+                unclear = True
+                continue
+            # Repeated labels with equivalent spacing/separators agree.
+            normalized = re.sub(r"[^a-z0-9]", "", candidate.casefold())
+            found.setdefault(normalized, candidate)
+    if len(found) == 1 and not unclear:
+        return {"number": next(iter(found.values())), "status": "READ"}
+    return {"number": "", "status": "UNCLEAR" if labelled else "NOT_PRESENT"}
+
+
+def receipt_sr_number(lines):
+    """Compatibility helper for order extraction and older callers."""
+    return receipt_sr_reading(lines)["number"]
 
 
 @router.post("/receipt-fields")
-def read_receipt_fields(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
+def read_receipt_fields(body: ReceiptImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
     user_id = user.id
     db.rollback()
@@ -858,12 +937,13 @@ def read_receipt_fields(body: IdentityImage, user=Depends(principal), db=Depends
 def parse_receipt_result(result, image_base64, user_id):
     data = base64.b64decode(image_base64, validate=True)
     lines = ocr_lines(result)
-    sr = receipt_sr_number(lines)
+    reading = receipt_sr_reading(lines)
+    sr = reading["number"]
     proof = cipher.encrypt(json.dumps({"image": hashlib.sha256(data).hexdigest(),
              "sr_number": sr, "user": user_id, "expires": now().timestamp() + 30 * 86400}).encode()).decode() if sr else ""
-    warnings = [] if sr or not any(re.match(r"^(?:SR|service\s+request)\b", line["text"], re.I) for line in lines) else ["SR number is unclear or conflicting. Backend SR verification remains pending."]
+    warnings = ["SR number is unclear or conflicting. Take a clearer receipt photo; backend SR verification remains pending."] if reading["status"] == "UNCLEAR" else []
     return {"fields": {"sr_number": sr} if sr else {}, "sr_check": proof,
-            "lines": lines, "_ocr": ocr_metadata(lines, warnings)}
+            "sr_status": reading["status"], "lines": lines, "_ocr": ocr_metadata(lines, warnings)}
 
 
 @router.get("/leader-confirmations")

@@ -5,6 +5,42 @@ import 'package:relay_agent/preview_main.dart';
 
 void main() {
   test(
+    'sale reference bill shows SR only once with its verification status',
+    () {
+      final invoice = paymentInvoice({
+        'id': 'sale-123',
+        'status': 'SUBMITTED',
+        'intake': {'capture_mode': 'SCREENSHOT_SALE', 'sr_number': 'SR-987654'},
+        'sr_verification': {'status': 'PENDING'},
+      });
+      final fields = [
+        for (final section in invoice['sections']) ...section['fields'],
+      ];
+      expect(
+        fields.where((field) => field['label'] == 'SR number'),
+        hasLength(1),
+      );
+      expect(
+        (invoice['sections'] as List).first['fields'].any(
+          (field) => field['label'] == 'SR number',
+        ),
+        isTrue,
+        reason:
+            'The SR is immediately visible beside the reference bill details',
+      );
+      expect(
+        fields.firstWhere((field) => field['label'] == 'SR number')['value'],
+        'SR-987654',
+      );
+      expect(
+        fields.firstWhere(
+          (field) => field['label'] == 'SR verification',
+        )['value'],
+        'Pending SR verification',
+      );
+    },
+  );
+  test(
     'order confirmation is a pending agent payment record without amounts',
     () {
       final invoice = paymentInvoice({

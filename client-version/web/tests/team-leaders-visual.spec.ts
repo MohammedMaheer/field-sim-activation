@@ -19,8 +19,8 @@ test('administrator pages show compact summaries and branch leadership',async({p
     await page.waitForTimeout(600);
     await page.screenshot({path:`../output/qa/overview-${path}.png`,fullPage:true});
     if(path === 'team-leaders') {
-      await expect(page.getByRole('button',{name:'Manage team leaders'})).toBeVisible();
-      await page.getByRole('button',{name:'Manage team leaders'}).click();
+      await expect(page.getByRole('button',{name:'Add team leader'})).toBeVisible();
+      await page.getByRole('button',{name:'Add team leader'}).click();
       await expect(page.getByRole('button',{name:'Team leader',exact:true})).toHaveAttribute('aria-pressed','true');
       await expect(page.getByRole('textbox',{name:'Team leader name'})).toBeVisible();
       await page.waitForTimeout(600);
@@ -39,7 +39,7 @@ test('team leader sees backend-confirmed records with no approval action',async(
   await page.goto('/team-leaders');
   await expect(page.getByRole('heading',{name:'Backend confirmations'})).toBeVisible();
   await expect(page.getByRole('button',{name:'View details'}).first()).toBeVisible({timeout:20000});
-  await expect(page.getByRole('button',{name:/Confirm branch|Manage team leaders|Verify submission/})).toHaveCount(0);
+  await expect(page.getByRole('button',{name:/Confirm branch|Add team leader|Verify submission/})).toHaveCount(0);
   await page.getByRole('button',{name:'View details'}).first().click();
   await expect(page.getByText('Transaction confirmed by backend',{exact:true})).toBeVisible();
   await expect(page.getByRole('button',{name:'Verify submission',exact:true})).toHaveCount(0);

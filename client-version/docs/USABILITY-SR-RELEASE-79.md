@@ -1,0 +1,11 @@
+# Assignment and automatic SR update — 13 October 2026
+
+Build 79 separates team-leader details from branch moves and sales-agent reassignment. Assignment changes show the current and proposed branch/leader, require a reason, and save only after confirmation. A leader with assigned sales agents cannot move until those agents are deliberately reassigned. Historical sales retain their saved branch and leader; historical leader cards cannot edit the current assignment. Stale edits require a reload.
+
+Order and optional receipt OCR recognize explicit SR labels, including wrapped labels and Arabic/full-width digits. Request IDs are never substituted for SR numbers. The clients show a read-only SR, its source, retry controls and a clear conflict message when order and receipt disagree. A conflicting optional receipt can be replaced or removed. The reference bill shows the SR once. Inventory display now distinguishes activated historical stock from stock that has not started an activation.
+
+Validation: the backend regression suite passed 549 tests; the final inventory/history additions passed two focused tests. The Flutter suite passed 215 tests with one skipped, and analysis passed. Production React, Flutter web and Android builds passed. Connected disposable-database browser tests covered branch → leader → sales-agent creation, explicit reassignment, preserved sale history and forbidden leader self-assignment. Browser tests covered automatic SR, failed OCR retry and conflict removal. Six synthetic images ran through the deployed Tesseract runtime, including missing and conflicting SR cases. Changed desktop and compact mobile layouts were visually inspected.
+
+The release backed up deployment files and the PostgreSQL database, checked restore readability, and preserved operational-record fingerprints and environment settings. Schema remained 019. Public web/demo/APK hashes and health were checked. The normal Android build 79 installed successfully and its installed APK hash matched the published artifact. Physical navigation was checked; broad live mutation tests were confined to an isolated database.
+
+These checks validate the tested cases; OCR still depends on readable evidence. Missing or ambiguous SR values remain unrecorded for independent backend reconciliation.

@@ -9,7 +9,7 @@ void main() {
         receiptSrFields({
           'fields': {'sr_number': 'SR-000765', 'request_id': 'REQ-99'},
           'sr_check': 'bound-proof',
-        }, fallbackSr: 'SR-ORDER'),
+        }, fallbackSr: 'SR-000765'),
         {'sr_number': 'SR-000765', 'receipt_sr_check': 'bound-proof'},
       );
       expect(
@@ -20,6 +20,18 @@ void main() {
       );
     },
   );
+  test('conflicting receipt cannot replace the SR captured on the order', () {
+    final result = {
+      'fields': {'sr_number': 'SR-765'},
+      'sr_check': 'bound-proof',
+    };
+    expect(receiptSrConflict(result, 'SR-321'), isTrue);
+    expect(receiptSrConflict(result, 'sr765'), isFalse);
+    expect(receiptSrFields(result, fallbackSr: 'SR-321'), {
+      'sr_number': 'SR-321',
+      'receipt_sr_check': '',
+    });
+  });
   test(
     'unreadable receipts do not fabricate or retain a previous receipt SR',
     () {

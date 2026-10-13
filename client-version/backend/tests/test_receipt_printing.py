@@ -54,6 +54,30 @@ def test_sale_receipt_follows_authoritative_cancellation_state(client):
     assert "Fully activated" not in text
 
 
+def test_new_reference_bill_places_sr_once_with_primary_sale_details(client):
+    sr = 'SR-BILL-' + uuid4().hex
+    submitted = submit(client, sale_body(client, sr=sr)).json()
+    response = client.get(f"/api/kyc-captures/{submitted['id']}/print-data")
+    assert response.status_code == 200
+    sections = response.json()['invoice']['sections']
+    first = sections[0]
+    assert first['title'] == 'Reference bill'
+    assert first['fields'][3]['label'] == 'Activation'
+    assert {'label': 'SR number', 'value': sr} in first['fields']
+    assert len([field for section in sections for field in section['fields'] if field['label'] == 'SR number']) == 1
+
+
+def test_historical_order_reference_bill_keeps_original_sr_section():
+    from types import SimpleNamespace
+    from app.invoices import invoice
+    row = SimpleNamespace(id='historical-order', status='VERIFIED', created_at=datetime(2026, 10, 1))
+    data = {'intake': {'capture_mode': 'SCREENSHOT_ORDER', 'sr_number': 'SR-HISTORICAL-1234'}, 'rows': []}
+    sections = invoice(row, data)['sections']
+    assert not any(field['label'] == 'SR number' for field in sections[0]['fields'])
+    plan = next(section for section in sections if section['title'] == 'SIM & plan')
+    assert {'label': 'SR number', 'value': 'SR-HISTORICAL-1234'} in plan['fields']
+
+
 def test_print_preparation_rechecks_effective_export_permission_and_scope(client):
     submitted = submit(client, sale_body(client)).json()
     from app.sr_verification import SrBatch, SrCheck

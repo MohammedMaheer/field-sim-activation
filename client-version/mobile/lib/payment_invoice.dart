@@ -92,6 +92,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
                       : 'Recorded by agent')
                 : row['activation']?['status'] ?? 'Awaiting backend team',
           ),
+          if (saleMode) field('SR number', intake['sr_number']),
         ],
       },
       {
@@ -138,7 +139,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
               'Advance transaction number',
               intake['advance_transaction_number'],
             ),
-            field('SR number', intake['sr_number']),
+            if (!saleMode) field('SR number', intake['sr_number']),
             field('Alternate contact number', intake['alternate_number']),
           ],
           field(
@@ -154,7 +155,6 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
         'title': saleMode ? 'Sale' : 'Payment',
         'fields': [
           if (saleMode) ...[
-            field('SR number', intake['sr_number']),
             field(
               'SR verification',
               srVerificationLabel(row['sr_verification']?['status']),
@@ -364,6 +364,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
         'Invoice number',
         'Sale reference',
         'Date',
+        'SR number',
       ],
       'Customer': ['Customer name', 'Document number', 'Phone number'],
       'SIM & plan': [

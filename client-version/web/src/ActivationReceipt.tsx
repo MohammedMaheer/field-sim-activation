@@ -79,7 +79,7 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
   );
   const sections: Row[] = referenceBillSections(capture.invoice?.sections || []);
   const primaryLabels: Record<string, string[]> = {
-    "Reference bill": ["Reference bill number", "Sale reference", "Date"],
+    "Reference bill": ["Reference bill number", "Sale reference", "SR number", "Date"],
     Customer: ["Customer name", "Document number", "Phone number"],
     "SIM & plan": orderMode
       ? ["Request ID", "Plan", "Monthly charge", "Prepayment on order"]

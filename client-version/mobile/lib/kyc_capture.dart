@@ -42,6 +42,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Uint8List? bytes;
   String? receiptOriginalSr;
   String? receiptSrNotice;
+  bool receiptSrReading = false, receiptSrRetry = false;
+  bool receiptSrMismatch = false, receiptSrUnclear = false;
   StageOcrRequest? receiptReadRequest;
   String operation = const Uuid().v4();
   List<Json> captures = [], rows = [];
@@ -236,7 +238,15 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         : '';
     intake.remove('receipt_sr_check');
     intake['sr_number'] = receiptOriginalSr;
-    if (mounted) setState(() => receiptSrNotice = 'Reading SR number…');
+    if (mounted) {
+      setState(() {
+        receiptSrReading = true;
+        receiptSrRetry = false;
+        receiptSrMismatch = false;
+        receiptSrUnclear = false;
+        receiptSrNotice = 'Reading SR number from receipt…';
+      });
+    }
     try {
       final selectedImage = base64Encode(image);
       final selectedOperation = operation;
@@ -261,24 +271,103 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       if (!mounted) return;
       setState(() {
         intake.addAll(fields);
-        receiptSrNotice =
-            (fields['receipt_sr_check'] ?? '').toString().isNotEmpty
+        receiptSrMismatch = receiptSrConflict(result, receiptOriginalSr ?? '');
+        receiptSrUnclear = result['sr_status'] == 'UNCLEAR';
+        receiptSrNotice = receiptSrMismatch
+            ? 'Receipt SR does not match the order · replace or remove receipt'
+            : (fields['receipt_sr_check'] ?? '').toString().isNotEmpty
             ? 'SR number read from receipt'
+            : receiptSrUnclear
+            ? 'SR number unclear · use a clearer receipt photo'
+            : (fields['sr_number'] ?? '').toString().trim().isNotEmpty
+            ? 'SR number read from order · not shown on receipt'
             : 'SR number not shown on receipt';
       });
-    } catch (_) {
+    } on OcrReadCancelled {
+      return;
+    } catch (failure) {
+      // A terminal failure needs a new job; a temporary interruption retains
+      // the original operation so retry does not create concurrent OCR work.
+      if (failure is! OcrTemporaryFailure) receiptReadRequest = null;
       if (mounted) {
-        setState(
-          () => receiptSrNotice =
-              'SR number not read · backend verification pending',
-        );
+        setState(() {
+          receiptSrRetry = true;
+          receiptSrNotice =
+              'SR could not be read · retry or use a clearer photo';
+        });
       }
+    } finally {
+      if (mounted) setState(() => receiptSrReading = false);
     }
+  }
+
+  Future<void> retryReceiptSr() async {
+    final image = bytes;
+    if (image == null) return;
+    await act(() async {
+      await readReceiptSr(image);
+      await saveDraft();
+    });
+  }
+
+  Future<void> removeReceipt() async {
+    await act(() async {
+      setState(() {
+        bytes = null;
+        intake.remove('payment_image');
+        intake.remove('receipt_sr_check');
+        intake['sr_number'] = receiptOriginalSr ?? '';
+        receiptReadRequest = null;
+        receiptSrNotice = null;
+        receiptSrRetry = false;
+        receiptSrMismatch = false;
+        receiptSrUnclear = false;
+        operation = const Uuid().v4();
+      });
+      await saveDraft();
+    });
+  }
+
+  Future<void> viewAttachedReceipt() async {
+    final image = bytes;
+    if (image == null) return;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => Dialog(
+        child: SizedBox(
+          height: MediaQuery.sizeOf(context).height * .75,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+                child: Text('Payment receipt', style: RelayTypography.section),
+              ),
+              Expanded(
+                child: InteractiveViewer(
+                  maxScale: 5,
+                  child: Center(
+                    child: Image.memory(image, fit: BoxFit.contain),
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> upload() async {
     final saleFlow = intake['capture_mode'] == 'SCREENSHOT_SALE';
-    if ((!saleFlow && bytes == null) || busy) return;
+    if ((!saleFlow && bytes == null) || busy || receiptSrMismatch) return;
     await act(() async {
       pending = true;
       await saveDraft();
@@ -1003,9 +1092,25 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         'Request ID',
                         intake['order_reference'] ?? 'Not recorded',
                       ),
-                      _ReceiptLine(
-                        'SR number',
-                        intake['sr_number'] ?? 'Not recorded',
+                      const SizedBox(height: 10),
+                      SrNumberSummary(
+                        value: (intake['sr_number'] ?? '').toString(),
+                        message:
+                            receiptSrNotice ??
+                            ((intake['sr_number'] ?? '')
+                                    .toString()
+                                    .trim()
+                                    .isEmpty
+                                ? 'Read automatically from order or receipt'
+                                : 'SR number read from order'),
+                        reading: receiptSrReading,
+                        warning:
+                            receiptSrMismatch ||
+                            receiptSrUnclear ||
+                            receiptSrRetry,
+                        onRetry: receiptSrRetry && !busy && !pending
+                            ? retryReceiptSr
+                            : null,
                       ),
                     ] else
                       const Text(
@@ -1013,22 +1118,21 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                         style: RelayTypography.caption,
                       ),
                     gap(),
-                    TextField(
-                      controller: source,
-                      maxLength: 120,
-                      enabled: !busy && !pending,
-                      decoration: InputDecoration(
-                        labelText: saleFlow
-                            ? 'Reference · optional'
-                            : 'Request ID (optional)',
-                        hintText: intake['order_reference']?.toString(),
+                    if (!saleFlow)
+                      TextField(
+                        controller: source,
+                        maxLength: 120,
+                        enabled: !busy && !pending,
+                        decoration: InputDecoration(
+                          labelText: 'Request ID (optional)',
+                          hintText: intake['order_reference']?.toString(),
+                        ),
+                        onChanged: (_) {
+                          saveDraft();
+                          setState(() {});
+                        },
                       ),
-                      onChanged: (_) {
-                        saveDraft();
-                        setState(() {});
-                      },
-                    ),
-                    gap(),
+                    if (!saleFlow) gap(),
                     if (saleFlow)
                       const Padding(
                         padding: EdgeInsets.only(bottom: 8),
@@ -1083,24 +1187,88 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                     ),
                     const SizedBox(height: 12),
                     if (bytes != null) ...[
-                      Image.memory(
-                        bytes!,
-                        height: 180,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, e, st) => const Text(
-                          'Image preview unavailable. Choose a PNG or JPEG.',
+                      if (saleFlow)
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xffddd8e5)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              InkWell(
+                                onTap: viewAttachedReceipt,
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  bytes!,
+                                  width: 58,
+                                  height: 78,
+                                  fit: BoxFit.contain,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Receipt attached',
+                                      style: RelayTypography.bodyStrong,
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Wrap(
+                                      spacing: 4,
+                                      children: [
+                                        TextButton(
+                                          onPressed: viewAttachedReceipt,
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                            minimumSize: const Size(0, 44),
+                                          ),
+                                          child: const Text('View receipt'),
+                                        ),
+                                        TextButton(
+                                          onPressed: busy || pending
+                                              ? null
+                                              : removeReceipt,
+                                          style: TextButton.styleFrom(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                            ),
+                                            minimumSize: const Size(0, 44),
+                                          ),
+                                          child: const Text('Remove receipt'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Image.memory(
+                          bytes!,
+                          height: 180,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, e, st) => const Text(
+                            'Image preview unavailable. Choose a PNG or JPEG.',
+                          ),
                         ),
-                      ),
                       gap(),
-                      const Text('Image ready to upload'),
-                      if (saleFlow && receiptSrNotice != null) ...[
-                        const SizedBox(height: 6),
-                        Text(receiptSrNotice!, style: RelayTypography.caption),
-                      ],
+                      if (!saleFlow) const Text('Image ready to upload'),
                       gap(),
                     ],
                     FilledButton(
-                      onPressed: busy || (!saleFlow && bytes == null)
+                      onPressed:
+                          busy ||
+                              receiptSrMismatch ||
+                              (!saleFlow && bytes == null)
                           ? null
                           : upload,
                       child: Text(

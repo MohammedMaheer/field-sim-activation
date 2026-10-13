@@ -259,7 +259,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
   String accountLabel(Json account) {
     final role = switch (account['role']) {
       'Field Agent' => 'Sales agent',
-      'Team Leader' => 'Branch leader',
+      'Team Leader' => 'Team leader',
       'Tele Verification Officer' => 'Tele verification',
       'Welcome Call Officer' => 'Welcome calls',
       _ => account['role'],

@@ -139,7 +139,7 @@ def validated(db, kind, values, row=None):
             raise HTTPException(409, "Email already belongs to another account")
         agents = db.scalars(select(Agent).where(Agent.leader_id == row.id)).all()
         if any(db.get(Outlet, a.outlet_id).branch_id != merged["branch_id"] for a in agents):
-            raise HTTPException(409, "Reassign this team's agents before changing its branch")
+            raise HTTPException(409, "Reassign this team leader's sales agents before moving the team leader to another branch")
         if merged["branch_id"] != row.branch_id and row.branch_id:
             # Serialize removal from the old roster with branch leader-list edits.
             lifecycle_row_for_update(db, Branch, row.branch_id)

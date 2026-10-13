@@ -190,7 +190,7 @@ class _NotificationsState extends ConsumerState<NotificationsScreen> {
                                     .toList(),
                                 true,
                               ),
-                        child: const Text('Read shown'),
+                        child: const Text('Mark shown as read'),
                       );
                       if (constraints.maxWidth < 300 || textScale > 1.2) {
                         return Column(

@@ -17,6 +17,7 @@ import 'package:image/image.dart' as imaging;
 import 'package:image_picker/image_picker.dart';
 import 'services.dart';
 import 'ocr_jobs.dart';
+import 'receipt_sr.dart';
 
 class DocumentScanResult {
   final Uint8List image;
@@ -520,6 +521,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   String? error;
   final Map<String, StageOcrRequest> pendingReads = {};
   String? retryableStage;
+  String? orderSrStatus;
   int captureRevision = 0;
   final Set<String> missing = {};
   final Map<String, GlobalKey> fieldAnchors = {};
@@ -725,7 +727,8 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   : "Customer details weren't captured clearly. Try again."),
         );
       }
-      data.addAll(fields);
+      if (key == 'order_image') orderSrStatus = fields['sr_status']?.toString();
+      data.addAll(Json.from(fields)..remove('sr_status'));
       retryableStage = null;
       error = ocrWarning(fields);
       missing.removeWhere(
@@ -842,6 +845,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         );
         captureRevision++;
         retryableStage = null;
+        orderSrStatus = null;
       }
       data[key] = encodeDocument(bytes);
       if (mounted) setState(() {});
@@ -1405,7 +1409,18 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                 if (data['router_fulfilment'] == 'ON_SPOT')
                   field('router_serial', 'Router serial'),
               ],
-              field('sr_number', 'SR number', locked: true),
+              SrNumberSummary(
+                value: (data['sr_number'] ?? '').toString(),
+                message: (data['sr_number'] ?? '').toString().trim().isEmpty
+                    ? orderSrStatus == 'UNCLEAR'
+                          ? 'SR number unclear · take a clearer order photo'
+                          : orderSrStatus == 'NOT_PRESENT'
+                          ? 'Not shown on order · read from receipt'
+                          : 'Read automatically from order or receipt'
+                    : 'SR number read from order',
+                warning: orderSrStatus == 'UNCLEAR',
+              ),
+              const SizedBox(height: 8),
               ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 title: const Text(

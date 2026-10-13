@@ -94,7 +94,7 @@ for (const role of ["Administrator", "Operations Manager"]) {
     for (const [route, button] of [
       ["branches", "Add branch"],
       ["agents", "Add sales agent"],
-      ["team-leaders", "Manage team leaders"],
+      ["team-leaders", "Add team leader"],
       ["customers", "Manage customers"],
     ]) {
       await page.goto("/" + route);
@@ -107,7 +107,7 @@ for (const role of ["Administrator", "Operations Manager"]) {
     }
     await page.goto("/team-leaders");
     await expect(
-      page.getByRole("button", { name: "Edit team leader", exact: true }),
+      page.getByRole("button", { name: "Edit details", exact: true }),
     ).toHaveCount(0);
   });
   test(`${role}: authorized management retains branch and agent setup`, async ({
@@ -120,7 +120,7 @@ for (const role of ["Administrator", "Operations Manager"]) {
     for (const [route, button] of [
       ["branches", "Add branch"],
       ["agents", "Add sales agent"],
-      ["team-leaders", "Manage team leaders"],
+      ["team-leaders", "Add team leader"],
       ["customers", "Manage customers"],
     ]) {
       await page.goto("/" + route);

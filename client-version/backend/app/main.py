@@ -532,6 +532,7 @@ def records(resource, db, user, branch_id=""):
                 if not branch_id or leader.branch_id == branch_id
             )
         for leader_id, team_branch in sorted(pairs):
+            leader_user = db.get(User, leader_id)
             members = [
                 a for a in views if a["leader_id"] == leader_id and a["branch_id"] == team_branch
             ]
@@ -543,6 +544,9 @@ def records(resource, db, user, branch_id=""):
                     "id": leader_id + ":" + team_branch,
                     "leader_id": leader_id,
                     "branch_id": team_branch,
+                    "current_branch_id": leader_user.branch_id,
+                    "current_branch": db.get(Branch, leader_user.branch_id).name if leader_user.branch_id else "Not assigned",
+                    "historical_assignment": leader_user.branch_id != team_branch,
                     "name": db.get(User, leader_id).name,
                     "branch": db.get(Branch, team_branch).name,
                     "agents": len(members),
@@ -677,7 +681,7 @@ def records(resource, db, user, branch_id=""):
             item["branch_id"] = db.get(Outlet, row.outlet_id).branch_id if row.outlet_id else ""
             item["branch"] = db.get(Branch, item["branch_id"]).name if item["branch_id"] else "Unassigned"
             progress = progress_by_sim.get(row.id)
-            item["activation_stage"] = progress.stage if progress else "NOT_STARTED"
+            item["activation_stage"] = progress.stage if progress else "ACTIVATED" if row.status == "ACTIVATED" else "NOT_STARTED"
             item["payment_status"] = progress.payment_status if progress else "NOT_UPLOADED"
             item["scan_transaction_id"] = progress.transaction_id if progress else None
             item["capture_id"] = progress.capture_id if progress else None
@@ -1578,7 +1582,7 @@ def save_agent_management(
     ):
         raise HTTPException(
             409,
-            "Return or transfer the agent's available/reserved SIM stock before changing outlet",
+            "Return or transfer the sales agent's available/reserved SIM stock before changing branch",
         )
     if old["outlet_id"] != new_assignment["outlet_id"] or old["leader_id"] != new_assignment["leader_id"]:
         agent.assignment_effective_at = now()

@@ -220,6 +220,69 @@ def test_receipt_ocr_writer_access_and_proof_binds_sr_image_and_account(client, 
     assert submit(client, body).status_code == 201
 
 
+def test_receipt_sr_cannot_replace_a_different_sr_captured_on_order(client):
+    receipt = image()
+    body = sale_body(client, payment_image=receipt)
+    user_id = client.get('/api/auth/me').json()['id']
+    order_proof = json.loads(captures.cipher.decrypt(body['intake']['order_check'].encode()))
+    order_proof['fields']['sr_number'] = 'SR-ORDER-998877'
+    body['intake']['order_check'] = captures.cipher.encrypt(json.dumps(order_proof).encode()).decode()
+    read = captures.parse_receipt_result({'lines': [{'text': 'SR ID: SR-RECEIPT-112233', 'confidence': 95}]}, receipt, user_id)
+    body['intake'].update(sr_number=read['fields']['sr_number'], receipt_sr_check=read['sr_check'])
+    response = submit(client, body)
+    assert response.status_code == 422
+    assert 'does not match the captured order' in response.json()['detail']
+    with DB() as db:
+        assert not db.scalar(select(SalesRecord.id).where(SalesRecord.request_id == body['intake']['order_reference']))
+    # The optional receipt can be removed; the explicitly captured order SR
+    # remains intact and can still be recorded without payment approval.
+    body['intake'].update(sr_number='SR-ORDER-998877', receipt_sr_check='', payment_image='')
+    assert submit(client, body).status_code == 201
+
+
+def test_queued_receipt_ocr_sr_is_saved_and_daily_report_matches_without_manual_sr(client, monkeypatch):
+    from app import main, ocr_queue as jobs
+    from app.db import KycCapture
+    from app.sr_verification import SrCheck
+    from datetime import datetime
+    from test_sr_reconciliation import apply_report
+    monkeypatch.setattr(main, 'process_ocr_job', lambda: False)
+    receipt = image()
+    body = sale_body(client, payment_image=receipt)
+    expected_sr = '0000' + str(uuid4().int)[:12]
+    monkeypatch.setattr(jobs.extractor, 'extract', lambda _: {'lines': [
+        {'text': 'PAYMENT RECEIPT', 'confidence': 98},
+        {'text': 'Service Request (SR) No.', 'confidence': 97},
+        {'text': expected_sr, 'confidence': 96},
+        {'text': 'Request ID: ' + body['intake']['order_reference'], 'confidence': 97},
+    ]})
+    queued = client.post('/api/kyc-captures/ocr-jobs', json={
+        'stage': 'RECEIPT', 'operation_id': str(uuid4()), 'image_base64': receipt})
+    assert queued.status_code == 202, queued.text
+    assert jobs.process_ocr_job()
+    completed = client.get('/api/kyc-captures/ocr-jobs/' + queued.json()['id']).json()
+    assert completed['status'] == 'COMPLETED'
+    parsed = completed['result']
+    assert parsed['sr_status'] == 'READ' and parsed['fields']['sr_number'] == expected_sr
+    body['intake'].update(sr_number=parsed['fields']['sr_number'], receipt_sr_check=parsed['sr_check'])
+    saved = submit(client, body)
+    assert saved.status_code == 201, saved.text
+    with DB() as db:
+        capture = db.get(KycCapture, saved.json()['id'])
+        assert captures.payload(capture)['intake']['sr_number'] == expected_sr
+        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == capture.id))
+        assert sale.details['sr_number'] == expected_sr
+        identifier = sale.id
+        sale.created_at = datetime(2026, 10, 7, 8)
+        db.commit()
+    report = apply_report(client, f'sr_number,request_id\n{expected_sr},{body["intake"]["order_reference"]}\n')
+    assert any(change['sale_id'] == identifier and change['to'] == 'MATCHED' for change in report['changes'])
+    with DB() as db:
+        assert db.scalar(select(SrCheck).where(SrCheck.sale_id == identifier)).status == 'MATCHED'
+        # SR matching stays independent of the required evidence review.
+        assert db.get(SalesRecord, identifier).status == 'IN_PROGRESS'
+
+
 def test_agent_keeps_sales_capture_and_notifications_after_branch_and_leader_transfer(client):
     body = sale_body(client)
     result = submit(client, body)

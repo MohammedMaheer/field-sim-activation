@@ -51,6 +51,7 @@ def invoice(row, data):
                 field("Date", row.created_at.strftime("%d %b %Y, %H:%M UTC")),
                 field("Review", review),
                 field("Activation", ("Confirmed by backend" if row.status == "VERIFIED" else "Recorded by agent") if order_mode else activation.get("status") or "Awaiting backend team"),
+                *([field("SR number", intake.get("sr_number"))] if sale_mode else []),
             ],
         },
         {
@@ -90,7 +91,7 @@ def invoice(row, data):
                     ("order_type", "Order type"), ("account_number", "Account number"),
                     ("router_serial", "Router serial"), ("advance_transaction_number", "Advance transaction number"),
                     ("sr_number", "SR number"), ("alternate_number", "Alternate contact number"),
-                ]] if order_mode else []),
+                ] if key != "sr_number" or not sale_mode] if order_mode else []),
                 *([field("Router fulfilment", {"DELIVERY": "Delivery", "ON_SPOT": "On spot", "WITHOUT_ROUTER": "Without router"}.get(intake.get("router_fulfilment")))] if sale_mode and intake.get("order_type") == "HW" else []),
                 field(
                     "Plan price",

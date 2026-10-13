@@ -1090,7 +1090,7 @@ function AgentDrawer({
           <Badge value={a.status} />
         </div>
       </div>
-      <div className="mini-metrics">
+      {tab !== "Assignment" && <div className="mini-metrics">
         <div>
           <b>{a.activations}</b>
           <span>Activations</span>
@@ -1107,7 +1107,7 @@ function AgentDrawer({
           <b>{a.stock}</b>
           <span>SIM stock</span>
         </div>
-      </div>
+      </div>}
       <div className="tabs">
         {[
           "Overview",
@@ -1116,7 +1116,7 @@ function AgentDrawer({
           "Inventory",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
           ...(canManageOrganization(user)
-            ? ["Manage"]
+            ? ["Assignment"]
             : []),
         ].map((t) => (
           <button
@@ -1128,13 +1128,14 @@ function AgentDrawer({
           </button>
         ))}
       </div>
-      <Link
+      {tab !== "Assignment" && <Link
         className="button"
         to={`/sales?tab=targets&agent=${encodeURIComponent(a.id)}`}
       >
         View product targets
-      </Link>
-      {tab === "Manage" && canManageOrganization(user) ? (
+      </Link>}
+      {canManageOrganization(user) && tab !== "Assignment" && <button className="primary assignment-shortcut" onClick={() => setTab("Assignment")}>Change branch or team leader</button>}
+      {tab === "Assignment" && canManageOrganization(user) ? (
         <AgentManagement
           agentId={a.id}
           onSaved={() => {
@@ -1147,6 +1148,7 @@ function AgentDrawer({
           <DetailList
             data={{
               branch: a.branch,
+              team_leader: a.leader || "Not assigned",
               shift: a.on_shift ? "Active shift" : "Off shift",
               ekyc_pass_rate: a.ekyc_rate + "%",
               ocr_accuracy: a.ocr + "%",
@@ -1246,8 +1248,8 @@ const inventoryColumns: Column[] = [
     label: "ICCID / serial",
     render: (r) => (
       <>
-        <b className="reference">{r.iccid}</b>
-        <small className="cell-sub">{r.serial}</small>
+        <b className="reference">{r.iccid || r.serial || "Not recorded"}</b>
+        {r.serial && r.serial !== (r.iccid || r.serial) && <small className="cell-sub">Serial: {r.serial}</small>}
       </>
     ),
   },
@@ -1425,13 +1427,22 @@ function ResourcePage({ resource }: { resource: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const config = configs[resource];
+  const leaderFilter = resource === "agents" ? new URLSearchParams(location.search).get("leader") || "" : "";
+  const visibleData = leaderFilter ? data.filter((row) => row.leader_id === leaderFilter) : data;
+  const selectDetails = (row: Row) => {
+    const params = new URLSearchParams(location.search);
+    params.set("selected", row.id);
+    navigate(`${location.pathname}?${params}`);
+  };
   useEffect(() => {
     const id = new URLSearchParams(location.search).get("selected");
     setSelected(id ? data.find((r) => r.id === id) || null : null);
   }, [data, location.search]);
   const closeDetails = () => {
     setSelected(null);
-    navigate(location.pathname, { replace: true });
+    const params = new URLSearchParams(location.search);
+    params.delete("selected");
+    navigate(location.pathname + (params.size ? `?${params}` : ""), { replace: true });
   };
   if (isPending) return <Loading />;
   if (error) return <ErrorState error={error} retry={refetch} />;
@@ -1505,8 +1516,9 @@ function ResourcePage({ resource }: { resource: string }) {
           </button>
         )}
       </PageHeader>
+      {leaderFilter && <div className="assignment-filter" role="status"><span>Sales agents reporting to <b>{visibleData[0]?.leader || "selected team leader"}</b></span><button onClick={() => navigate(location.pathname)}>Show all sales agents</button></div>}
       <RecordOverview
-        rows={data}
+        rows={visibleData}
         categories={
           resource === "inventory"
             ? ["AVAILABLE", "RESERVED", "ACTIVATED", "DAMAGED"]
@@ -1534,16 +1546,12 @@ function ResourcePage({ resource }: { resource: string }) {
       />
       <Panel
         title="Records"
-        subtitle={`${data.length} records in your authorized scope`}
+        subtitle={`${visibleData.length} records in your authorized scope`}
       >
         <DataTable
-          rows={data}
+          rows={visibleData}
           columns={config.columns}
-          onRow={(row) =>
-            navigate(
-              `${location.pathname}?selected=${encodeURIComponent(row.id)}`,
-            )
-          }
+          onRow={selectDetails}
         />
       </Panel>
       {selected &&

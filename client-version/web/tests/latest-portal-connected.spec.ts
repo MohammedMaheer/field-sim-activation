@@ -136,7 +136,10 @@ test("real branch controls edit multiple leaders and all product targets", async
     .getByLabel("Reason for change", { exact: true })
     .fill("Isolated QA explicit leader unassignment");
   await dialog
-    .getByRole("button", { name: "Save team leaders", exact: true })
+    .getByRole("button", { name: "Review team leader changes", exact: true })
+    .click();
+  await dialog
+    .getByRole("button", { name: "Confirm team leader changes", exact: true })
     .click();
   await expect
     .poll(
@@ -172,7 +175,7 @@ test("real branch controls edit multiple leaders and all product targets", async
     .filter({
       has: page.getByRole("heading", { name: leaderB.name, exact: true }),
     })
-    .getByRole("button", { name: "Edit team leader", exact: true })
+    .getByRole("button", { name: "Edit details", exact: true })
     .click();
   await dialog
     .getByLabel("Team leader name", { exact: true })
@@ -181,7 +184,7 @@ test("real branch controls edit multiple leaders and all product targets", async
     .getByLabel("Reason for change", { exact: true })
     .fill("Isolated QA team leader profile update");
   await dialog
-    .getByRole("button", { name: "Save team leader", exact: true })
+    .getByRole("button", { name: "Save team leader details", exact: true })
     .click();
   await expect(
     page.getByRole("heading", {

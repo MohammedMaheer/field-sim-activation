@@ -579,7 +579,11 @@ export default function CustomerIntake({
               {value.order_type === "HW" &&
                 value.router_fulfilment === "ON_SPOT" &&
                 input("router_serial", "Router serial", "text", 100)}
-              {input("sr_number", "SR number", "text", 120)}
+              <div className="sr-auto-read" role="status" aria-label="SR number from OCR">
+                <span>SR number · Auto-read</span>
+                <strong>{value.sr_number || "Not recorded"}</strong>
+                <small>{value.sr_number ? "Read from order" : "Auto-read from order or receipt"}</small>
+              </div>
               <details className="intake-extra">
                 <summary>Additional sale details</summary>
                 <div className="intake-grid">
