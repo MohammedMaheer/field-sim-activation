@@ -6,6 +6,7 @@ import io
 import json
 import re
 from datetime import date, datetime, timedelta
+from itertools import islice
 from zipfile import ZipFile
 
 import jwt
@@ -14,6 +15,7 @@ from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, ForeignKey, JSON, String, Text, UniqueConstraint, or_, select, text
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.exc import OperationalError
 
 from .db import Entity, SalesRecord, KycCapture, User, Role, Agent, Branch, get_db, now, business_date
 from .security import SECRET, cipher, permissions, principal, visible_agents
@@ -86,7 +88,8 @@ def normal_sr(value):
 
 
 class ReportBody(BaseModel):
-    business_date: str = Field(min_length=10, max_length=10)
+    business_date: str = Field(default="", max_length=10)
+    period: str = Field(default="", max_length=7)
     filename: str = Field(min_length=4, max_length=180)
     content_base64: str = Field(min_length=4, max_length=2_800_000)
     apply: bool = False
@@ -103,13 +106,29 @@ def report_date(value):
         raise HTTPException(422, "Choose the sale's business date, not a future date") from None
 
 
+def report_range(day_value="", period=""):
+    if period:
+        if day_value or not re.fullmatch(r"20\d{2}-(0[1-9]|1[0-2])", period):
+            raise HTTPException(422, "Choose either a sales date or a month in YYYY-MM format")
+        import calendar
+        year, month = map(int, period.split('-'))
+        first = date(year, month, 1)
+        if first > business_date_today():
+            raise HTTPException(422, "Choose a current or past sales month")
+        return first, min(date(year, month, calendar.monthrange(year,month)[1]), business_date_today())
+    day = report_date(day_value) if day_value else business_date_today()
+    return day, day
+
+
 def read_report(body):
     try:
         raw = base64.b64decode(body.content_base64, validate=True)
         if len(raw) > 2_000_000:
             raise ValueError()
         if body.filename.lower().endswith(".csv"):
-            values = list(csv.reader(io.StringIO(raw.decode("utf-8-sig"))))
+            # A small CSV can contain hundreds of thousands of empty rows.
+            # Stop at the first over-limit row instead of allocating them all.
+            values = list(islice(csv.reader(io.StringIO(raw.decode("utf-8-sig"))), 5002))
         elif body.filename.lower().endswith(".xlsx"):
             with ZipFile(io.BytesIO(raw)) as archive:
                 members = archive.infolist()
@@ -130,6 +149,8 @@ def read_report(body):
         raise HTTPException(422, "The SR report could not be read") from None
     if not values or len(values) > 5001:
         raise HTTPException(422, "Keep the SR report within 5,000 data rows")
+    if any(len(row) > 50 for row in values):
+        raise HTTPException(422, "Keep the SR report within 50 columns")
     aliases = {"sr": "sr_number", "sr number": "sr_number", "sr no": "sr_number", "sr id": "sr_number", "service request number": "sr_number", "status": "status", "sale status": "status", "request id": "request_id", "request number": "request_id"}
     columns = [aliases.get(re.sub(r"[_\s]+", " ", str(value or "").strip().casefold()), "") for value in values[0]]
     if columns.count("sr_number") != 1 or any(columns.count(key) > 1 for key in ("status", "request_id")):
@@ -168,18 +189,24 @@ def read_report(body):
     # Retain fingerprints used before row metadata was added.
     identity = {key: {field: row[field] for field in ("sr_number", "status", "request_id")}
                 for key, row in entries.items()}
-    fingerprint = hashlib.sha256((body.business_date + "\n" + json.dumps(identity, sort_keys=True)).encode()).hexdigest()
+    fingerprint = hashlib.sha256(((body.period or body.business_date) + "\n" + json.dumps(identity, sort_keys=True)).encode()).hexdigest()
     return entries, errors, fingerprint
 
 
-def day_sales(db, day, lock=False):
+def day_sales(db, day, lock=False, last=None):
     # Backend-only import considers every sale on the selected business date.
     from datetime import timezone
     from zoneinfo import ZoneInfo
     start = datetime.combine(day, datetime.min.time(), ZoneInfo("Asia/Dubai")).astimezone(timezone.utc).replace(tzinfo=None)
-    end = start + timedelta(days=1)
+    end = datetime.combine((last or day) + timedelta(days=1), datetime.min.time(), ZoneInfo("Asia/Dubai")).astimezone(timezone.utc).replace(tzinfo=None)
     query = select(SalesRecord).where(SalesRecord.created_at >= start, SalesRecord.created_at < end).order_by(SalesRecord.id)
-    return list(db.scalars(query.with_for_update() if lock else query))
+    try:
+        return list(db.scalars(query.with_for_update(nowait=True) if lock else query))
+    except OperationalError as error:
+        if getattr(error.orig,"sqlstate",None) not in {"55P03","40P01"}:
+            raise
+        db.rollback()
+        raise HTTPException(409,"Sales are being updated. Preview and apply the SR report again shortly.") from None
 
 
 def comparison_for(sale, entries, *, report_available=True):
@@ -239,7 +266,7 @@ def changes_for(db, sales, entries):
         elif counts[sr] > 1:
             status, reason = "MISMATCH", "The same SR appears on multiple sales; resolve the duplicate"
         elif not entry:
-            status, reason = "MISMATCH", "SR not found in the selected day's report"
+            status, reason = "MISMATCH", "SR not found in the selected report"
         elif entry["request_id"] and entry["request_id"].casefold() != (sale.request_id or "").strip().casefold():
             status, reason = "MISMATCH", "SR matched but the report's request ID differs"
         sale_status = sale.status
@@ -265,12 +292,12 @@ def state_hash(db, sales, changes):
 
 
 @router.get("/template")
-def template(business_date: str = "", user=Depends(principal), db=Depends(get_db)):
+def template(business_date: str = "", period: str = "", user=Depends(principal), db=Depends(get_db)):
     access(db, user)
-    day = report_date(business_date) if business_date else None
+    day, last = report_range(business_date, period)
     workbook = Workbook()
     sheet = workbook.active
-    sheet.title = "Daily SR report"
+    sheet.title = "Monthly SR report" if period else "Daily SR report"
     sheet.append(["sr_number", "status", "request_id"])
     from .exports import add_metadata, filename, style_sheet
     from openpyxl.worksheet.datavalidation import DataValidation
@@ -285,7 +312,7 @@ def template(business_date: str = "", user=Depends(principal), db=Depends(get_db
     validation.showErrorMessage = True
     sheet.add_data_validation(validation)
     validation.add("B2:B5001")
-    add_metadata(workbook, "Daily SR reconciliation template", {"business_date": day or "Choose report date in the application", "maximum_srs": 5000}, ["Keep SR number and request ID as text, preserving leading zeros. Upload the carrier report for the selected business date. An SR match does not replace independent backend evidence review."])
+    add_metadata(workbook, "SR reconciliation template", {"from_date": day, "to_date": last, "maximum_srs": 5000}, ["Keep SR number and request ID as text, preserving leading zeros. Upload the carrier report for the selected day or month. An SR match does not replace independent backend evidence review."])
     output = io.BytesIO()
     workbook.save(output)
     return Response(output.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", headers={"Content-Disposition": f'attachment; filename="{filename("SR report template", "xlsx", day.isoformat() if day else "")}"', "Cache-Control": "private, no-store"})
@@ -297,7 +324,7 @@ def batches(user=Depends(principal), db=Depends(get_db)):
     # History needs counts only; do not load up to 100 encrypted reports and
     # thousands of comparison snapshots merely to render this compact list.
     query = select(SrBatch.id, SrBatch.business_date, SrBatch.filename, SrBatch.created_at,
-                   User.name.label("actor"),
+                   User.name.label("actor"), SrBatch.summary["report_period"].as_string().label("report_period"),
                    *(SrBatch.summary[key].as_integer().label(key) for key in ("matched", "mismatch", "pending")))\
         .join(User, User.id == SrBatch.actor_id).order_by(SrBatch.created_at.desc()).limit(100)
     return [{**dict(row), **{key: row[key] or 0 for key in ("matched", "mismatch", "pending")}}
@@ -313,12 +340,12 @@ def stored_entries(batch):
 
 
 @router.get("/results")
-def results(business_date: str = "", branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
+def results(business_date: str = "", period: str = "", branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
     """Current per-sale verification, including the report evidence behind each verdict."""
     access(db, user)
-    day = report_date(business_date) if business_date else business_date_today()
+    day, last = report_range(business_date, period)
     allowed = set(visible_agents(db, user))
-    sales = [sale for sale in day_sales(db, day) if sale.agent_id in allowed and
+    sales = [sale for sale in day_sales(db, day, last=last) if sale.agent_id in allowed and
              (not branch_id or sale.branch_id == branch_id)]
     truncated = len(sales) > 5000
     sales = sales[:5000]
@@ -363,7 +390,7 @@ def batch_detail(batch_id: str, branch_id: str = "", user=Depends(principal), db
     if not batch:
         raise HTTPException(404, "SR report import not found")
     allowed = set(visible_agents(db, user))
-    sales = [sale for sale in day_sales(db, date.fromisoformat(batch.business_date))
+    sales = [sale for sale in day_sales(db, date.fromisoformat(batch.business_date), last=date.fromisoformat(batch.summary.get("range_end") or batch.business_date))
              if sale.agent_id in allowed and (not branch_id or sale.branch_id == branch_id)]
     identifiers = {sale.id for sale in sales}
     rows = batch.summary.get("comparisons")
@@ -374,7 +401,7 @@ def batch_detail(batch_id: str, branch_id: str = "", user=Depends(principal), db
             raise HTTPException(503, "This stored report cannot be read. Upload the report again to compare it.")
         rows = changes_for(db, sales, entries)
     rows = [row for row in rows if row.get("sale_id") in identifiers]
-    return {"id": batch.id, "business_date": batch.business_date, "filename": batch.filename,
+    return {"id": batch.id, "business_date": batch.business_date, "report_period": batch.summary.get("report_period"), "filename": batch.filename,
             "created_at": batch.created_at, "changes": rows,
             "comparison_source": "SAVED_VERIFICATION" if historical else "CURRENT_SALE",
             "summary": {"matched": sum(row["to"] == "MATCHED" for row in rows),
@@ -396,13 +423,14 @@ def email_status(user=Depends(principal), db=Depends(get_db)):
 @router.post("/file")
 def reconcile(body: ReportBody, request: Request, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
-    day = report_date(body.business_date)
+    day, last = report_range(body.business_date, body.period)
     entries, errors, fingerprint = read_report(body)
     if body.apply and errors:
         raise HTTPException(422, {"errors": errors})
     if body.apply and db.bind.dialect.name == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(hashtextextended(:day, 0))"), {"day": "sr:" + day.isoformat()})
-    sales = day_sales(db, day, body.apply)
+        if not db.scalar(text("SELECT pg_try_advisory_xact_lock(82831017)")):
+            raise HTTPException(409,"Another SR import is running. Retry shortly.")
+    sales = day_sales(db, day, body.apply, last=last)
     changes = changes_for(db, sales, entries)
     summary = {"matched": sum(item["to"] == "MATCHED" for item in changes),
                "mismatch": sum(item["to"] == "MISMATCH" for item in changes),
@@ -446,7 +474,7 @@ def reconcile(body: ReportBody, request: Request, user=Depends(principal), db=De
             validate_preview()
         batch_fingerprint = hashlib.sha256((fingerprint + "\n" + snapshot).encode()).hexdigest() if existing else fingerprint
         batch = SrBatch(business_date=day.isoformat(), fingerprint=batch_fingerprint, filename=body.filename,
-                        actor_id=user.id, summary={**summary, "report_fingerprint": fingerprint, "comparisons": changes},
+                        actor_id=user.id, summary={**summary, "report_period":body.period, "range_end":last.isoformat(), "report_fingerprint": fingerprint, "comparisons": changes},
                         report_encrypted=cipher.encrypt(json.dumps(entries).encode()).decode())
         db.add(batch)
         db.flush()
@@ -463,7 +491,7 @@ def reconcile(body: ReportBody, request: Request, user=Depends(principal), db=De
             if check is None:
                 check = SrCheck(sale_id=sale.id)
                 db.add(check)
-            check.status, check.business_date, check.batch_id = item["to"], day.isoformat(), batch.id
+            check.status, check.business_date, check.batch_id = item["to"], business_date(sale.created_at).isoformat(), batch.id
             check.verified_at, check.reason = now(), item["reason"]
             # Do not resend an unchanged mismatch whenever the same day is rechecked.
             first_check = old_status == "PENDING_SR_VERIFICATION" and item["from"] == "PENDING_SR_VERIFICATION" and check.created_at is None

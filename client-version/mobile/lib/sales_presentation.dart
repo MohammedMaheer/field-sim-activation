@@ -1,7 +1,7 @@
 import 'services.dart';
 
 String salesRoleLabel(dynamic role) =>
-    role == 'Field Agent' ? 'Sales agent' : '$role';
+    ({'Field Agent':'Sales agent','Administrator':'Super admin','Operations Manager':'Admin','Compliance Officer':'Backend verification','Tele Verification Officer':'Tele-verification'}['$role'] ?? '$role');
 String productLabel(dynamic product) => switch ('$product') {
   'ALL' => 'All products',
   'NEW' => 'New postpaid',

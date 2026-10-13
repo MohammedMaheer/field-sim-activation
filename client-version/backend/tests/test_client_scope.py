@@ -759,7 +759,8 @@ def test_readonly_records_and_api_contract(client):
     r = client.get("/api/activations/" + row["id"])
     assert r.status_code == 200 and r.json()["events"]
     paths = client.get("/openapi.json").json()["paths"]
-    assert not any("/orders" in p or "/roles" in p for p in paths)
+    assert not any("/orders" in p or p.startswith("/api/roles") for p in paths)
+    assert "/api/organization/access/roles/{role_id}" in paths
 
 
 def test_legacy_location_surface_is_removed_and_work_tracking_is_explicit(client):
@@ -2169,7 +2170,7 @@ def test_sales_management_scope_targets_and_status_file(client):
     login(client, "agent1")
     assert sale_id in {r["id"] for r in client.get("/api/sales-management/sales").json()}
     assert client.patch(f"/api/sales-management/sales/{sale_id}", json={"order_type":"NEW", "router_serial":"", "reason":"Agent change"}).status_code == 403
-    assert client.post("/api/sales-management/sales", json={**body, "agent_id": other_branch["id"], "request_id": "SALES-TEST-REQ-3"}).status_code == 404
+    assert client.post("/api/sales-management/sales", json={**body, "agent_id": other_branch["id"], "request_id": "SALES-TEST-REQ-3"}).status_code == 403
     assert client.post(f"/api/sales-management/sales/{sale_id}/calls", json={"stage":"WELCOME_CALL","outcome":"PASSED","remark":"Reached customer"}).status_code == 403
     assert client.post("/api/sales-management/status-file", json={"filename":"sales.csv","content_base64":"","apply":False}).status_code == 403
     login(client, "leader2")
@@ -2275,6 +2276,7 @@ def test_call_tasks_roles_and_sequential_release(client):
     assert {task["status"] for task in client.get("/api/sales-management/call-tasks").json() if task["sale_id"] == sale_id} == {"PENDING", "BLOCKED"}
     staff = client.get("/api/sales-management/staff")
     assert staff.status_code == 200 and any(row["role"] == "Sales Manager" for row in staff.json())
+    login(client, "admin")
     assert client.post("/api/sales-management/staff", json={"name":"New Sales Manager", "email":"not-a-valid-email",
         "password":"strong-test-password", "role":"Sales Manager"}).status_code == 422
     branch = next(row["id"] for row in client.get("/api/resources/branches").json() if row["name"] == "Dubai Central")
@@ -2556,15 +2558,17 @@ def test_unrecognized_role_fails_closed_even_with_old_read_grant(client):
 
 def test_every_private_endpoint_has_authentication_dependency():
     from fastapi.routing import APIRoute
-    from app.security import principal
+    from app.security import principal, sign_out_principal
     public = {"/api/health", "/api/auth/login", "/api/auth/refresh", "/api/public/plans",
               "/api/auth/mobile-demo/accounts", "/api/auth/mobile-demo/login"}
-    def authenticated(dependency):
-        return dependency.call is principal or any(authenticated(child) for child in dependency.dependencies)
+    def authenticated(dependency, path):
+        return (dependency.call is principal or
+                (path == "/api/auth/logout" and dependency.call is sign_out_principal) or
+                any(authenticated(child, path) for child in dependency.dependencies))
     routes = [route for route in app.routes if isinstance(route, APIRoute)]
     assert len(routes) > 100
     for route in routes:
-        assert route.path in public or authenticated(route.dependant), route.path
+        assert route.path in public or authenticated(route.dependant, route.path), route.path
 
 
 def test_stale_elevated_grants_cannot_escalate_an_agent_session(client):

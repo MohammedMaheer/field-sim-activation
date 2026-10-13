@@ -1,5 +1,6 @@
 import { businessPeriod } from "./businessTime";
 import CommissionCalculations from "./CommissionCalculations";
+import FinalIncentives from "./FinalIncentives";
 import ExportActions from "./ExportActions";
 import { useSearchParams } from "react-router-dom";
 import { useState } from "react";
@@ -380,33 +381,44 @@ export function Incentives({ user, notify }: Props) {
           <div className="eyebrow">SALES PERFORMANCE</div>
           <h1>Incentives</h1>
         </div>
-        {user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read") && (
-          <ExportActions
-            path={`/incentives/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`}
-            name={`qanawat-sales-commissions-${period}`}
-            label="Export history"
-          />
-        )}
       </div>
-      <div className="proposal-toolbar">
-        <label>
-          Month
-          <input
-            type="month"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-          />
-        </label>
-      </div>
-      {[
-        "Administrator",
-        "Operations Manager",
-        "Sales Manager",
-        "Team Leader",
-        "Field Agent",
-      ].includes(user.role) && <CommissionCalculations period={period} />}
+      <FinalIncentives />
+      <details className="incentive-recorded-history">
+        <summary>Calculated estimates and commission setup</summary>
+        <div className="proposal-toolbar">
+          <label>
+            Month
+            <input
+              type="month"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+            />
+          </label>
+        </div>
+
+        <p>
+          Use this only when you need to calculate estimates from the approved
+          rules. Imported final amounts above do not need commission setup.
+        </p>
+        {[
+          "Administrator",
+          "Operations Manager",
+          "Sales Manager",
+          "Team Leader",
+          "Field Agent",
+        ].includes(user.role) && <CommissionCalculations period={period} />}
+      </details>
       <details className="incentive-recorded-history">
         <summary>Recorded incentive entries · AED {total.toFixed(2)}</summary>
+        {user.permissions.includes(
+          user.role === "Field Agent" ? "read" : "report.read",
+        ) && (
+          <ExportActions
+            path={`/incentives/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`}
+            name={`qanawat-recorded-incentives-${period}`}
+            label="Export recorded history"
+          />
+        )}
         <div className="proposal-summary">
           <div>
             <b>AED {total.toFixed(2)}</b>

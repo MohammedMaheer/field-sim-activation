@@ -210,6 +210,8 @@ def create(kind: Kind, body: Change, request: Request, user=Depends(principal), 
 def update(kind: Kind, record_id: str, body: Change, request: Request, user=Depends(principal), db=Depends(get_db)):
     locked(db, user, kind)
     row = item(db, kind, record_id)
+    if kind in {"teams","agents"} and set(body.values) & {"name","email","employee_id"} and db.get(Role,user.role_id).name != "Administrator":
+        raise HTTPException(403, "Only the Super admin can edit staff account details")
     values = validated(db, kind, body.values, row)
     before = view(row, kind, db)
     for key in values:

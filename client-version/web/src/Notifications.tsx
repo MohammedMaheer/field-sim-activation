@@ -8,6 +8,14 @@ import { Loading, ErrorState } from './components';
 import './notifications.css';
 
 const icons: Record<string, typeof Bell> = {Transactions:ReceiptText, Calls:Phone, Stock:Package, Support:LifeBuoy, Workspace:Bell};
+function notificationTime(value: unknown) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return 'Not recorded';
+  // Historic records contain naive UTC; timezone-aware API timestamps already
+  // establish the instant and must not receive another timezone suffix.
+  const date = new Date(/(?:z|[+-]\d{2}:?\d{2})$/i.test(raw) ? raw : raw + 'Z');
+  return Number.isNaN(date.getTime()) ? 'Not recorded' : date.toLocaleString();
+}
 export default function Notifications() {
   const {user} = useContext(Context), client=useQueryClient(), navigate=useNavigate();
   const [category,setCategory]=useState('All'), [unread,setUnread]=useState(false), [search,setSearch]=useState('');
@@ -28,7 +36,7 @@ export default function Notifications() {
     <div className="notification-tools"><input aria-label="Search notifications" placeholder="Search notifications" value={search} onChange={e=>setSearch(e.target.value)}/><label><input type="checkbox" checked={unread} onChange={e=>setUnread(e.target.checked)}/>Unread only</label></div>
     {error && <p role="alert">{error}</p>}
     {query.isPending ? <Loading/> : query.error ? <ErrorState error={query.error} retry={query.refetch}/> : !visible.length ? <div className="notification-empty"><Bell size={32}/><h2>You’re all caught up</h2><p>No notifications match this view.</p></div> : <div className="notification-list">{visible.map(row=>{const Icon=icons[row.category]||Bell;return <article key={row.id} className={`notification-row ${row.read?'is-read':'is-unread'}`}>
-      <button className="notification-open" disabled={busy} onClick={()=>mark([row],true,row.web_path)}><span className={`notification-icon tone-${row.category.toLowerCase()}`}><Icon size={22}/></span><span className="notification-copy"><small>{row.category}{row.attention?' · Needs attention':''}</small><strong>{row.title}</strong><span>{row.message}</span><time>{new Date(row.created_at.endsWith('Z')?row.created_at:row.created_at+'Z').toLocaleString()}</time></span><ArrowUpRight size={18}/></button>
+      <button className="notification-open" disabled={busy} onClick={()=>mark([row],true,row.web_path)}><span className={`notification-icon tone-${row.category.toLowerCase()}`}><Icon size={22}/></span><span className="notification-copy"><small>{row.category}{row.attention?' · Needs attention':''}</small><strong>{row.title}</strong><span>{row.message}</span><time>{notificationTime(row.created_at)}</time></span><ArrowUpRight size={18}/></button>
       <button className="notification-read" disabled={busy} onClick={()=>mark([row],!row.read)}>{row.read?'Mark unread':'Mark read'}</button>
     </article>})}</div>}
   </section>;

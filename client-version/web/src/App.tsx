@@ -9,6 +9,7 @@ import { businessDate } from "./businessTime";
 import Brand from "./branding";
 import Notifications from "./Notifications";
 import OrganizationSetup, { BranchLeaderEditor } from "./OrganizationSetup";
+import BranchLocationEditor from "./BranchLocation";
 import ActivationStatus from "./ActivationStatus";
 import CustomerDetails from "./CustomerDetails";
 import TeamLeaders from "./TeamLeaders";
@@ -22,6 +23,9 @@ import SalesManagement from "./SalesManagement";
 import SRVerification from "./SRVerification";
 import CallWorkspace from "./CallWorkspace";
 import FieldAssets from "./FieldAssets";
+import ExportActions from "./ExportActions";
+import AccountAccess from "./AccountAccess";
+import OrganizationImport from "./OrganizationImport";
 import { Incentives, Support } from "./ProposalOperations";
 import PageBoundary from "./PageBoundary";
 import LocationTracking from "./LocationTracking";
@@ -108,6 +112,7 @@ import {
   download,
   refreshSession,
   setAccess,
+  logoutSession,
   stream,
   Row,
   canManageOrganization,
@@ -211,7 +216,9 @@ export function canVisitPage(path: string, user: Row) {
       user.permissions?.includes(permission),
     );
   if (path === "location-tracking")
-    return ["location.self", "location.read", "location.manage"].some((grant) => user.permissions?.includes(grant));
+    return ["location.self", "location.read", "location.manage"].some((grant) =>
+      user.permissions?.includes(grant),
+    );
   if (path === "sr-verification")
     return (
       user.permissions?.includes("read") &&
@@ -230,20 +237,23 @@ export function canVisitPage(path: string, user: Row) {
       )
     );
   if (user.role === "Sales Manager")
-    return permissions.includes("read") && [
-      "",
-      "sales",
-      "equipment",
-      "reports",
-      "agents",
-      "branches",
-      "team-leaders",
-      "customers",
-      "activations",
-      "kyc-capture",
-      "inventory",
-      "incentives",
-    ].includes(path);
+    return (
+      permissions.includes("read") &&
+      [
+        "",
+        "sales",
+        "equipment",
+        "reports",
+        "agents",
+        "branches",
+        "team-leaders",
+        "customers",
+        "activations",
+        "kyc-capture",
+        "inventory",
+        "incentives",
+      ].includes(path)
+    );
   if (path === "call-work")
     return (
       permissions.includes("read") &&
@@ -415,9 +425,7 @@ export default function App() {
   const callAlerts = useQuery({
     queryKey: ["sales-management", "call-summary"],
     queryFn: () => api("/sales-management/call-tasks/summary"),
-    enabled:
-      !!user &&
-      canVisitPage("call-work", user),
+    enabled: !!user && canVisitPage("call-work", user),
     refetchInterval: 15000,
   });
   const stockAlerts = useQuery({
@@ -440,6 +448,8 @@ export default function App() {
     refetchInterval: 20000,
   });
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const client = useQueryClient();
   const location = useLocation();
@@ -464,6 +474,11 @@ export default function App() {
       .catch(() => {})
       .finally(() => setReady(true));
     const expire = () => {
+      setAccess("");
+      setMobileMenu(false);
+      setAccessOpen(false);
+      setExportsActive([]);
+      setToast("");
       setUser((current) => {
         if (current) clearBranchScope(current.id);
         return null;
@@ -479,7 +494,9 @@ export default function App() {
       ["Tele Verification Officer", "Welcome Call Officer"].includes(
         user.role,
       ) &&
-      !["/call-work", "/notifications", "/location-tracking"].includes(location.pathname)
+      !["/call-work", "/notifications", "/location-tracking"].includes(
+        location.pathname,
+      )
     )
       navigate("/call-work", { replace: true });
   }, [user, location.pathname, navigate]);
@@ -573,7 +590,7 @@ export default function App() {
       previous?.focus();
     };
   }, [mobileMenu]);
-  if (!ready) return <Loading />;
+  if (!ready || signingOut) return <Loading />;
   if (!user)
     return (
       <Login
@@ -600,320 +617,366 @@ export default function App() {
     <Context.Provider value={{ user, notify: setToast }}>
       <BranchScope key={user.id} user={user}>
         <WorkLocationProvider key={user.id} user={user}>
-        <div className="app-shell">
-          <a className="skip-link" href="#workspace-content">
-            Skip to content
-          </a>
-          {mobileMenu && (
-            <button
-              className="navigation-scrim"
-              aria-label="Close navigation"
-              onClick={() => setMobileMenu(false)}
-              tabIndex={-1}
-            />
-          )}
-          <aside
-            ref={sidebarRef}
-            id="workspace-navigation"
-            className={"sidebar " + (mobileMenu ? "open" : "")}
-          >
-            <button
-              className="mobile-nav-close icon-btn"
-              aria-label="Close menu"
-              onClick={() => setMobileMenu(false)}
+          <div className="app-shell">
+            {accessOpen &&
+              user.role === "Administrator" &&
+              user.permissions.includes("settings.write") && (
+                <AccountAccess onClose={() => setAccessOpen(false)} />
+              )}
+            <a className="skip-link" href="#workspace-content">
+              Skip to content
+            </a>
+            {mobileMenu && (
+              <button
+                className="navigation-scrim"
+                aria-label="Close navigation"
+                onClick={() => setMobileMenu(false)}
+                tabIndex={-1}
+              />
+            )}
+            <aside
+              ref={sidebarRef}
+              id="workspace-navigation"
+              className={"sidebar " + (mobileMenu ? "open" : "")}
             >
-              <X size={20} />
-            </button>
-            <Link className="logo" to="/">
-              <Brand compact />
-            </Link>
-            <button className="workspace-switch" onClick={() => navigate("/")}>
-              <span className="workspace-icon">
-                <img src="/branding/qanawat-mark.png" alt="" />
-              </span>
-              <span>
-                <b>Qanawat</b>
-                <small>UAE field operations</small>
-              </span>
-              <ChevronDown size={14} />
-            </button>
-            <nav aria-label="Main navigation">
-              {navigation
-                .filter((g) =>
-                  g.items.some(([path]) => canVisitPage(String(path), user)),
-                )
-                .map((g) => (
-                  <div className="nav-group" key={g.label}>
-                    <div className="nav-label">{g.label}</div>
-                    {g.items
-                      .filter(([path]) => canVisitPage(String(path), user))
-                      .filter(
-                        ([path]) =>
-                          path !== "audit" ||
-                          user.permissions.includes("audit.read"),
-                      )
-                      .filter(([path]) =>
-                        path === "administration"
-                          ? ["Administrator", "Operations Manager"].includes(
-                              user.role,
-                            )
-                          : path !== "plans" ||
-                            user.permissions.includes("settings.write"),
-                      )
-                      .map(([path, label, Icon]: any) => (
-                        <NavLink
-                          key={path}
-                          end
-                          to={"/" + path}
-                          data-section={path || "overview"}
-                        >
-                          <span className="nav-icon" aria-hidden="true">
-                            <Icon size={17} />
-                          </span>
-                          <span>
-                            {path === "kyc-capture"
-                              ? user.role === "Field Agent"
-                                ? "New transaction"
-                                : user.permissions.includes("compliance.write")
-                                  ? label
-                                  : "Transaction history"
-                              : label}
-                          </span>
-                          {path === "equipment" && !!stockAlerts.data && (
-                            <span
-                              className="nav-tag"
-                              title="Stock requests and shortage alerts"
-                            >
-                              {stockAlerts.data}
-                            </span>
-                          )}
-                          {path === "live" && <i className="live-dot" />}
-                          {path === "compliance" && (
-                            <span className="nav-tag">!</span>
-                          )}
-                        </NavLink>
-                      ))}
-                  </div>
-                ))}
-            </nav>
-            <div className="sidebar-bottom">
-              <span className="secure-icon">
-                <ShieldCheck size={16} />
-              </span>
-              <div>
-                <b>Secure workspace</b>
-                <small>Field operations</small>
-              </div>
-            </div>
-            <button
-              className="profile-button"
-              title="Sign out"
-              onClick={async () => {
-                await post("/auth/logout");
-                clearBranchScope(user.id);
-                setAccess("");
-                setUser(null);
-                client.clear();
-              }}
-            >
-              <Avatar name={user.name} />
-              <span>
-                <b>{user.name}</b>
-                <small>{salesAgentRole(user.role)}</small>
-              </span>
-              <LogOut size={17} />
-            </button>
-          </aside>
-          <div className="main-shell" inert={mobileMenu || undefined}>
-            <header className="topbar">
-              <div className="breadcrumb">
-                <button
-                  className="icon-btn menu-btn"
-                  aria-label="Toggle navigation"
-                  aria-controls="workspace-navigation"
-                  aria-expanded={mobileMenu}
-                  onClick={() => setMobileMenu(!mobileMenu)}
-                >
-                  <Menu size={20} />
-                </button>
-                {location.pathname !== "/" && (
-                  <button
-                    className="icon-btn workspace-back"
-                    aria-label="Back to previous page"
-                    title="Back"
-                    onClick={() => {
-                      if ((window.history.state?.idx || 0) > 0) navigate(-1);
-                      else navigate("/");
-                    }}
-                  >
-                    <ArrowLeft size={19} />
-                  </button>
-                )}
-                <Link
-                  className="workspace-home"
-                  to="/"
-                  aria-label="Workspace overview"
-                >
-                  <Home size={16} />
-                  <span>Workspace</span>
-                </Link>
-                <span aria-hidden="true">/</span>
-                <b aria-current="page">{String(current)}</b>
-              </div>
-              <div className="top-actions">
-                <span
-                  className={"live-indicator " + (!live ? "disconnected" : "")}
-                  role="status"
-                  aria-label={
-                    live
-                      ? "Live updates connected"
-                      : "Reconnecting to live updates"
-                  }
-                  title={
-                    live
-                      ? "Live updates connected"
-                      : "Reconnecting to live updates"
-                  }
-                >
-                  <i />
-                  {live ? "Live updates" : "Reconnecting"}
+              <button
+                className="mobile-nav-close icon-btn"
+                aria-label="Close menu"
+                onClick={() => setMobileMenu(false)}
+              >
+                <X size={20} />
+              </button>
+              <Link className="logo" to="/">
+                <Brand compact />
+              </Link>
+              <button
+                className="workspace-switch"
+                onClick={() => navigate("/")}
+              >
+                <span className="workspace-icon">
+                  <img src="/branding/qanawat-mark.png" alt="" />
                 </span>
-                {canFilterBranches(user) && <GlobalBranchFilter />}
-                <span className="top-divider" />
-                {canVisitPage("activations", user) && (
-                  <button
-                    className="icon-btn"
-                    title="Search activation records"
-                    aria-label="Search activation records"
-                    onClick={() => navigate("/activations")}
-                  >
-                    <Search size={18} />
-                  </button>
-                )}
-                {canVisitPage("notifications", user) && (
-                  <button
-                    className="icon-btn notification-btn"
-                    title="Notifications"
-                    aria-label="Notifications"
-                    onClick={() => navigate("/notifications")}
-                  >
-                    <Bell size={18} />
-                    {!!inbox.data?.unread && (
-                      <b className="call-alert-count">
-                        {inbox.data.unread > 99 ? "99+" : inbox.data.unread}
-                      </b>
-                    )}
-                  </button>
-                )}
-                <Avatar name={user.name} size="small" />
+                <span>
+                  <b>Qanawat</b>
+                  <small>UAE field operations</small>
+                </span>
+                <ChevronDown size={14} />
+              </button>
+              <nav aria-label="Main navigation">
+                {navigation
+                  .filter((g) =>
+                    g.items.some(([path]) => canVisitPage(String(path), user)),
+                  )
+                  .map((g) => (
+                    <div className="nav-group" key={g.label}>
+                      <div className="nav-label">{g.label}</div>
+                      {g.items
+                        .filter(([path]) => canVisitPage(String(path), user))
+                        .filter(
+                          ([path]) =>
+                            path !== "audit" ||
+                            user.permissions.includes("audit.read"),
+                        )
+                        .filter(([path]) =>
+                          path === "administration"
+                            ? ["Administrator", "Operations Manager"].includes(
+                                user.role,
+                              )
+                            : path !== "plans" ||
+                              user.permissions.includes("settings.write"),
+                        )
+                        .map(([path, label, Icon]: any) => (
+                          <NavLink
+                            key={path}
+                            end
+                            to={"/" + path}
+                            data-section={path || "overview"}
+                          >
+                            <span className="nav-icon" aria-hidden="true">
+                              <Icon size={17} />
+                            </span>
+                            <span>
+                              {path === "kyc-capture"
+                                ? user.role === "Field Agent"
+                                  ? "New transaction"
+                                  : user.permissions.includes(
+                                        "compliance.write",
+                                      )
+                                    ? label
+                                    : "Transaction history"
+                                : label}
+                            </span>
+                            {path === "equipment" && !!stockAlerts.data && (
+                              <span
+                                className="nav-tag"
+                                title="Stock requests and shortage alerts"
+                              >
+                                {stockAlerts.data}
+                              </span>
+                            )}
+                            {path === "live" && <i className="live-dot" />}
+                            {path === "compliance" && (
+                              <span className="nav-tag">!</span>
+                            )}
+                          </NavLink>
+                        ))}
+                    </div>
+                  ))}
+              </nav>
+              <div className="sidebar-bottom">
+                <span className="secure-icon">
+                  <ShieldCheck size={16} />
+                </span>
+                <div>
+                  <b>Secure workspace</b>
+                  <small>Field operations</small>
+                </div>
               </div>
-            </header>
-            <main className="content" id="workspace-content" tabIndex={-1}>
-              <WorkLocationNotice />
-              <div className="route-stage" key={location.pathname}>
-                <PageBoundary key={location.pathname}>
-                  {canVisitPage(location.pathname, user) ? (
-                    <Routes>
-                      <Route
-                        path="/notifications"
-                        element={<Notifications />}
-                      />
-                      <Route path="/kyc-capture" element={<KycCapture />} />
-                      <Route path="/sales" element={<SalesManagement />} />
-                      <Route
-                        path="/sr-verification"
-                        element={<SRVerification />}
-                      />
-                      <Route path="/call-work" element={<CallWorkspace />} />
-                      <Route path="/location-tracking" element={<LocationTracking />} />
-                      <Route path="/equipment" element={<FieldAssets />} />
-                      <Route
-                        path="/screenshot-capture"
-                        element={<KycCapture />}
-                      />
-                      <Route
-                        path="/incentives"
-                        element={<Incentives user={user} notify={setToast} />}
-                      />
-                      <Route
-                        path="/support"
-                        element={<Support user={user} notify={setToast} />}
-                      />
-                      <Route path="/" element={<Dashboard />} />
-                      <Route path="/live" element={<LiveOperations />} />
-                      <Route path="/reports" element={<Reports />} />
-                      <Route path="/plans" element={<PlanManagement />} />
-                      <Route path="/team-leaders" element={<TeamLeaders />} />
-
-                      {[
-                        "agents",
-                        "customers",
-                        "branches",
-
-                        "activations",
-
-                        "inventory",
-                        "audit",
-                      ].map((resource) => (
+              <button
+                className="profile-button"
+                title="Sign out"
+                onClick={async () => {
+                  setSigningOut(true);
+                  setMobileMenu(false);
+                  setAccessOpen(false);
+                  const cleanup = logoutSession();
+                  clearBranchScope(user.id);
+                  setUser(null);
+                  client.clear();
+                  setExportsActive([]);
+                  setToast("");
+                  await cleanup;
+                  setSigningOut(false);
+                }}
+              >
+                <Avatar name={user.name} />
+                <span>
+                  <b>{user.name}</b>
+                  <small>{salesAgentRole(user.role)}</small>
+                </span>
+                <LogOut size={17} />
+              </button>
+            </aside>
+            <div className="main-shell" inert={mobileMenu || undefined}>
+              <header className="topbar">
+                <div className="breadcrumb">
+                  <button
+                    className="icon-btn menu-btn"
+                    aria-label="Toggle navigation"
+                    aria-controls="workspace-navigation"
+                    aria-expanded={mobileMenu}
+                    onClick={() => setMobileMenu(!mobileMenu)}
+                  >
+                    <Menu size={20} />
+                  </button>
+                  {location.pathname !== "/" && (
+                    <button
+                      className="icon-btn workspace-back"
+                      aria-label="Back to previous page"
+                      title="Back"
+                      onClick={() => {
+                        if ((window.history.state?.idx || 0) > 0) navigate(-1);
+                        else navigate("/");
+                      }}
+                    >
+                      <ArrowLeft size={19} />
+                    </button>
+                  )}
+                  <Link
+                    className="workspace-home"
+                    to="/"
+                    aria-label="Workspace overview"
+                  >
+                    <Home size={16} />
+                    <span>Workspace</span>
+                  </Link>
+                  <span aria-hidden="true">/</span>
+                  <b aria-current="page">{String(current)}</b>
+                </div>
+                <div className="top-actions">
+                  {user.role === "Administrator" &&
+                    user.permissions.includes("settings.write") && (
+                      <button
+                        type="button"
+                        className="accounts-access"
+                        aria-label="Accounts & access"
+                        title="Accounts & access"
+                        onClick={() => setAccessOpen(true)}
+                      >
+                        <span className="accounts-access-full">
+                          Accounts & access
+                        </span>
+                        <span
+                          className="accounts-access-short"
+                          aria-hidden="true"
+                        >
+                          Accounts
+                        </span>
+                      </button>
+                    )}
+                  <span
+                    className={
+                      "live-indicator " + (!live ? "disconnected" : "")
+                    }
+                    role="status"
+                    aria-label={
+                      live
+                        ? "Live updates connected"
+                        : "Reconnecting to live updates"
+                    }
+                    title={
+                      live
+                        ? "Live updates connected"
+                        : "Reconnecting to live updates"
+                    }
+                  >
+                    <i />
+                    {live ? "Live updates" : "Reconnecting"}
+                  </span>
+                  {canFilterBranches(user) && <GlobalBranchFilter />}
+                  <span className="top-divider" />
+                  {canVisitPage("activations", user) && (
+                    <button
+                      className="icon-btn activation-search"
+                      title="Search activation records"
+                      aria-label="Search activation records"
+                      onClick={() => navigate("/activations")}
+                    >
+                      <Search size={18} />
+                    </button>
+                  )}
+                  {canVisitPage("notifications", user) && (
+                    <button
+                      className="icon-btn notification-btn"
+                      title="Notifications"
+                      aria-label="Notifications"
+                      onClick={() => navigate("/notifications")}
+                    >
+                      <Bell size={18} />
+                      {!!inbox.data?.unread && (
+                        <b className="call-alert-count">
+                          {inbox.data.unread > 99 ? "99+" : inbox.data.unread}
+                        </b>
+                      )}
+                    </button>
+                  )}
+                  <Avatar name={user.name} size="small" />
+                </div>
+              </header>
+              <main className="content" id="workspace-content" tabIndex={-1}>
+                <WorkLocationNotice />
+                <div className="route-stage" key={location.pathname}>
+                  <PageBoundary key={location.pathname}>
+                    {canVisitPage(location.pathname, user) ? (
+                      <Routes>
                         <Route
-                          key={resource}
-                          path={"/" + resource}
+                          path="/notifications"
+                          element={<Notifications />}
+                        />
+                        <Route path="/kyc-capture" element={<KycCapture />} />
+                        <Route path="/sales" element={<SalesManagement />} />
+                        <Route
+                          path="/sr-verification"
+                          element={<SRVerification />}
+                        />
+                        <Route path="/call-work" element={<CallWorkspace />} />
+                        <Route
+                          path="/location-tracking"
+                          element={<LocationTracking />}
+                        />
+                        <Route path="/equipment" element={<FieldAssets />} />
+                        <Route
+                          path="/screenshot-capture"
+                          element={<KycCapture />}
+                        />
+                        <Route
+                          path="/incentives"
+                          element={<Incentives user={user} notify={setToast} />}
+                        />
+                        <Route
+                          path="/support"
+                          element={<Support user={user} notify={setToast} />}
+                        />
+                        <Route path="/" element={<Dashboard />} />
+                        <Route path="/live" element={<LiveOperations />} />
+                        <Route path="/reports" element={<Reports />} />
+                        <Route path="/plans" element={<PlanManagement />} />
+                        <Route path="/team-leaders" element={<TeamLeaders />} />
+
+                        {[
+                          "agents",
+                          "customers",
+                          "branches",
+
+                          "activations",
+
+                          "inventory",
+                          "audit",
+                        ].map((resource) => (
+                          <Route
+                            key={resource}
+                            path={"/" + resource}
+                            element={
+                              <ResourcePage
+                                key={resource}
+                                resource={resource}
+                              />
+                            }
+                          />
+                        ))}
+                        <Route
+                          path="*"
                           element={
-                            <ResourcePage key={resource} resource={resource} />
+                            <PageHeader
+                              title="Page not included"
+                              description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
+                            />
                           }
                         />
-                      ))}
-                      <Route
-                        path="*"
-                        element={
-                          <PageHeader
-                            title="Page not included"
-                            description="This client edition contains the agreed field-operations capabilities. Use the navigation to continue."
-                          />
-                        }
-                      />
-                    </Routes>
-                  ) : (
-                    <div className="panel access-denied">
-                      <h2>This page is not available for your role</h2>
-                      <Link className="button primary" to="/">
-                        Return to overview
-                      </Link>
-                    </div>
-                  )}
-                </PageBoundary>
-              </div>
-              <footer className="page-footer">
-                <span>
-                  Qanawat Operations <span>·</span>{" "}
-                  {live ? "Live updates connected" : "Reconnecting to updates"}
-                </span>
-                <span>Qanawat · Field operations</span>
-              </footer>
-            </main>
+                      </Routes>
+                    ) : (
+                      <div className="panel access-denied">
+                        <h2>This page is not available for your role</h2>
+                        <Link className="button primary" to="/">
+                          Return to overview
+                        </Link>
+                      </div>
+                    )}
+                  </PageBoundary>
+                </div>
+                <footer className="page-footer">
+                  <span>
+                    Qanawat Operations <span>·</span>{" "}
+                    {live
+                      ? "Live updates connected"
+                      : "Reconnecting to updates"}
+                  </span>
+                  <span>Qanawat · Field operations</span>
+                </footer>
+              </main>
+            </div>
           </div>
-        </div>
-        {exportsActive.length > 0 && (
-          <div className="export-progress" role="status">
-            <Download size={18} /> Preparing{" "}
-            {exportsActive.length > 1
-              ? `${exportsActive.length} exports`
-              : "export"}
-            …
-          </div>
-        )}
-        {toast && (
-          <div role="status" className="toast">
-            <CheckCheck size={18} />
-            {toast}
-            <button
-              aria-label="Dismiss notification"
-              onClick={() => setToast("")}
-            >
-              ×
-            </button>
-          </div>
-        )}
+          {exportsActive.length > 0 && (
+            <div className="export-progress" role="status">
+              <Download size={18} /> Preparing{" "}
+              {exportsActive.length > 1
+                ? `${exportsActive.length} exports`
+                : "export"}
+              …
+            </div>
+          )}
+          {toast && (
+            <div role="status" className="toast">
+              <CheckCheck size={18} />
+              {toast}
+              <button
+                aria-label="Dismiss notification"
+                onClick={() => setToast("")}
+              >
+                ×
+              </button>
+            </div>
+          )}
         </WorkLocationProvider>
       </BranchScope>
     </Context.Provider>
@@ -1097,7 +1160,10 @@ function AgentDrawer({
           <Badge value={a.status} />
         </div>
       </div>
-      <dl className="agent-assignment-summary" aria-label="Sales agent assignment">
+      <dl
+        className="agent-assignment-summary"
+        aria-label="Sales agent assignment"
+      >
         <div>
           <dt>Branch</dt>
           <dd>{a.branch || "Not assigned"}</dd>
@@ -1107,24 +1173,26 @@ function AgentDrawer({
           <dd>{a.leader || "Not assigned"}</dd>
         </div>
       </dl>
-      {tab !== "Assignment" && <div className="mini-metrics">
-        <div>
-          <b>{a.activations}</b>
-          <span>Activations</span>
+      {tab !== "Assignment" && (
+        <div className="mini-metrics">
+          <div>
+            <b>{a.activations}</b>
+            <span>Activations</span>
+          </div>
+          <div>
+            <b>{a.achievement}%</b>
+            <span>Achievement</span>
+          </div>
+          <div>
+            <b>{a.aht}m</b>
+            <span>Avg. handling</span>
+          </div>
+          <div>
+            <b>{a.stock}</b>
+            <span>SIM stock</span>
+          </div>
         </div>
-        <div>
-          <b>{a.achievement}%</b>
-          <span>Achievement</span>
-        </div>
-        <div>
-          <b>{a.aht}m</b>
-          <span>Avg. handling</span>
-        </div>
-        <div>
-          <b>{a.stock}</b>
-          <span>SIM stock</span>
-        </div>
-      </div>}
+      )}
       <div className="tabs">
         {[
           "Overview",
@@ -1132,9 +1200,7 @@ function AgentDrawer({
 
           "Inventory",
           ...(user.permissions.includes("audit.read") ? ["Audit history"] : []),
-          ...(canManageOrganization(user)
-            ? ["Assignment"]
-            : []),
+          ...(canManageOrganization(user) ? ["Assignment"] : []),
         ].map((t) => (
           <button
             className={tab === t ? "active" : ""}
@@ -1145,13 +1211,22 @@ function AgentDrawer({
           </button>
         ))}
       </div>
-      {tab !== "Assignment" && <Link
-        className="button"
-        to={`/sales?tab=targets&agent=${encodeURIComponent(a.id)}`}
-      >
-        View product targets
-      </Link>}
-      {canManageOrganization(user) && tab !== "Assignment" && <button className="primary assignment-shortcut" onClick={() => setTab("Assignment")}>Change branch or team leader</button>}
+      {tab !== "Assignment" && (
+        <Link
+          className="button"
+          to={`/sales?tab=targets&agent=${encodeURIComponent(a.id)}`}
+        >
+          View product targets
+        </Link>
+      )}
+      {canManageOrganization(user) && tab !== "Assignment" && (
+        <button
+          className="primary assignment-shortcut"
+          onClick={() => setTab("Assignment")}
+        >
+          Change branch or team leader
+        </button>
+      )}
       {tab === "Assignment" && canManageOrganization(user) ? (
         <AgentManagement
           agentId={a.id}
@@ -1264,12 +1339,19 @@ const inventoryColumns: Column[] = [
     render: (r) => (
       <>
         <b className="reference">{r.iccid || r.serial || "Not recorded"}</b>
-        {r.serial && r.serial !== (r.iccid || r.serial) && <small className="cell-sub">Serial: {r.serial}</small>}
+        {r.serial && r.serial !== (r.iccid || r.serial) && (
+          <small className="cell-sub">Serial: {r.serial}</small>
+        )}
       </>
     ),
   },
   { key: "sim_type", label: "Type" },
   { key: "business_category", label: "Business category" },
+  {
+    key: "sr_number",
+    label: "Linked SR",
+    render: (r) => r.sr_number || "Not recorded",
+  },
   { key: "agent", label: "Assigned sales agent" },
   { key: "status", label: "Stock", render: (r) => <Badge value={r.status} /> },
   { key: "branch", label: "Branch" },
@@ -1313,7 +1395,9 @@ const agentColumnByKey = {
   leader: {
     key: "leader",
     label: "Team leader",
-    render: (r) => <span className="assignment-leader">{r.leader || "Not assigned"}</span>,
+    render: (r) => (
+      <span className="assignment-leader">{r.leader || "Not assigned"}</span>
+    ),
   },
   activations: { key: "activations", label: "Activations" },
   target: { key: "target", label: "Daily target" },
@@ -1434,6 +1518,7 @@ const configs: Record<
 function ResourcePage({ resource }: { resource: string }) {
   const [setup, setSetup] = useState<"branches" | "agents" | null>(null);
   const [importStock, setImportStock] = useState(false);
+  const [importOrganization, setImportOrganization] = useState(false);
   const [manageRecords, setManageRecords] = useState(false);
   const cache = useQueryClient();
   const { branch, setBranch } = useBranchScope();
@@ -1448,8 +1533,13 @@ function ResourcePage({ resource }: { resource: string }) {
   const navigate = useNavigate();
   const location = useLocation();
   const config = configs[resource];
-  const leaderFilter = resource === "agents" ? new URLSearchParams(location.search).get("leader") || "" : "";
-  const visibleData = leaderFilter ? data.filter((row) => row.leader_id === leaderFilter) : data;
+  const leaderFilter =
+    resource === "agents"
+      ? new URLSearchParams(location.search).get("leader") || ""
+      : "";
+  const visibleData = leaderFilter
+    ? data.filter((row) => row.leader_id === leaderFilter)
+    : data;
   const selectDetails = (row: Row) => {
     const params = new URLSearchParams(location.search);
     params.set("selected", row.id);
@@ -1463,7 +1553,9 @@ function ResourcePage({ resource }: { resource: string }) {
     setSelected(null);
     const params = new URLSearchParams(location.search);
     params.delete("selected");
-    navigate(location.pathname + (params.size ? `?${params}` : ""), { replace: true });
+    navigate(location.pathname + (params.size ? `?${params}` : ""), {
+      replace: true,
+    });
   };
   if (isPending) return <Loading />;
   if (error) return <ErrorState error={error} retry={refetch} />;
@@ -1472,6 +1564,15 @@ function ResourcePage({ resource }: { resource: string }) {
       {setup && canManageOrganization(user) && (
         <OrganizationSetup initial={setup} onClose={() => setSetup(null)} />
       )}
+      {importOrganization &&
+        canManageOrganization(user) &&
+        (resource === "branches" ||
+          (resource === "agents" && user.role === "Administrator")) && (
+          <OrganizationImport
+            kind={resource as "branches" | "agents"}
+            onClose={() => setImportOrganization(false)}
+          />
+        )}
       {manageRecords && canManageMasterData(user, resource) && (
         <Drawer
           title={
@@ -1484,14 +1585,16 @@ function ResourcePage({ resource }: { resource: string }) {
           <Administration embedded section={resource} />
         </Drawer>
       )}
-      {importStock && user.role === 'Administrator' && user.permissions.includes('inventory.write') && (
-        <InventoryImport
-          onClose={() => setImportStock(false)}
-          onImported={() =>
-            cache.invalidateQueries({ queryKey: ["inventory"] })
-          }
-        />
-      )}
+      {importStock &&
+        ["Administrator", "Operations Manager"].includes(user.role) &&
+        user.permissions.includes("inventory.write") && (
+          <InventoryImport
+            onClose={() => setImportStock(false)}
+            onImported={() =>
+              cache.invalidateQueries({ queryKey: ["inventory"] })
+            }
+          />
+        )}
       <PageHeader
         eyebrow="CONNECTED OPERATIONS"
         title={config.title}
@@ -1501,6 +1604,7 @@ function ResourcePage({ resource }: { resource: string }) {
           ["agents", "branches"].includes(resource) && (
             <button
               className="primary"
+              hidden={resource === "agents" && user.role !== "Administrator"}
               onClick={() =>
                 setSetup(resource === "agents" ? "agents" : "branches")
               }
@@ -1508,8 +1612,15 @@ function ResourcePage({ resource }: { resource: string }) {
               {resource === "agents" ? "Add sales agent" : "Add branch"}
             </button>
           )}
+        {canManageOrganization(user) &&
+          (resource === "branches" ||
+            (resource === "agents" && user.role === "Administrator")) && (
+            <button onClick={() => setImportOrganization(true)}>
+              <Download size={16} /> Import Excel
+            </button>
+          )}
         {resource === "inventory" &&
-          user.role === "Administrator" &&
+          ["Administrator", "Operations Manager"].includes(user.role) &&
           user.permissions.includes("inventory.write") && (
             <>
               <button onClick={() => setManageRecords(true)}>
@@ -1520,12 +1631,11 @@ function ResourcePage({ resource }: { resource: string }) {
               </button>
             </>
           )}
-        {resource === "customers" &&
-          canManageOrganization(user) && (
-            <button onClick={() => setManageRecords(true)}>
-              <Settings size={16} /> Manage customers
-            </button>
-          )}
+        {resource === "customers" && canManageOrganization(user) && (
+          <button onClick={() => setManageRecords(true)}>
+            <Settings size={16} /> Manage customers
+          </button>
+        )}
         <button onClick={() => refetch()}>
           <RefreshCw size={15} />
           Refresh
@@ -1537,7 +1647,17 @@ function ResourcePage({ resource }: { resource: string }) {
           </button>
         )}
       </PageHeader>
-      {leaderFilter && <div className="assignment-filter" role="status"><span>Sales agents reporting to <b>{visibleData[0]?.leader || "selected team leader"}</b></span><button onClick={() => navigate(location.pathname)}>Show all sales agents</button></div>}
+      {leaderFilter && (
+        <div className="assignment-filter" role="status">
+          <span>
+            Sales agents reporting to{" "}
+            <b>{visibleData[0]?.leader || "selected team leader"}</b>
+          </span>
+          <button onClick={() => navigate(location.pathname)}>
+            Show all sales agents
+          </button>
+        </div>
+      )}
       <RecordOverview
         rows={visibleData}
         categories={
@@ -1641,6 +1761,7 @@ function BranchDrawer({
       {canManageOrganization(user) && (
         <BranchLeaderEditor branchId={branch.id} />
       )}
+      <BranchLocationEditor branchId={branch.id} />
       {isPending ? (
         <Loading />
       ) : error ? (
@@ -1704,6 +1825,14 @@ export function OrderDrawer({
                 created: new Date(o.created_at).toLocaleString(),
               }}
             />
+            {o.source === "SCREENSHOT_SALE" && o.capture_id && (
+              <Link
+                className="button"
+                to={`/kyc-capture?capture=${encodeURIComponent(o.capture_id)}`}
+              >
+                View customer / order evidence
+              </Link>
+            )}
             <h3>Lifecycle timeline</h3>
             <div className="timeline">
               {o.events.map((e: Row) => (
@@ -1752,6 +1881,7 @@ function InventoryDrawer({ sim, onClose }: { sim: Row; onClose: () => void }) {
             " ",
           ),
           payment: (sim.payment_status || "NOT_UPLOADED").replaceAll("_", " "),
+          sr_number: sim.sr_number || "Not recorded",
         }}
       />
       {user.permissions.includes("inventory.write") &&
@@ -2097,8 +2227,23 @@ function Reports() {
         title="Reports & exports"
         description="Structured data. Clear reporting. Ready for your next decision."
       >
-        {canVisitPage("location-tracking", user) && <Link className="button" to="/location-tracking?export=1"><MapPin size={17} /> Work location export</Link>}
+        {canVisitPage("location-tracking", user) && (
+          <Link className="button" to="/location-tracking?export=1">
+            <MapPin size={17} /> Work location export
+          </Link>
+        )}
       </PageHeader>
+      <section className="panel report-card" style={{ marginBottom: 16 }}>
+        <h2>Incentive tracking</h2>
+        <p>
+          Approved imported final amounts · separate from calculated estimates.
+        </p>
+        <ExportActions
+          path={`/incentives/final/export?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&branch_id=${encodeURIComponent(branch)}`}
+          name="qanawat-incentive-tracking"
+          label="Export incentive tracking"
+        />
+      </section>
       <section className="panel report-card" style={{ marginBottom: 16 }}>
         <h2>Sales, targets &amp; follow-ups</h2>
         <p>Current sales with product, sales agent, branch and call outcomes</p>

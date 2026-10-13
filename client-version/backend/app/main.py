@@ -13,8 +13,8 @@ from fastapi import FastAPI, Depends, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select, delete, or_, text
-from sqlalchemy.exc import IntegrityError, TimeoutError as DatabasePoolTimeout
+from sqlalchemy import select, delete, or_, text, func
+from sqlalchemy.exc import IntegrityError, OperationalError, TimeoutError as DatabasePoolTimeout
 from fastapi.responses import JSONResponse
 from .notifications import router as notifications_router
 from .db import *
@@ -27,6 +27,7 @@ from .proposal import router as proposal_router
 from .organization import router as organization_router
 from .administration import router as administration_router
 from .inventory_bulk import router as inventory_bulk_router
+from .organization_import import router as organization_import_router
 from .branch_lifecycle import router as branch_lifecycle_router
 from .sim_scanning import router as sim_scanning_router
 from .transactions import router as transaction_router
@@ -37,6 +38,10 @@ from .commissions import router as commissions_router
 from .location_tracking import router as location_tracking_router, enforce_capture as enforce_work_boundary, active_session as active_work_session, end_work, retain_locations, lock_member
 from .map_imagery import router as map_imagery_router
 from .place_search import router as place_search_router
+from .branch_locations import router as branch_locations_router
+from .final_incentives import router as final_incentives_router
+from .account_access import router as account_access_router
+from .asset_import import router as asset_import_router
 from .email_delivery import deliver_pending
 from .client_scope import configure as configure_client_scope
 
@@ -132,6 +137,7 @@ app.include_router(notifications_router)
 app.include_router(ocr_router)
 app.include_router(capture_router)
 app.include_router(inventory_bulk_router)
+app.include_router(organization_import_router)
 app.include_router(branch_lifecycle_router)
 app.include_router(sim_scanning_router)
 app.include_router(proposal_router)
@@ -145,6 +151,10 @@ app.include_router(commissions_router)
 app.include_router(location_tracking_router)
 app.include_router(map_imagery_router)
 app.include_router(place_search_router)
+app.include_router(branch_locations_router)
+app.include_router(final_incentives_router)
+app.include_router(account_access_router)
+app.include_router(asset_import_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
@@ -331,11 +341,28 @@ def mobile_demo_login(body: MobileDemoLogin, response: Response, request: Reques
 
 @app.post("/api/auth/refresh")
 def refresh(body: Refresh, request: Request, response: Response, db=Depends(get_db)):
+    from sqlalchemy import and_
+    from cryptography.fernet import InvalidToken
+
     value = body.refresh_token or request.cookies.get("relay_refresh", "")
+    supplied_hash = digest(value)
+    queried_at = now()
     session = db.scalar(
-        select(Session).where(Session.refresh_hash == digest(value)).with_for_update()
+        select(Session).where(or_(
+            Session.refresh_hash == supplied_hash,
+            and_(Session.previous_refresh_hash == supplied_hash,
+                 Session.refresh_retry_until > queried_at),
+        )).with_for_update().execution_options(populate_existing=True)
     )
-    if not session or session.revoked or session.expires < now():
+    # A request may have waited on another rotation or revocation. Re-evaluate
+    # both hashes and the fixed overlap deadline using the locked, fresh row.
+    locked_at = now()
+    retry_open = bool(session and session.refresh_retry_until
+                      and session.refresh_retry_until > locked_at)
+    current = bool(session and session.refresh_hash == supplied_hash)
+    previous = bool(session and retry_open and session.previous_refresh_hash == supplied_hash)
+    if (not session or session.revoked or session.expires <= locked_at
+            or not (current or previous)):
         raise HTTPException(401, "Refresh expired")
     user = db.get(User, session.user_id)
     agent = db.scalar(select(Agent).where(Agent.user_id == session.user_id))
@@ -343,8 +370,22 @@ def refresh(body: Refresh, request: Request, response: Response, db=Depends(get_
         session.revoked = True
         db.commit()
         raise HTTPException(401, "This account no longer has access")
-    replacement = secrets.token_urlsafe(48)
-    session.refresh_hash = digest(replacement)
+    if retry_open:
+        # A lost Set-Cookie/native response can retry its predecessor. Current
+        # tokens share that same result too, avoiding competing rotations. The
+        # original deadline is never extended and only one predecessor exists.
+        try:
+            replacement = cipher.decrypt((session.refresh_retry_encrypted or "").encode()).decode()
+        except (InvalidToken, UnicodeDecodeError):
+            raise HTTPException(401, "Refresh expired") from None
+        if digest(replacement) != session.refresh_hash:
+            raise HTTPException(401, "Refresh expired")
+    else:
+        replacement = secrets.token_urlsafe(48)
+        session.previous_refresh_hash = session.refresh_hash
+        session.refresh_hash = digest(replacement)
+        session.refresh_retry_until = locked_at + timedelta(seconds=10)
+        session.refresh_retry_encrypted = cipher.encrypt(replacement.encode()).decode()
     db.commit()
     # The phone-framed demo uses its own token storage; its session must never
     # overwrite a web portal refresh cookie in the same browser.
@@ -367,14 +408,24 @@ def refresh(body: Refresh, request: Request, response: Response, db=Depends(get_
 
 
 @app.post("/api/auth/logout")
-def logout(request: Request, response: Response, user=Depends(principal), db=Depends(get_db)):
-    token = jwt.decode(
-        request.headers["authorization"].split()[1], SECRET, algorithms=["HS256"], audience="relay"
-    )
-    session = db.get(Session, token["sid"])
+def logout(request: Request, response: Response, identity=Depends(sign_out_principal), db=Depends(get_db)):
+    # Expiry or revoked business grants must not prevent ending one's own session.
+    # Signature, audience and session ownership remain mandatory; no cookie-only CSRF path.
+    user, session = identity
     session.revoked = True
     audit(db, user, "Signed Out", user.id, request=request)
     db.commit()
+    # Revocation is committed first so a busy work-session cleanup cannot restore access.
+    try:
+        from .location_tracking import active_session, end_work
+        work = active_session(db, user.id)
+        if work:
+            end_work(db, user, work.id, request, authorized_logout=True)
+            db.commit()
+    except (HTTPException, OperationalError):
+        db.rollback()
+        import logging
+        logging.getLogger("qanawat.location").warning("Signed-out work-session cleanup was busy; the revoked session cannot submit points")
     if session.device != MOBILE_DEMO_DEVICE:
         response.delete_cookie("relay_refresh", path="/api/auth")
     return {"ok": True}
@@ -484,7 +535,7 @@ def records(resource, db, user, branch_id=""):
     if resource == "agents":
         return [agent_view(db, a) for a in agents]
     if resource in {"orders", "activations"}:
-        return order_views(
+        historical = order_views(
             db,
             list(
                 db.scalars(
@@ -492,6 +543,20 @@ def records(resource, db, user, branch_id=""):
                 )
             ),
         )
+        if resource == "activations":
+            from .sales_management import sale_view
+            query = scoped_sales(db,user,SalesRecord)
+            if branch_id:
+                query=query.where(SalesRecord.branch_id==branch_id)
+            current=[]
+            for sale in db.scalars(query.order_by(SalesRecord.created_at.desc()).limit(1000)):
+                view=sale_view(db,sale)
+                current.append({**view,'id':'sale:'+sale.id,'reference':sale.request_id or 'Not recorded',
+                    'sr_id':sale.details.get('sr_number') or 'Not recorded','msisdn':sale.details.get('msisdn') or 'Not recorded',
+                    'customer':sale.customer_name,'plan':sale.plan_name,'outlet':view.get('branch','Not recorded'),
+                    'source':'SCREENSHOT_SALE'})
+            return sorted(current+historical,key=lambda row:str(row.get('created_at') or ''),reverse=True)
+        return historical
     if resource == "plans":
         return [
             raw(p)
@@ -657,6 +722,19 @@ def records(resource, db, user, branch_id=""):
         d.customer_id: d for d in db.scalars(select(Document).where(Document.customer_id.in_(query.with_only_columns(Customer.id))))
     } if resource == "customers" else {}
     progress_by_sim = {p.sim_id: p for p in db.scalars(select(SimProgress).where(SimProgress.agent_id.in_(ids)))} if resource == "inventory" else {}
+    inventory_sr = {}
+    if resource == "inventory":
+        capture_sims = defaultdict(list)
+        for progress in progress_by_sim.values():
+            if progress.capture_id:
+                capture_sims[progress.capture_id].append(progress.sim_id)
+        for capture in db.scalars(select(KycCapture).where(KycCapture.id.in_({p.capture_id for p in progress_by_sim.values() if p.capture_id}))):
+            sr = (capture_payload(capture).get("intake") or {}).get("sr_number") or "Not recorded"
+            for sim_id in capture_sims[capture.id]:
+                inventory_sr[sim_id] = sr
+        stock_ids = query.with_only_columns(Sim.id)
+        for sale in db.scalars(scoped_sales(db, user, SalesRecord).where(SalesRecord.details['stock_deducted_sim_id'].as_string().in_(stock_ids)).order_by(SalesRecord.created_at.desc())):
+            inventory_sr.setdefault(sale.details['stock_deducted_sim_id'], sale.details.get('sr_number') or "Not recorded")
     customer_sales = defaultdict(list)
     if resource == "customers":
         from .sales_management import sale_detail
@@ -722,6 +800,7 @@ def records(resource, db, user, branch_id=""):
             item["payment_status"] = progress.payment_status if progress else "NOT_UPLOADED"
             item["scan_transaction_id"] = progress.transaction_id if progress else None
             item["capture_id"] = progress.capture_id if progress else None
+            item["sr_number"] = inventory_sr.get(row.id, "Not recorded")
         result.append(item)
     return result
 
@@ -750,6 +829,13 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
     captures = db.scalars(capture_query).all()
     tasks = db.scalars(select(FieldTask).where(FieldTask.agent_id.in_(scope))).all()
     incentives = db.scalars(select(Incentive).where(Incentive.agent_id.in_(scope))).all()
+    final_total = Decimal('0')
+    if db.get(Role, user.role_id).name in {'Administrator','Operations Manager','Sales Manager','Team Leader','Field Agent'}:
+        from .final_incentives import scoped as final_scope, FinalIncentive
+        final_query = final_scope(db, user).where(FinalIncentive.earned_on >= today.replace(day=1), FinalIncentive.earned_on <= today)
+        if branch_id:
+            final_query = final_query.where(FinalIncentive.branch_id == branch_id)
+        final_total = db.scalar(final_query.with_only_columns(func.coalesce(func.sum(FinalIncentive.amount), 0))) or Decimal('0')
     trend = []
     for delta in range(6, -1, -1):
         day = today - timedelta(days=delta)
@@ -854,6 +940,7 @@ def dashboard(branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
         "kyc_verified": sum(c.status == "VERIFIED" for c in captures),
         "tasks_open": sum(t.status != "DONE" for t in tasks),
         "incentive_total": f"{sum((i.amount for i in incentives if i.period == today.strftime('%Y-%m')), Decimal('0')):.2f}",
+        "final_incentive_total": f"{final_total:.2f}",
         "today": len(completed),
         "target": target,
         "achievement": round(len(completed) / max(target, 1) * 100, 1),
@@ -958,6 +1045,15 @@ def submit_order(order_id: str, request: Request, user=Depends(principal), db=De
 @app.get("/api/activations/{order_id}")
 def order_detail(order_id: str, user=Depends(principal), db=Depends(get_db)):
     require(db, user, "read")
+    if order_id.startswith('sale:'):
+        from .sales_management import sale_detail
+        sale=sale_detail(order_id[5:],user,db)
+        return {**sale,'reference':sale.get('request_id') or 'Not recorded','sr_id':sale.get('sr_number') or 'Not recorded',
+                'msisdn':sale.get('msisdn') or 'Not recorded','customer':sale.get('customer_name'),
+                'plan':sale.get('plan_name'),'outlet':sale.get('branch'),
+                'events':[{'id':sale['id']+':recorded','action':'External sale recorded','actor':sale.get('agent'),'created_at':sale['created_at']},
+                          *([{'id':sale['id']+':sr','action':sale['sr_verification']['reason'],'actor':'SR reconciliation','created_at':sale['sr_verification']['verified_at']}] if sale['sr_verification'].get('verified_at') else [])],
+                'source':'SCREENSHOT_SALE'}
     order = db.get(Order, order_id)
     if not order:
         raise HTTPException(404, "Order not found")

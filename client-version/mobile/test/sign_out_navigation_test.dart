@@ -45,6 +45,29 @@ class SessionService extends RelayService {
 }
 
 void main() {
+  testWidgets('revoked permissions leave an already mounted private route', (
+    tester,
+  ) async {
+    final service = SessionService();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [serviceProvider.overrideWith((ref) => service)],
+        child: const RelayApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    router.push('/sales-management');
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/sales-management');
+    service.user = {...service.user!, 'permissions': <String>[]};
+    service.notifyListeners();
+    await tester.pumpAndSettle();
+    expect(router.state.uri.path, '/');
+    expect(router.canPop(), isFalse);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets(
     'sign out clears nested private screens and back history; sync retains navigation',
     (tester) async {

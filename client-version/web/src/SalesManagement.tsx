@@ -3,7 +3,7 @@ import ExportActions from "./ExportActions";
 import ProductTargetManagement from "./ProductTargets";
 import { useBranchScope } from "./BranchScope";
 import { businessPeriod } from "./businessTime";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useContext, useState, useEffect, useRef } from "react";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -40,6 +40,7 @@ const month = businessPeriod();
 
 export default function SalesManagement() {
   const { user, notify } = useContext(Context);
+  const navigate = useNavigate();
 
   const granted = new Set<string>(user.permissions || []);
   const hasRead = granted.has("read");
@@ -49,9 +50,8 @@ export default function SalesManagement() {
   const canViewStaff = managementRole && hasRead;
   const canManageStaff =
     canViewStaff &&
-    granted.has(
-      user.role === "Administrator" ? "settings.write" : "task.write",
-    );
+    user.role === "Administrator" &&
+    granted.has("settings.write");
   const canCorrectSales =
     managementRole && hasRead && granted.has("compliance.write");
   const canRecord =
@@ -484,13 +484,20 @@ export default function SalesManagement() {
           <div className="sales-section-head">
             <h2>Sales register</h2>
             {canRecord && (
-              <button className="primary" onClick={() => setNewSale(!newSale)}>
+              <button
+                className="primary"
+                onClick={() =>
+                  user.role === "Field Agent"
+                    ? navigate("/kyc-capture?new=1")
+                    : setNewSale(!newSale)
+                }
+              >
                 <Plus size={16} /> Record sale
               </button>
             )}
           </div>
 
-          {newSale && canRecord && (
+          {newSale && canRecord && user.role === "Operations Manager" && (
             <form
               className="sales-form"
               onSubmit={(e) =>

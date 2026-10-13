@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field, model_validator, field_validator
 from .validation import BusinessInput
 from sqlalchemy import select, or_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 from openpyxl import load_workbook
 
 from .db import (
@@ -73,8 +73,8 @@ class StaffCreate(BusinessInput):
 
 @router.post("/staff", status_code=201)
 def create_staff(body: StaffCreate, request: Request, user=Depends(principal), db=Depends(get_db)):
-    from .organization import administrator
-    administrator(db, user)
+    from .account_access import access
+    access(db, user)
     email = body.email.strip().lower()
     if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
         raise HTTPException(422, "Enter a valid email address")
@@ -105,8 +105,8 @@ class StaffAssignment(BusinessInput):
 
 @router.patch("/staff/{staff_id}")
 def assign_staff(staff_id: str, body: StaffAssignment, request: Request, user=Depends(principal), db=Depends(get_db)):
-    from .organization import administrator
-    administrator(db, user)
+    from .account_access import access
+    access(db, user)
     person = db.get(User, staff_id)
     if not person or db.get(Role, person.role_id).name not in STAFF_ROLES:
         raise HTTPException(404, "Sales staff account not found")
@@ -466,6 +466,8 @@ def performance(period: str = "", user=Depends(principal), db=Depends(get_db), o
 @router.post("/sales", status_code=201)
 def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=Depends(get_db)):
     can_record(db, user)
+    if db.get(Role, user.role_id).name == "Field Agent":
+        raise HTTPException(403, "Capture the customer and order screens before recording a sale.")
     enforce_capture(db, user)
     if "read" not in permissions(db, user):
         raise HTTPException(403, "Your role cannot record sales")
@@ -520,13 +522,30 @@ class SaleCorrection(BusinessInput):
         return "ON_SPOT" if isinstance(value, str) and not value.strip() else value
 
 
+def sale_for_update(db, sale_id):
+    """Serialize backend changes with evidence review and SR reconciliation.
+
+    Refresh an already-loaded sale before validating an import or merging JSON
+    details. A busy sale returns a retryable conflict rather than losing another
+    review's status, payment record or once-only SIM consumption marker.
+    """
+    try:
+        return db.scalar(select(SalesRecord).where(SalesRecord.id == sale_id)
+                         .with_for_update(nowait=True).execution_options(populate_existing=True))
+    except OperationalError as error:
+        if getattr(error.orig, "sqlstate", None) != "55P03" and getattr(error.orig, "pgcode", None) != "55P03":
+            raise
+        db.rollback()
+        raise HTTPException(409, "This sale is being updated. Refresh and try again.") from None
+
+
 @router.patch("/sales/{sale_id}")
 def correct_sale(sale_id: str, body: SaleCorrection, request: Request, user=Depends(principal), db=Depends(get_db)):
     if db.get(Role, user.role_id).name not in {"Administrator", "Operations Manager"}:
         raise HTTPException(403, "Only backend management can correct a sale")
     require(db, user, "compliance.write")
     require(db, user, "read")
-    row = db.get(SalesRecord, sale_id)
+    row = sale_for_update(db, sale_id)
     if not row or not permitted(db, user, row):
         raise HTTPException(404, "Sale not found")
     if router_required(body.order_type, body.model_dump()) and not body.router_serial.strip():
@@ -885,8 +904,6 @@ def status_file(body: StatusFile, request: Request, user=Depends(principal), db=
         raise HTTPException(403, "Only backend management can update sales statuses")
     require(db, user, "compliance.write")
     require(db, user, "read")
-    if body.apply:
-        db.execute(select(Role).where(Role.name == "Administrator").with_for_update()).scalar_one()
     errors, changes, seen = [], [], set()
     for number, values in enumerate(parse_status_file(body), 2):
         if len(values) < 3:
@@ -897,7 +914,8 @@ def status_file(body: StatusFile, request: Request, user=Depends(principal), db=
             errors.append(f"Row {number}: duplicate sale ID")
             continue
         seen.add(sale_id)
-        row = db.get(SalesRecord, sale_id)
+        row = sale_for_update(db, sale_id) if body.apply else db.scalar(
+            select(SalesRecord).where(SalesRecord.id == sale_id).execution_options(populate_existing=True))
         if not row:
             errors.append(f"Row {number}: unmatched sale ID")
         elif current_status != row.status:

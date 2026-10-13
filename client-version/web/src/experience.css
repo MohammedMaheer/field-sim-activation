@@ -2872,6 +2872,17 @@ details:not([open]) .receipt-kiosk-assembly .verified-receipt {
 }
 
 /* Keep captured customer fields compact while preserving the field/value hierarchy. */
+.accounts-access-short { display: none; }
+@media (max-width: 760px) {
+  .topbar .top-actions { flex-wrap: wrap; }
+  .accounts-access { flex: 0 0 auto; }
+  .accounts-access-full { display: none; }
+  .accounts-access-short { display: inline; }
+  .topbar .activation-search { display: none; }
+  .topbar .top-actions .branch-filter { flex: 1 1 130px; min-width: 0; max-width: 210px; }
+  .topbar .top-actions .branch-filter select { min-width: 0; width: 100%; }
+}
+
 .customer-record .detail-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

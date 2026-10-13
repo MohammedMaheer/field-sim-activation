@@ -183,3 +183,29 @@ test("sales capture and feedback remain available with the effective capture gra
     page.getByRole("button", { name: "Add feedback", exact: true }),
   ).toBeVisible();
 });
+
+test("sales agent Record sale opens image-bound capture rather than the manual reconciliation form", async ({
+  page,
+}) => {
+  await fixture(page, "Field Agent", ["read", "ekyc.write"]);
+  let manualWrites = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/sales-management/sales" && request.method() === "POST")
+      manualWrites++;
+  });
+  await page.getByRole("button", { name: "Record sale", exact: true }).click();
+  await expect(page).toHaveURL(/\/kyc-capture\?new=1$/);
+  await expect(page.getByRole("heading", { name: "Customer details", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Order type", { exact: true })).toHaveCount(0);
+  expect(manualWrites).toBe(0);
+});
+
+test("operations reconciliation retains the authorized manual sale form", async ({
+  page,
+}) => {
+  await fixture(page, "Operations Manager", ["read", "ekyc.write"]);
+  await page.getByRole("button", { name: "Record sale", exact: true }).click();
+  await expect(page).toHaveURL(/\/sales$/);
+  await expect(page.getByRole("combobox", { name: "Order type", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Customer details", exact: true })).toHaveCount(0);
+});

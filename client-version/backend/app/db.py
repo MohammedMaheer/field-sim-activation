@@ -79,6 +79,9 @@ class Session(Entity):
     __tablename__ = "device_sessions"
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     refresh_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    previous_refresh_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    refresh_retry_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    refresh_retry_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     device: Mapped[str] = mapped_column(String(100))
     expires: Mapped[datetime] = mapped_column(DateTime)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False)

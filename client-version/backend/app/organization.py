@@ -4,11 +4,12 @@ import re
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, ConfigDict
-from sqlalchemy import select, func
+from sqlalchemy import select, func, text
 from sqlalchemy.exc import IntegrityError
 from .db import Agent, Branch, Outlet, Role, User, Session, get_db
 from .security import lifecycle_row_for_update, principal, password_hash, require
 from .services import audit
+from .branch_locations import BranchLocation, save_branch_location
 
 router = APIRouter(prefix="/api/organization")
 
@@ -96,17 +97,28 @@ class Creation(BaseModel):
     employee_id: str = Field(default="", max_length=40)
     target: int = Field(default=20, ge=1, le=1000)
     area: str = Field(default="", max_length=120)
+    location: BranchLocation | None = None
 
 
-@router.post("/{kind}", status_code=201)
-def create(
+def provision(
     kind: Literal["branches", "outlets", "teams", "agents"],
     body: Creation,
     request: Request,
     db=Depends(get_db),
     user=Depends(principal),
+    commit=True,
 ):
     administrator(db, user)
+    if db.bind.dialect.name == "postgresql" and not db.scalar(text("SELECT pg_try_advisory_xact_lock(82831023)")):
+        raise HTTPException(409, "Another branch or staff update is running. Retry shortly.")
+    if kind in {"teams", "agents"} and db.get(Role,user.role_id).name != "Administrator":
+        raise HTTPException(403, "Only the Super admin can create staff accounts")
+    if body.location is not None:
+        if kind != "branches":
+            raise HTTPException(422, "Configure locations on the branch record")
+        from .location_tracking import manage, lock_boundary_changes
+        manage(db, user)
+        lock_boundary_changes(db)
     # Serialize provisioning without changing the existing membership model.
     db.execute(select(Role).where(Role.id == user.role_id).with_for_update()).scalar_one()
     values = {"name": body.name}
@@ -140,6 +152,8 @@ def create(
             db.rollback()
             raise HTTPException(409, "This record already exists. Refresh and try again.") from None
         db.add(Outlet(name=body.name, branch_id=entity.id, area="", lat=0, lng=0))
+        if body.location is not None:
+            save_branch_location(db, user, entity, body.location, request)
         for person in selected:
             person.branch_id = entity.id
         if identifiers:
@@ -222,11 +236,18 @@ def create(
             new=values,
             request=request,
         )
-        db.commit()
+        if commit:
+            db.commit()
     except IntegrityError:
         db.rollback()
         raise HTTPException(409, "This record already exists. Refresh and try again.")
     return {"id": entity.id, **values}
+
+
+@router.post("/{kind}", status_code=201)
+def create(kind: Literal["branches", "outlets", "teams", "agents"], body: Creation,
+           request: Request, db=Depends(get_db), user=Depends(principal)):
+    return provision(kind, body, request, db, user)
 
 
 class LeaderAssignment(BaseModel):

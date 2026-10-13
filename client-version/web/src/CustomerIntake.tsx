@@ -3,7 +3,15 @@ import { useEffect, useRef, useState } from "react";
 import { api, post, Row } from "./api";
 import { useResource } from "./App";
 import { Camera, ArrowLeft, ArrowRight } from "lucide-react";
-import { ocrOperation, readStageOcr, withoutStageCapture, ocrWarning, OcrOperation, OcrTemporaryFailure, OcrReadCancelled } from './ocrJobs';
+import {
+  ocrOperation,
+  readStageOcr,
+  withoutStageCapture,
+  ocrWarning,
+  OcrOperation,
+  OcrTemporaryFailure,
+  OcrReadCancelled,
+} from "./ocrJobs";
 export default function CustomerIntake({
   value,
   onChange,
@@ -18,13 +26,26 @@ export default function CustomerIntake({
   const [camera, setCamera] = useState("");
   const [reading, setReading] = useState(false),
     [scanImage, setScanImage] = useState("");
-  const [captureStatus, setCaptureStatus] = useState('Reading captured screen…');
-  const [retryKey, setRetryKey] = useState('');
-  const currentValue = useRef(value), alive = useRef(true), captureRevision = useRef(0);
+  const [captureStatus, setCaptureStatus] = useState(
+    "Reading captured screen…",
+  );
+  const [retryKey, setRetryKey] = useState("");
+  const currentValue = useRef(value),
+    alive = useRef(true),
+    captureRevision = useRef(0);
   const pendingReads = useRef<Record<string, OcrOperation>>({});
   currentValue.current = value;
-  useEffect(() => { alive.current = true; return () => { alive.current = false; captureRevision.current++; }; }, []);
-  const replaceValue = (next: Row) => { currentValue.current = next; onChange(next); };
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+      captureRevision.current++;
+    };
+  }, []);
+  const replaceValue = (next: Row) => {
+    currentValue.current = next;
+    onChange(next);
+  };
   const plans = useResource("plans");
   const [missing, setMissing] = useState<string[]>([]);
   const fieldLabels: Record<string, string> = {
@@ -122,45 +143,83 @@ export default function CustomerIntake({
     const generation = ++captureRevision.current;
     try {
       const image = await preparedImage(file);
-      const stage = key === 'order_image' ? 'ORDER' : 'DOCUMENT';
+      const stage = key === "order_image" ? "ORDER" : "DOCUMENT";
       const details = await readStageOcr(ocrOperation(stage, image), {
-        isCurrent: () => alive.current && generation === captureRevision.current,
+        isCurrent: () =>
+          alive.current && generation === captureRevision.current,
         onStatus: setCaptureStatus,
       });
-      if (!alive.current || generation !== captureRevision.current) return false;
-      if (!details[key === 'order_image' ? 'order_check' : 'document_check']) { setError(ocrWarning(details)); return false; }
+      if (!alive.current || generation !== captureRevision.current)
+        return false;
+      if (!details[key === "order_image" ? "order_check" : "document_check"]) {
+        setError(ocrWarning(details));
+        return false;
+      }
       setScanImage(image);
       clearMissing([key, ...Object.keys(details)]);
-      replaceValue({ ...withoutStageCapture(currentValue.current, stage), ...details, [key]: image, capture_mode: 'SCREENSHOT_SALE' });
+      replaceValue({
+        ...withoutStageCapture(currentValue.current, stage),
+        ...details,
+        ...(stage === "ORDER" ? { sr_manual: false } : {}),
+        [key]: image,
+        capture_mode: "SCREENSHOT_SALE",
+      });
       setError(ocrWarning(details));
       return true;
     } catch (failure: any) {
-      if (failure instanceof OcrTemporaryFailure && alive.current) setError(failure.message);
+      if (failure instanceof OcrTemporaryFailure && alive.current)
+        setError(failure.message);
       return false;
     }
   }
-  const detectDocument = (file: File) => detect(file, 'document_image');
-  const detectOrder = (file: File) => detect(file, 'order_image');
+  const detectDocument = (file: File) => detect(file, "document_image");
+  const detectOrder = (file: File) => detect(file, "order_image");
   async function readStoredPhoto(key: string, generation: number) {
     const image = currentValue.current[key];
-    const stage = key === 'order_image' ? 'ORDER' : 'DOCUMENT';
-    const operation = pendingReads.current[key]?.image === image ? pendingReads.current[key] : (pendingReads.current[key] = ocrOperation(stage, image));
+    const stage = key === "order_image" ? "ORDER" : "DOCUMENT";
+    const operation =
+      pendingReads.current[key]?.image === image
+        ? pendingReads.current[key]
+        : (pendingReads.current[key] = ocrOperation(stage, image));
     const details = await readStageOcr(operation, {
-      isCurrent: () => alive.current && generation === captureRevision.current && currentValue.current[key] === image,
+      isCurrent: () =>
+        alive.current &&
+        generation === captureRevision.current &&
+        currentValue.current[key] === image,
       onStatus: setCaptureStatus,
     });
-    if (!details[key === 'order_image' ? 'order_check' : 'document_check']) throw Error(ocrWarning(details) || (key === 'order_image' ? "Order details weren't captured clearly. Try again." : "Customer details weren't captured clearly. Try again."));
-    replaceValue({ ...currentValue.current, ...details });
+    if (!details[key === "order_image" ? "order_check" : "document_check"])
+      throw Error(
+        ocrWarning(details) ||
+          (key === "order_image"
+            ? "Order details weren't captured clearly. Try again."
+            : "Customer details weren't captured clearly. Try again."),
+      );
+    replaceValue({
+      ...currentValue.current,
+      ...details,
+      ...(stage === "ORDER" ? { sr_manual: false } : {}),
+    });
     clearMissing([key, ...Object.keys(details)]);
     setError(ocrWarning(details));
   }
   async function retryRetainedPhoto() {
     if (!retryKey || busy) return;
     const generation = captureRevision.current;
-    setBusy(true); setReading(true); setError('');
-    try { await readStoredPhoto(retryKey, generation); setRetryKey(''); }
-    catch (failure: any) { if (!(failure instanceof OcrReadCancelled)) setError(failure.message); }
-    finally { if (alive.current) { setBusy(false); setReading(false); } }
+    setBusy(true);
+    setReading(true);
+    setError("");
+    try {
+      await readStoredPhoto(retryKey, generation);
+      setRetryKey("");
+    } catch (failure: any) {
+      if (!(failure instanceof OcrReadCancelled)) setError(failure.message);
+    } finally {
+      if (alive.current) {
+        setBusy(false);
+        setReading(false);
+      }
+    }
   }
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
@@ -173,8 +232,14 @@ export default function CustomerIntake({
         setScanImage(image);
       if (key === "document_image" || key === "order_image") {
         const generation = ++captureRevision.current;
-        replaceValue({ ...withoutStageCapture(currentValue.current, key === 'order_image' ? 'ORDER' : 'DOCUMENT'), [key]: image });
-        setRetryKey('');
+        replaceValue({
+          ...withoutStageCapture(
+            currentValue.current,
+            key === "order_image" ? "ORDER" : "DOCUMENT",
+          ),
+          [key]: image,
+        });
+        setRetryKey("");
         await readStoredPhoto(key, generation);
       } else {
         replaceValue({ ...currentValue.current, [key]: image });
@@ -336,7 +401,11 @@ export default function CustomerIntake({
           {error}
         </p>
       )}
-      {retryKey && <button type="button" disabled={busy} onClick={retryRetainedPhoto}>Retry retained photo</button>}
+      {retryKey && (
+        <button type="button" disabled={busy} onClick={retryRetainedPhoto}>
+          Retry retained photo
+        </button>
+      )}
       {step === 0 ? (
         <>
           <h2>Customer details</h2>
@@ -437,7 +506,11 @@ export default function CustomerIntake({
                   accept="image/png,image/jpeg"
                   capture={key === "selfie_image" ? "user" : "environment"}
                   disabled={busy}
-                  onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void photo(file, key); }}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    void photo(file, key);
+                  }}
                 />
               </label>
             ))}
@@ -478,7 +551,11 @@ export default function CustomerIntake({
               )}
               <div className="scan-beam" />
               <span className="scan-status">
-                {reading ? captureStatus : value.order_check ? "Order captured" : "Photo retained · capture not confirmed"}
+                {reading
+                  ? captureStatus
+                  : value.order_check
+                    ? "Order captured"
+                    : "Photo retained · capture not confirmed"}
               </span>
             </div>
           )}
@@ -492,7 +569,11 @@ export default function CustomerIntake({
                 accept="image/png,image/jpeg"
                 capture="environment"
                 disabled={busy}
-                onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; void photo(file, "order_image"); }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  void photo(file, "order_image");
+                }}
               />
             </label>
           </div>
@@ -579,14 +660,41 @@ export default function CustomerIntake({
               {value.order_type === "HW" &&
                 value.router_fulfilment === "ON_SPOT" &&
                 input("router_serial", "Router serial", "text", 100)}
-              <div className="sr-auto-read" role="status" aria-label="SR number from OCR">
+              <div
+                className="sr-auto-read"
+                role="status"
+                aria-label="SR number from OCR"
+              >
                 <span>SR number · Auto-read</span>
                 <strong>{value.sr_number || "Not recorded"}</strong>
-                <small>{value.sr_number ? "Read from order" : "Auto-read from order or receipt"}</small>
+                <small>
+                  {value.sr_manual && value.sr_number
+                    ? "Manually recorded · pending SR verification"
+                    : value.sr_number
+                      ? "Read from order"
+                      : "Auto-read from order or receipt"}
+                </small>
               </div>
               <details className="intake-extra">
                 <summary>Additional sale details</summary>
                 <div className="intake-grid">
+                  {!value.receipt_sr_check &&
+                    (value.sr_manual || !value.sr_number) && (
+                      <label>
+                        SR number · enter if not read
+                        <input
+                          value={value.sr_number || ""}
+                          maxLength={120}
+                          onChange={(event) =>
+                            replaceValue({
+                              ...currentValue.current,
+                              sr_number: event.target.value,
+                              sr_manual: true,
+                            })
+                          }
+                        />
+                      </label>
+                    )}
                   {input("account_number", "Account number", "text", 120)}
                   {input("sim_identifier", "SIM serial", "text", 100)}
                   {value.order_type !== "HW" &&

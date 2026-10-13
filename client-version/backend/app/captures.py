@@ -199,6 +199,7 @@ class Intake(BaseModel):
     router_fulfilment: Literal["", "DELIVERY", "ON_SPOT", "WITHOUT_ROUTER"] = ""
     advance_transaction_number: str = Field(default="", max_length=120)
     sr_number: str = Field(default="", max_length=120)
+    sr_manual: bool = False
     receipt_sr_check: str = Field(default="", max_length=8192)
     alternate_number: str = Field(default="", max_length=40)
     order_fields: list[dict[str, str]] = Field(default_factory=list, max_length=100)
@@ -1006,6 +1007,9 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
     supplied = body.model_dump(mode="json")
     if not supplied["intake"].get("receipt_sr_check"):
         supplied["intake"].pop("receipt_sr_check", None)
+    # Preserve exact retry fingerprints from releases before manual SR fallback.
+    if not supplied["intake"].get("sr_manual"):
+        supplied["intake"].pop("sr_manual", None)
     fingerprint = hashlib.sha256(json.dumps(supplied, sort_keys=True).encode()).hexdigest()
     existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
     if existing:
@@ -1043,6 +1047,8 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
         ("Prepayment on order", body.intake.prepayment),
     ] if value]
     content = {"document_kind": "SALE_SCREENSHOTS", "intake": content_intake,
+               "customer_call_required": True,
+               "sr_recording_method": "RECEIPT_OCR" if body.intake.receipt_sr_check else "MANUAL" if body.intake.sr_manual and body.intake.sr_number else "ORDER_OCR" if body.intake.sr_number else "NOT_RECORDED",
                "submission_hash": fingerprint, "rows": [{"fields": fields}], "lines": [], "history": [],
                "plan_snapshot": {"name": plan.name, "monthly_cost": float(plan.monthly_cost), "promotion": plan.promotion}}
     db.add(row)
@@ -1495,6 +1501,38 @@ def submit(
 class ReviewBody(VersionBody):
     outcome: Literal["VERIFIED", "REJECTED"]
     reason: str = Field(min_length=5, max_length=300)
+    customer_call_outcome: Literal["ACTIVE_CONFIRMED", "NOT_ACTIVE", "NO_ANSWER", "WRONG_NUMBER"] | None = None
+    customer_call_note: str = Field(default="", max_length=300)
+
+
+class CustomerCallBody(VersionBody):
+    outcome: Literal["ACTIVE_CONFIRMED", "NOT_ACTIVE", "NO_ANSWER", "WRONG_NUMBER"]
+    note: str = Field(min_length=5, max_length=300)
+
+
+@router.post("/{capture_id}/customer-call")
+def record_customer_call(capture_id: str, body: CustomerCallBody, request: Request,
+                         user=Depends(principal), db=Depends(get_db)):
+    require(db, user, "compliance.write")
+    row = get_capture(db, user, capture_id, True)
+    version_check(row, body)
+    if row.creator_id == user.id:
+        raise HTTPException(403, "Another authorized backend reviewer must call this customer")
+    data = payload(row)
+    if row.status != "SUBMITTED" or data.get("document_kind") != "SALE_SCREENSHOTS":
+        raise HTTPException(409, "Record customer calls on submitted screenshot sales")
+    if len(body.note.strip()) < 5:
+        raise HTTPException(422, "Enter a meaningful customer call note")
+    calls = data.get("customer_calls", [])
+    if len(calls) >= 100:
+        raise HTTPException(409, "This sale has reached its call history limit; escalate through support")
+    calls.append({"outcome": body.outcome, "note": body.note.strip(),
+                  "phone": data.get("intake", {}).get("msisdn") or "Not recorded",
+                  "reviewer": user.name, "at": now().isoformat()})
+    data["customer_calls"] = calls
+    record(db, row, user, "Backend Customer Call Recorded", request, data)
+    db.commit()
+    return view(row)
 
 
 @router.post("/{capture_id}/review")
@@ -1517,6 +1555,9 @@ def review(
             409, "This sale is cancelled. Resolve its sale status before verifying the evidence."
         )
     data = payload(row)
+    if body.outcome == "VERIFIED" and (data.get("customer_call_required") or data.get("document_kind") == "SALE_SCREENSHOTS"):
+        if body.customer_call_outcome != "ACTIVE_CONFIRMED" or len(body.customer_call_note.strip()) < 5:
+            raise HTTPException(422, "Call the customer and confirm their plan is active before verifying this sale")
     stored_intake = data.get("intake")
     if stored_intake is not None and not isinstance(stored_intake, dict):
         raise HTTPException(
@@ -1536,6 +1577,10 @@ def review(
         "reviewer": user.name,
         "at": now().isoformat(),
     }
+    if body.customer_call_outcome:
+        data["review"]["customer_call"] = {"outcome":body.customer_call_outcome,
+            "note":body.customer_call_note.strip(), "phone":(data.get("intake") or {}).get("msisdn") or "Not recorded",
+            "reviewer":user.name,"at":now().isoformat()}
     data.pop("leader_confirmation", None)
     if body.outcome == "VERIFIED":
         agent = db.get(Agent, row.agent_id)

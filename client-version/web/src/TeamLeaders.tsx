@@ -9,12 +9,14 @@ import OrganizationSetup, { TeamLeaderEditor } from "./OrganizationSetup";
 import { useBranchScope } from "./BranchScope";
 import RecordOverview from "./RecordOverview";
 import ReceiptReview from "./ReceiptReview";
+import OrganizationImport from "./OrganizationImport";
 
 export default function TeamLeaders() {
   const { user } = useContext(Context);
   const leaders = useResource("team-leaders");
   const agents = useResource("agents");
   const [setup, setSetup] = useState<"new" | "existing" | null>(null);
+  const [importing, setImporting] = useState(false);
   const [editing, setEditing] = useState<{
     id: string;
     mode: "details" | "branch";
@@ -71,13 +73,26 @@ export default function TeamLeaders() {
               <button onClick={() => setSetup("existing")}>
                 Assign existing team leader
               </button>
-              <button className="primary" onClick={() => setSetup("new")}>
+              <button
+                hidden={user.role !== "Administrator"}
+                className="primary"
+                onClick={() => setSetup("new")}
+              >
                 <Plus size={16} /> Add team leader
+              </button>
+              <button
+                hidden={user.role !== "Administrator"}
+                onClick={() => setImporting(true)}
+              >
+                Import Excel
               </button>
             </>
           )}
         </div>
       </header>
+      {importing && user.role === "Administrator" && canManage && (
+        <OrganizationImport kind="teams" onClose={() => setImporting(false)} />
+      )}
       {editing && canManage && (
         <TeamLeaderEditor
           leaderId={editing.id}
@@ -131,7 +146,12 @@ export default function TeamLeaders() {
                     )}
                   </div>
                 </div>
-                {leader.historical_assignment && <p className="cell-sub">Historical sales · Current branch: {leader.current_branch || "Not assigned"}</p>}
+                {leader.historical_assignment && (
+                  <p className="cell-sub">
+                    Historical sales · Current branch:{" "}
+                    {leader.current_branch || "Not assigned"}
+                  </p>
+                )}
                 <div className="leader-card-metrics">
                   <Link
                     onClick={() =>
@@ -154,6 +174,7 @@ export default function TeamLeaders() {
                 {canManage && !leader.historical_assignment && (
                   <div className="leader-management-actions">
                     <button
+                      hidden={user.role !== "Administrator"}
                       onClick={() =>
                         setEditing({ id: leader.leader_id, mode: "details" })
                       }

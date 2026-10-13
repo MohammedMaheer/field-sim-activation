@@ -67,6 +67,24 @@ def submit(client, body):
     return client.post("/api/kyc-captures/sale-submissions", json=body)
 
 
+@pytest.mark.parametrize("account", ["agent1", "agent2"])
+def test_agent_cannot_bypass_captured_evidence_with_manual_sale_but_can_submit_captured_order(client, account):
+    body = sale_body(client, account)
+    response = client.post("/api/sales-management/sales", json={"agent_id": body["agent_id"],
+        "order_type": "NEW", "customer_name": body["intake"]["name"], "plan_name": "Captured plan",
+        "request_id": body["intake"]["order_reference"], "sr_number": "MANUAL-SR-" + str(uuid4())})
+    assert response.status_code == 403
+    assert "Capture the customer and order screens" in response.json()["detail"]
+    with DB() as db:
+        assert not db.scalar(select(SalesRecord.id).where(SalesRecord.request_id == body["intake"]["order_reference"]))
+    captured = submit(client, body)
+    assert captured.status_code == 201, captured.text
+    assert captured.json()["status"] == "SUBMITTED"
+    with DB() as db:
+        sale = db.scalar(select(SalesRecord).where(SalesRecord.capture_id == captured.json()["id"]))
+        assert sale and sale.agent_id == body["agent_id"] and sale.status == "IN_PROGRESS"
+
+
 def test_same_operation_retry_is_idempotent_and_changed_operation_conflicts(client):
     body = sale_body(client)
     first = submit(client, body)
@@ -431,7 +449,7 @@ def test_completed_capture_filter_includes_reviewed_screenshot_sale_and_excludes
     assert response.status_code == 201
     identifier = response.json()["id"]
     login(client)
-    verified = client.post(f"/api/kyc-captures/{identifier}/review", json={"version": response.json()["version"], "outcome": "VERIFIED", "reason": "Independent evidence review completed"})
+    verified = client.post(f"/api/kyc-captures/{identifier}/review", json={"version": response.json()["version"], "outcome": "VERIFIED", "reason": "Independent evidence review completed", "customer_call_outcome":"ACTIVE_CONFIRMED", "customer_call_note":"Customer confirmed the plan is active"})
     assert verified.status_code == 200, verified.text
     assert verified.json()["activation_state"] == "ACTIVATED_PENDING_SR"
     completed = client.get("/api/kyc-captures?stage=COMPLETED&include_samples=true")

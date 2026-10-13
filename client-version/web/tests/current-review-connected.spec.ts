@@ -228,6 +228,8 @@ test("current screenshot sale has independent comparison, correction and scoped 
     workspace.getByRole("button", { name: "Verify submission", exact: true }),
   ).toBeDisabled();
   await acknowledgement.check();
+  await workspace.getByRole("combobox", {name:"Customer call outcome",exact:true}).selectOption("ACTIVE_CONFIRMED");
+  await workspace.getByLabel("Customer call note", {exact:true}).fill("Customer confirmed the plan is active during the backend activation check.");
   const confirmation = page.waitForResponse(
     (response) =>
       response.url().endsWith(captureUrl + "/review") &&

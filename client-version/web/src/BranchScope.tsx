@@ -72,7 +72,7 @@ export function clearBranchScope(userId: string) {
 }
 
 export function salesAgentRole(role: string) {
-  return role === "Field Agent" ? "Sales agent" : role;
+  return ({"Field Agent":"Sales agent", "Administrator":"Super admin", "Operations Manager":"Admin", "Compliance Officer":"Backend verification", "Tele Verification Officer":"Tele-verification"} as Record<string,string>)[role] || role;
 }
 
 export function canFilterBranches(user: Row) {

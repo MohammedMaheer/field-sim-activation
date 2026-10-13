@@ -103,6 +103,7 @@ void main() {
         'sr_number': 'old-sr',
         'receipt_sr_check': 'old-receipt-proof',
         'payment_image': 'old-payment',
+        'sr_manual': true,
       }, 'ORDER');
       expect(cleaned, {
         'name': 'Customer',

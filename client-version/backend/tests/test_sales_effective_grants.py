@@ -186,7 +186,7 @@ def test_staff_management_with_organization_grant_has_no_backend_verification_po
     restrict_grants(account, ["read", grant])
     response = client.post("/api/sales-management/staff", json={"name": "Limited staff manager",
         "email": f"limited-{uuid4()}@relay.demo", "password": "strong-test-password", "role": "Sales Manager"})
-    assert response.status_code == 201, response.text
+    assert response.status_code == (201 if account == "admin" else 403), response.text
     assert client.patch("/api/sales-management/sales/" + sale["id"], json={
         "order_type": "WASEL", "reason": "Organization grants cannot correct customer sales"}).status_code == 403
 

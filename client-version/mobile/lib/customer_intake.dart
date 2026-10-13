@@ -600,6 +600,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   void set(String k, dynamic v) {
     setState(() {
       data[k] = v;
+      if (k == 'sr_number') data['sr_manual'] = true;
       missing.remove(k);
       error = null;
     });
@@ -728,6 +729,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         );
       }
       if (key == 'order_image') orderSrStatus = fields['sr_status']?.toString();
+      if (key == 'order_image') data['sr_manual'] = false;
       data.addAll(Json.from(fields)..remove('sr_status'));
       retryableStage = null;
       error = ocrWarning(fields);
@@ -1428,6 +1430,9 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
                   style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                 ),
                 children: [
+                  if (orderSrStatus != 'READ' &&
+                      (data['receipt_sr_check'] ?? '').toString().isEmpty)
+                    field('sr_number', 'SR number · enter if not read'),
                   RelayPair(
                     rowGap: 0,
                     first: field('account_number', 'Account number'),

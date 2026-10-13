@@ -7,6 +7,7 @@ import 'customer_details.dart';
 import 'product_targets.dart';
 import 'workspace_menu.dart';
 import 'commission_calculations.dart';
+import 'final_incentives.dart';
 import 'notifications.dart';
 import 'saved_drafts.dart';
 import 'sales_management.dart';
@@ -153,10 +154,38 @@ class RelayApp extends ConsumerWidget {
   const RelayApp({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    ref.listen<String?>(
-      serviceProvider.select((service) => service.user?['id']?.toString()),
+    ref.listen<(String?, String?, String)>(
+      serviceProvider.select((service) {
+        final permissions =
+            (service.user?['permissions'] as List? ?? [])
+                .map((value) => value.toString())
+                .toList()
+              ..sort();
+        return (
+          service.user?['id']?.toString(),
+          service.user?['role']?.toString(),
+          permissions.join('\u001f'),
+        );
+      }),
       (previous, next) {
-        if (previous != null && next == null) router.go('/');
+        final permissions = next.$3.split('\u001f').toSet();
+        final revoked =
+            previous != null &&
+            (previous.$2 != next.$2 ||
+                previous.$3
+                    .split('\u001f')
+                    .any(
+                      (permission) =>
+                          permission.isNotEmpty &&
+                          !permissions.contains(permission),
+                    ));
+        if (previous?.$1 != null && (previous!.$1 != next.$1 || revoked)) {
+          // Clear the complete pushed stack too: GoRouter's refresh can retain
+          // imperative pages underneath the current base route.
+          router.go('/');
+        }
+        // Refresh after grant/role changes as well as account changes so a
+        // mounted private route cannot survive revoked access.
         router.refresh();
       },
     );
@@ -191,6 +220,35 @@ class _GateState extends ConsumerState<Gate> {
     final s = ref.watch(serviceProvider);
     if (!s.ready) return const Scaffold(body: LoadingCards());
     if (s.user == null) return const LoginScreen();
+    final callingRole = [
+      'Tele Verification Officer',
+      'Welcome Call Officer',
+    ].contains(s.user?['role']);
+    if (callingRole
+        ? !canVisitMobilePage('/call-work', s.user)
+        : !List<String>.from(s.user?['permissions'] ?? []).contains('read')) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Access unavailable')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'Your account currently has no workspace access. Ask the Super admin to review your role permissions.',
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton(
+                  onPressed: s.logout,
+                  child: const Text('Sign out'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     if ([
       'Tele Verification Officer',
       'Welcome Call Officer',
@@ -268,13 +326,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
   }
 
   String accountLabel(Json account) {
-    final role = switch (account['role']) {
-      'Field Agent' => 'Sales agent',
-      'Team Leader' => 'Team leader',
-      'Tele Verification Officer' => 'Tele verification',
-      'Welcome Call Officer' => 'Welcome calls',
-      _ => account['role'],
-    };
+    final role = salesRoleLabel(account['role']);
     return '$role · ${account['name']}';
   }
 
@@ -1368,7 +1420,10 @@ class IncentivesScreen extends ConsumerWidget {
         'Team Leader',
         'Sales Manager',
       ].contains(ref.read(serviceProvider).user?['role'])
-      ? const CommissionCalculations(history: IncentiveHistory())
+      ? const CommissionCalculations(
+          history: IncentiveHistory(),
+          finals: FinalIncentiveHistory(),
+        )
       : const IncentiveHistory();
 }
 
@@ -1552,8 +1607,8 @@ class DailyReportScreen extends ConsumerWidget {
                     ),
                     KeyValue('Available SIMs', '${d['stock']}'),
                     KeyValue(
-                      'Recorded incentives this month',
-                      'AED ${d['incentive_total']}',
+                      'Final commissions this month',
+                      'AED ${d['final_incentive_total'] ?? '0.00'}',
                     ),
                   ],
                 ),
@@ -2262,6 +2317,14 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
+            if (canVisitMobilePage('/support', s.user)) ...[
+              OutlinedButton.icon(
+                onPressed: () => context.push('/support'),
+                icon: const Icon(Icons.support_agent),
+                label: const Text('Support · ask for help'),
+              ),
+              const SizedBox(height: 12),
+            ],
             if (canVisitMobilePage('/work-location', s.user)) ...[
               OutlinedButton.icon(
                 onPressed: () => context.push('/work-location'),

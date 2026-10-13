@@ -1,3 +1,7 @@
+# Latest operations clarification - 13 October 2026
+
+Backend staff call the customer and record an active-plan confirmation before verifying screenshot-sale evidence. The optional payment receipt has no separate approval gate. SR reconciliation accepts daily and monthly reports independently; missing OCR SR has a recorded manual fallback, while recognized SR stays bound to its evidence. See [Operations update 83](../client-version/docs/OPERATIONS-UPDATE-83.md) for current role, stock, commission-import and location controls. Earlier workflow sections are historical and are superseded where they conflict.
+
 # October client clarification - 9 October 2026
 
 See [October client update](OCTOBER-2026-CLIENT-UPDATE.md) for the latest rules. New sales capture customer and order screens, then review and submit with an optional payment receipt; there is no separate payment-confirmation gate. Backend evidence review is independent, team leaders receive read-only updates, and daily SR reconciliation has a separate pending/mismatch state that does not block recording external activation. Approved incentive rates and CRR/DRR are implemented; unknown policy inputs and projection remain on hold. Cancelled sales are excluded from original-date net totals. This supersedes earlier workflow notes below.

@@ -252,7 +252,8 @@ def test_saved_sale_and_backend_alert_remain_with_original_reporting_leader(clie
         "expected_leader_id": first, "reason": "Change future sales reporting leader"})
     assert changed.status_code == 200, changed.text
     confirmed = client.post(f"/api/kyc-captures/{capture_id}/review", json={
-        "version": 1, "outcome": "VERIFIED", "reason": "Independently checked original screenshots"})
+            "version": 1, "outcome": "VERIFIED", "reason": "Independently checked original screenshots",
+            "customer_call_outcome": "ACTIVE_CONFIRMED", "customer_call_note": "Customer confirmed their plan is active"})
     assert confirmed.status_code == 200, confirmed.text
     with DB() as db:
         assert db.get(Agent, agent_id).leader_id == second
@@ -389,8 +390,14 @@ def test_fresh_capture_and_direct_sale_require_actual_agent_valid_designated_lea
             client.post("/api/sales-management/sales", json={"agent_id": owner, "order_type": "NEW",
                 "customer_name": "Blocked sample", "plan_name": "Captured package", "request_id": body["intake"]["order_reference"]}),
         ]
-        assert [response.status_code for response in responses] == [422] * 4, [response.text for response in responses]
-        assert all("assign a valid branch team leader" in response.text for response in responses)
+        assert [response.status_code for response in responses[:3]] == [422] * 3, [response.text for response in responses]
+        assert all("assign a valid branch team leader" in response.text for response in responses[:3])
+        if account == "agent1":
+            assert responses[3].status_code == 403
+            assert "Capture the customer and order screens" in responses[3].text
+        else:
+            assert responses[3].status_code == 422
+            assert "assign a valid branch team leader" in responses[3].text
         with DB() as db:
             assert not db.scalar(select(KycCapture.id).where(KycCapture.operation_id == body["operation_id"]))
             assert not db.scalar(select(Order.id).where(Order.operation_id == body["operation_id"]))
@@ -457,7 +464,10 @@ def test_capture_grant_revocation_blocks_direct_sale_and_feedback_with_read_acce
                 db.get(Permission, identifier).name = "ekyc.write"
             db.commit()
     assert client.post("/api/sales-management/sales", json={"agent_id": chosen, "order_type": "NEW",
-        "customer_name": "Allowed sample", "plan_name": "Package", "request_id": "ROLE-" + str(uuid4())}).status_code == 201
+        "customer_name": "Allowed sample", "plan_name": "Package", "request_id": "ROLE-" + str(uuid4())}).status_code == (403 if account == "agent1" else 201)
+    if account == "agent1":
+        from test_capture_identity import sale_body, submit
+        assert submit(client, sale_body(client, account)).status_code == 201
     assert client.post("/api/sales-management/feedback", json={"agent_id": chosen,
         "product_suggested": "Package", "feedback": "Customer declined", "rejection_reason": "No purchase"}).status_code == 201
 

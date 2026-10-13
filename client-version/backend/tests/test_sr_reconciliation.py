@@ -32,8 +32,11 @@ def cleanup(database):
 
 
 def make_sale(client, sr="SR-100", status="CLOSED", account="agent1"):
-    login(client, account)
-    agent_id = client.get("/api/auth/me").json()["agent_id"]
+    with DB() as db:
+        agent_id=db.scalar(select(Agent.id).join(User,User.id==Agent.user_id).where(User.email==account+'@relay.demo'))
+    # Manual fixtures use the authorized backend reconciliation path. Sales
+    # agents submit real customer/order captures through sale-submissions.
+    login(client, "ops")
     response = client.post("/api/sales-management/sales", json={
         "agent_id": agent_id, "order_type": "NEW", "customer_name": "Synthetic SR Customer",
         "plan_name": "Captured plan", "sr_number": sr, "request_id": "SR-TEST-" + str(uuid4()),
@@ -531,7 +534,7 @@ def test_sale_submit_has_no_payment_gate_and_preserves_receipt_and_sr_states(cli
     changed = {**body, "intake": {**body["intake"], "nationality": "Different"}}
     assert client.post("/api/kyc-captures/sale-submissions", json=changed).status_code == 409
     login(client)
-    reviewed = client.post(f"/api/kyc-captures/{record['id']}/review", json={"version": record["version"], "outcome": "VERIFIED", "reason": "Compared customer and order screenshots"})
+    reviewed = client.post(f"/api/kyc-captures/{record['id']}/review", json={"version": record["version"], "outcome": "VERIFIED", "reason": "Compared customer and order screenshots", "customer_call_outcome":"ACTIVE_CONFIRMED", "customer_call_note":"Customer confirmed plan is active"})
     assert reviewed.status_code == 200, reviewed.text
     assert reviewed.json()["sr_verification"]["status"] == "PENDING_SR_VERIFICATION"
     assert reviewed.json()["sr_verification"]["sale_status"] == "CLOSED"
@@ -547,3 +550,39 @@ def test_current_capture_requires_actual_bound_images_and_explicit_hw_choice(cli
     assert client.post("/api/kyc-captures/sale-submissions", json=body).status_code == 422
     body["intake"]["router_fulfilment"] = "WITHOUT_ROUTER"
     assert client.post("/api/kyc-captures/sale-submissions", json=body).status_code == 201
+
+
+def test_sr_csv_stops_reading_after_row_limit_even_for_small_blank_row_file(monkeypatch):
+    from fastapi import HTTPException
+    from app import sr_verification as sr
+    original_reader = sr.csv.reader
+    consumed = 0
+
+    def counted_reader(source):
+        nonlocal consumed
+        for row in original_reader(source):
+            consumed += 1
+            yield row
+
+    monkeypatch.setattr(sr.csv, "reader", counted_reader)
+    body = sr.ReportBody(**file_body("sr_number\n" + "\n" * 250_000))
+    with pytest.raises(HTTPException) as rejected:
+        sr.read_report(body)
+    assert rejected.value.status_code == 422
+    assert consumed == 5002
+
+
+@pytest.mark.parametrize("columns,allowed", [(50, True), (51, False)])
+def test_sr_csv_column_limit_matches_excel_limit(columns, allowed):
+    from fastapi import HTTPException
+    from app import sr_verification as sr
+    source = ",".join(["sr_number", *[f"extra_{index}" for index in range(columns - 1)]])
+    source += "\n" + ",".join(["SR-COLUMN-LIMIT", *["" for _ in range(columns - 1)]]) + "\n"
+    body = sr.ReportBody(**file_body(source))
+    if allowed:
+        rows, errors, _ = sr.read_report(body)
+        assert not errors and len(rows) == 1
+    else:
+        with pytest.raises(HTTPException) as rejected:
+            sr.read_report(body)
+        assert rejected.value.status_code == 422

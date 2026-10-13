@@ -1,5 +1,9 @@
 # October 2026 client clarification
 
+## Latest operations clarification — 13 October 2026
+
+The current implementation guide is [Operations update 83](../client-version/docs/OPERATIONS-UPDATE-83.md). Super admin controls accounts, roles and eligible permanent deletion; Admin manages daily operations. Tele-verification is a call-team role, not delivery verification. Before approving screenshot-sale evidence, backend staff must call the customer, record **Active confirmed** and a meaningful note. SR reconciliation accepts daily or monthly reports independently of backend review. SR is extracted from readable evidence where available; a flagged manual fallback is allowed only when OCR did not record it. Final commission amounts can be imported from Excel/CSV and filtered by date, branch, sales agent and leader; calculations and missing policy inputs remain separate. Branch creation/editing can optionally save an actual location and radius. Work-location enforcement remains off until configured. Historical release evidence below describes its dated build, not the current release.
+
 This update follows the owner's 9 October answers and the supplied October incentive emails. It supersedes earlier payment gates and unconfigured CRR/DRR notes for new submissions. Historical receipts remain unchanged.
 
 ## Sale and evidence workflow

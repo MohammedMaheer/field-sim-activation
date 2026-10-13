@@ -252,16 +252,22 @@ export default function SRVerification() {
   );
   const [file, setFile] = useState<File | null>(null),
     [preview, setPreview] = useState<Row | null>(null);
+  const [reportMode, setReportMode] = useState("daily"),
+    [month, setMonth] = useState(() => date.slice(0, 7));
+  const reportQuery =
+    reportMode === "monthly"
+      ? `period=${encodeURIComponent(month)}`
+      : `business_date=${encodeURIComponent(date)}`;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
   const [selectedBatch, setSelectedBatch] = useState("");
   const current = useQuery<Row>({
-    queryKey: ["sales-management", "sr-results", user.id, date, branch],
+    queryKey: ["sales-management", "sr-results", user.id, reportQuery, branch],
     queryFn: () =>
       api(
-        `/sales-management/sr/results?business_date=${encodeURIComponent(date)}&branch_id=${encodeURIComponent(branch)}`,
+        `/sales-management/sr/results?${reportQuery}&branch_id=${encodeURIComponent(branch)}`,
       ),
-    enabled: !!date,
+    enabled: !!(reportMode === "monthly" ? month : date),
   });
   const batch = useQuery<Row>({
     queryKey: [
@@ -297,7 +303,8 @@ export default function SRVerification() {
       let binary = "";
       for (const byte of bytes) binary += String.fromCharCode(byte);
       const result = await post("/sales-management/sr/file", {
-        business_date: date,
+        business_date: reportMode === "daily" ? date : "",
+        period: reportMode === "monthly" ? month : "",
         filename: file.name,
         content_base64: btoa(binary),
         apply,
@@ -326,7 +333,11 @@ export default function SRVerification() {
     >
       <div className="sales-section-head">
         <div>
-          <h2>Daily SR verification</h2>
+          <h2>
+            {reportMode === "monthly"
+              ? "Monthly SR verification"
+              : "Daily SR verification"}
+          </h2>
           <small>
             Find the exact SR or request ID difference for each sale.
           </small>
@@ -335,8 +346,8 @@ export default function SRVerification() {
           disabled={busy}
           onClick={() =>
             download(
-              `/sales-management/sr/template?business_date=${encodeURIComponent(date)}`,
-              "daily-sr-verification.xlsx",
+              `/sales-management/sr/template?${reportQuery}`,
+              "qanawat-sr-verification.xlsx",
             ).catch((e) => setError(e.message))
           }
         >
@@ -346,13 +357,30 @@ export default function SRVerification() {
       </div>
       <div className="sales-form compact">
         <label>
-          Sales date
+          Report period
+          <select
+            value={reportMode}
+            disabled={busy}
+            onChange={(event) => {
+              setReportMode(event.target.value);
+              setPreview(null);
+              setSelectedBatch("");
+            }}
+          >
+            <option value="daily">Daily report</option>
+            <option value="monthly">Monthly report</option>
+          </select>
+        </label>
+        <label>
+          {reportMode === "monthly" ? "Sales month" : "Sales date"}
           <input
-            type="date"
+            type={reportMode === "monthly" ? "month" : "date"}
             required
-            value={date}
+            disabled={busy}
+            value={reportMode === "monthly" ? month : date}
             onChange={(e) => {
-              setDate(e.target.value);
+              if (reportMode === "monthly") setMonth(e.target.value);
+              else setDate(e.target.value);
               setPreview(null);
               setSelectedBatch("");
             }}
@@ -376,7 +404,9 @@ export default function SRVerification() {
             </label>
             <button
               className="primary"
-              disabled={busy || !file || !date}
+              disabled={
+                busy || !file || !(reportMode === "monthly" ? month : date)
+              }
               onClick={() => process(false)}
             >
               <FileSpreadsheet size={16} />
@@ -387,8 +417,8 @@ export default function SRVerification() {
       </div>
       {canWrite && (
         <p className="sr-comparison-help">
-          Applying the daily file checks all branches. The selected branch only
-          filters the comparisons shown below.
+          Applying this file checks all branches for the selected day or month.
+          The selected branch only filters the comparisons shown below.
         </p>
       )}
       {!canWrite && <p className="muted">Read-only verification history</p>}
@@ -428,7 +458,7 @@ export default function SRVerification() {
       )}
       {!preview && (
         <div className="sr-current-results">
-          <h3>Sales for {date}</h3>
+          <h3>Sales for {reportMode === "monthly" ? month : date}</h3>
           {current.isPending ? (
             <Loading />
           ) : current.error ? (
@@ -469,7 +499,7 @@ export default function SRVerification() {
             <tbody>
               {batches.data.map((row) => (
                 <tr key={row.id}>
-                  <td>{row.business_date}</td>
+                  <td>{row.report_period || row.business_date}</td>
                   <td>{row.filename}</td>
                   <td>{row.matched ?? row.summary?.matched ?? 0}</td>
                   <td>{row.mismatch ?? row.summary?.mismatch ?? 0}</td>
@@ -504,7 +534,7 @@ export default function SRVerification() {
             <>
               <p className="sr-comparison-help">
                 {batch.data?.comparison_source === "SAVED_VERIFICATION"
-                  ? `Values saved when this report was verified · ${batch.data?.business_date}`
+                  ? `Values saved when this report was verified · ${batch.data?.report_period || batch.data?.business_date}`
                   : "Historical comparison was not recorded. This shows the saved report against current sale details; it does not change the verification result."}
               </p>
               <SRComparison

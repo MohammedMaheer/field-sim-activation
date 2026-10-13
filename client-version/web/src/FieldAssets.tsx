@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import { Context } from "./App";
-import { api, post, Row, canManageOrganization } from "./api";
+import { api, post, download, Row, canManageOrganization } from "./api";
 import { ErrorState, Loading } from "./components";
 import "./sales-management.css";
 
@@ -58,6 +58,50 @@ export default function FieldAssets() {
     if (next.branch_id !== branch) setBranch(next.branch_id);
   };
   const [advanced, setAdvanced] = useState(false);
+  const [importFile, setImportFile] = useState<File | null>(null),
+    [importPreview, setImportPreview] = useState<Row | null>(null);
+  const importRevision = useRef(0),
+    importing = useRef(false);
+  const importStock = async (apply: boolean) => {
+    if (!importFile || !branch || importing.current) return;
+    importing.current = true;
+    const revision = importRevision.current;
+    setBusy(true);
+    setError("");
+    try {
+      if (importFile.size > 2_000_000)
+        throw new Error("Choose an Excel or CSV file under 2 MB.");
+      const bytes = new Uint8Array(await importFile.arrayBuffer());
+      let binary = "";
+      for (const byte of bytes) binary += String.fromCharCode(byte);
+      const result = await post("/field-assets/import", {
+        branch_id: branch,
+        filename: importFile.name,
+        content_base64: btoa(binary),
+        apply,
+      });
+      if (revision !== importRevision.current) {
+        if (result.applied)
+          await client.invalidateQueries({ queryKey: ["field-assets"] });
+        return;
+      }
+      if (result.applied) {
+        setImportPreview(null);
+        setImportFile(null);
+        await client.invalidateQueries({ queryKey: ["field-assets"] });
+        notify(
+          result.already_imported
+            ? "This branch stock file is already recorded"
+            : `${result.count} stock rows received by branch`,
+        );
+      } else setImportPreview(result);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Import failed");
+    } finally {
+      importing.current = false;
+      setBusy(false);
+    }
+  };
   const [transferBranch, setTransferBranch] = useState("");
   const organization = useQuery<Row>({
     queryKey: ["organization"],
@@ -79,6 +123,9 @@ export default function FieldAssets() {
       setLocalFilter((current) => ({ ...current, agent_id: "" }));
       setMove(null);
       setIssue(null);
+      setImportPreview(null);
+      setImportFile(null);
+      importRevision.current++;
       const next = new URLSearchParams(searchParams);
       next.delete("agent");
       next.delete("branch");
@@ -131,15 +178,28 @@ export default function FieldAssets() {
     enabled: tab === "checklist" && !!checkBranch,
     refetchInterval: 15000,
   });
-  const canManage = [
-    "Administrator",
-    "Operations Manager",
-    "Inventory Manager",
-  ].includes(user.role) && user.permissions?.includes('read') && user.permissions?.includes('inventory.write');
+  const canManage =
+    ["Administrator", "Operations Manager", "Inventory Manager"].includes(
+      user.role,
+    ) &&
+    user.permissions?.includes("read") &&
+    user.permissions?.includes("inventory.write");
   const canManageStaff = canManageOrganization(user);
-  const canRequest = ['Field Agent', 'Team Leader', 'Administrator', 'Operations Manager'].includes(user.role) &&
-    user.permissions?.includes('read') && user.permissions?.includes(user.role === 'Field Agent' ? 'inventory.self' :
-      user.role === 'Team Leader' ? 'task.write' : 'inventory.write');
+  const canRequest =
+    [
+      "Field Agent",
+      "Team Leader",
+      "Administrator",
+      "Operations Manager",
+    ].includes(user.role) &&
+    user.permissions?.includes("read") &&
+    user.permissions?.includes(
+      user.role === "Field Agent"
+        ? "inventory.self"
+        : user.role === "Team Leader"
+          ? "task.write"
+          : "inventory.write",
+    );
   const agentId = user.agent_id as string | undefined;
   const categoryOptions: Record<string, string> = {
     ...categories,
@@ -388,6 +448,79 @@ export default function FieldAssets() {
             </>
           )}
         </div>
+      )}
+      {tab === "stock" && (
+        <section
+          className="panel sales-section"
+          aria-label="Receive branch stock"
+        >
+          <h2>Branch stock · receive, assign, return</h2>
+          <p>
+            Choose a branch, receive its stock, then assign items to its sales
+            agents. Return or transfer items from the item actions; movement
+            history stays recorded.
+          </p>
+          {canManage && (
+            <div className="sales-form compact">
+              <button
+                disabled={busy}
+                onClick={() =>
+                  download(
+                    "/field-assets/import-template",
+                    "qanawat-branch-stock-template.xlsx",
+                  ).catch((e) => setError(e.message))
+                }
+              >
+                Excel stock template
+              </button>
+              <label>
+                Branch stock Excel / CSV
+                <input
+                  aria-label="Branch stock file"
+                  type="file"
+                  accept=".csv,.xlsx"
+                  disabled={busy || !branch}
+                  onChange={(event) => {
+                    setImportFile(event.target.files?.[0] || null);
+                    importRevision.current++;
+                    setImportPreview(null);
+                  }}
+                />
+              </label>
+              <button
+                className="primary"
+                disabled={busy || !branch || !importFile}
+                onClick={() => importStock(false)}
+              >
+                Preview branch stock import
+              </button>
+              {!branch && <small>Select a receiving branch first.</small>}
+            </div>
+          )}
+          {importPreview && (
+            <div className="sales-preview">
+              <p>
+                {importPreview.branch} · {importPreview.count} rows ·{" "}
+                {importPreview.quantity} items
+              </p>
+              <ul>
+                {importPreview.rows.map((row: Row, i: number) => (
+                  <li key={i}>
+                    {row.label} · {row.serial || "No serial"} · quantity{" "}
+                    {row.quantity}
+                  </li>
+                ))}
+              </ul>
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() => importStock(true)}
+              >
+                Receive stock in this branch
+              </button>
+            </div>
+          )}
+        </section>
       )}
       {error && (
         <div className="sales-error" role="alert">
@@ -1177,111 +1310,110 @@ export default function FieldAssets() {
                   {checklist.data.next_action} ·{" "}
                   {checklist.data.outstanding.length} items
                 </p>
-                {canManageStaff &&
-                  checkAgent && (
-                    <form
-                      className="sales-form compact"
-                      onSubmit={(e) =>
-                        save(
-                          e,
-                          `/field-assets/agents/${checkAgent}/transfer`,
-                          "POST",
-                          () => {
-                            client.invalidateQueries({ queryKey: ["agents"] });
+                {canManageStaff && checkAgent && (
+                  <form
+                    className="sales-form compact"
+                    onSubmit={(e) =>
+                      save(
+                        e,
+                        `/field-assets/agents/${checkAgent}/transfer`,
+                        "POST",
+                        () => {
+                          client.invalidateQueries({ queryKey: ["agents"] });
+                          notify(
+                            "Sales agent transferred. Sign in again to load the new branch.",
+                          );
+                        },
+                      )
+                    }
+                  >
+                    <label>
+                      Destination branch
+                      <select
+                        name="branch_id"
+                        required
+                        value={transferBranch}
+                        onChange={(event) =>
+                          setTransferBranch(event.target.value)
+                        }
+                      >
+                        <option value="">Select destination</option>
+                        {branches.data?.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Reporting team leader
+                      <select
+                        key={transferBranch}
+                        name="leader_id"
+                        required={transferLeaders.length > 1}
+                        defaultValue={
+                          transferLeaders.length === 1
+                            ? transferLeaders[0].id
+                            : ""
+                        }
+                      >
+                        <option value="">Select team leader</option>
+                        {transferLeaders.map((person) => (
+                          <option key={person.id} value={person.id}>
+                            {person.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      Assigned stock
+                      <select name="stock_action">
+                        <option value="RETURN">
+                          Return to original branch
+                        </option>
+                        <option value="TRANSFER">
+                          Transfer with sales agent
+                        </option>
+                      </select>
+                    </label>
+                    <label>
+                      Reason
+                      <input name="reason" minLength={5} required />
+                    </label>
+                    <button className="primary" disabled={busy}>
+                      Transfer sales agent
+                    </button>
+                    {user.role === "Administrator" && (
+                      <button
+                        type="button"
+                        disabled={busy || !checklist.data.clear}
+                        onClick={async () => {
+                          const reason = window.prompt(
+                            "Reason for closing sales agent access",
+                          );
+                          if (!reason || reason.trim().length < 5) return;
+                          setBusy(true);
+                          try {
+                            await post(
+                              `/field-assets/agents/${checkAgent}/exit`,
+                              { reason },
+                            );
+                            await refresh();
                             notify(
-                              "Sales agent transferred. Sign in again to load the new branch.",
+                              "Sales agent access closed; history retained",
                             );
-                          },
-                        )
-                      }
-                    >
-                      <label>
-                        Destination branch
-                        <select
-                          name="branch_id"
-                          required
-                          value={transferBranch}
-                          onChange={(event) =>
-                            setTransferBranch(event.target.value)
+                          } catch (e: any) {
+                            setError(e.message);
+                          } finally {
+                            setBusy(false);
                           }
-                        >
-                          <option value="">Select destination</option>
-                          {branches.data?.map((b) => (
-                            <option key={b.id} value={b.id}>
-                              {b.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Reporting team leader
-                        <select
-                          key={transferBranch}
-                          name="leader_id"
-                          required={transferLeaders.length > 1}
-                          defaultValue={
-                            transferLeaders.length === 1
-                              ? transferLeaders[0].id
-                              : ""
-                          }
-                        >
-                          <option value="">Select team leader</option>
-                          {transferLeaders.map((person) => (
-                            <option key={person.id} value={person.id}>
-                              {person.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        Assigned stock
-                        <select name="stock_action">
-                          <option value="RETURN">
-                            Return to original branch
-                          </option>
-                          <option value="TRANSFER">
-                            Transfer with sales agent
-                          </option>
-                        </select>
-                      </label>
-                      <label>
-                        Reason
-                        <input name="reason" minLength={5} required />
-                      </label>
-                      <button className="primary" disabled={busy}>
-                        Transfer sales agent
+                        }}
+                      >
+                        Close sales agent access
                       </button>
-                      {user.role === "Administrator" && (
-                        <button
-                          type="button"
-                          disabled={busy || !checklist.data.clear}
-                          onClick={async () => {
-                            const reason = window.prompt(
-                              "Reason for closing sales agent access",
-                            );
-                            if (!reason || reason.trim().length < 5) return;
-                            setBusy(true);
-                            try {
-                              await post(
-                                `/field-assets/agents/${checkAgent}/exit`,
-                                { reason },
-                              );
-                              await refresh();
-                              notify(
-                                "Sales agent access closed; history retained",
-                              );
-                            } catch (e: any) {
-                              setError(e.message);
-                            } finally {
-                              setBusy(false);
-                            }
-                          }}
-                        >
-                          Close sales agent access
-                        </button>
-                      )}
-                    </form>
-                  )}
+                    )}
+                  </form>
+                )}
                 <div className="sales-table-wrap stock-checklist-table">
                   <table className="sales-table">
                     <thead>

@@ -40,8 +40,9 @@ String _rateLabel(dynamic value) => switch ('$value') {
 
 /// Uses the shared backend calculation; no estimated payouts on the device.
 class CommissionCalculations extends ConsumerStatefulWidget {
-  const CommissionCalculations({super.key, required this.history});
+  const CommissionCalculations({super.key, required this.history, this.finals});
   final Widget history;
+  final Widget? finals;
   @override
   ConsumerState<CommissionCalculations> createState() => _CommissionState();
 }
@@ -419,18 +420,20 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
       (_, _) => load(),
     );
     return DefaultTabController(
-      length: 3,
+      length: widget.finals == null ? 3 : 4,
       child: Column(
         children: [
-          const TabBar(
+          TabBar(
+            isScrollable: widget.finals != null,
             tabs: [
-              Tab(text: 'Calculated'),
-              Tab(text: 'Rate tables'),
-              Tab(text: 'History'),
+              if(widget.finals != null) const Tab(text:'Final amounts'),
+              const Tab(text: 'Calculated'),
+              const Tab(text: 'Rate tables'),
+              const Tab(text: 'History'),
             ],
           ),
           Expanded(
-            child: TabBarView(children: [summary(), rates(), widget.history]),
+            child: TabBarView(children: [if(widget.finals != null) widget.finals!,summary(), rates(), widget.history]),
           ),
         ],
       ),

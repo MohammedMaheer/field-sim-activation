@@ -18,9 +18,10 @@ router = APIRouter(prefix="/api/inventory", tags=["Inventory"])
 
 
 def admin(db, user):
-    if db.get(Role, user.role_id).name != "Administrator":
+    if db.get(Role, user.role_id).name not in {"Administrator","Operations Manager"}:
         raise HTTPException(403, "Only administrators can import SIM stock")
     require(db, user, "inventory.write")
+    require(db, user, "read")
 
 
 @router.get("/bulk-template")

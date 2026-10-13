@@ -37,6 +37,8 @@ export default function ReceiptReview({
     [activationReference, setActivationReference] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [callOutcome, setCallOutcome] = useState(""),
+    [callNote, setCallNote] = useState("");
   useEffect(() => {
     const abort = new AbortController();
     let url = "";
@@ -59,6 +61,8 @@ export default function ReceiptReview({
   useEffect(() => {
     setNote("");
     setChecked(false);
+    setCallOutcome("");
+    setCallNote("");
     setError("");
     setZoom(100);
     setTab(
@@ -184,6 +188,8 @@ export default function ReceiptReview({
         version: capture.version,
         outcome,
         reason: note.trim(),
+        customer_call_outcome: callOutcome || undefined,
+        customer_call_note: callNote.trim(),
       });
       await onSaved();
     });
@@ -561,6 +567,72 @@ export default function ReceiptReview({
           <>
             <div>
               <h3>Review decision</h3>
+              {saleMode && (
+                <div className="review-customer-call">
+                  <h4>Call customer · confirm active plan</h4>
+                  {capture.intake?.msisdn ? (
+                    <a
+                      className="button"
+                      href={`tel:${String(capture.intake.msisdn).replace(/[^+0-9]/g, "")}`}
+                    >
+                      Call {capture.intake.msisdn}
+                    </a>
+                  ) : (
+                    <p>Customer phone not recorded · request correction.</p>
+                  )}
+                  <label>
+                    Customer call outcome
+                    <select
+                      value={callOutcome}
+                      disabled={busy}
+                      onChange={(event) => setCallOutcome(event.target.value)}
+                    >
+                      <option value="">Choose call outcome</option>
+                      <option value="ACTIVE_CONFIRMED">
+                        Customer confirmed plan is active
+                      </option>
+                      <option value="NOT_ACTIVE">Plan not active</option>
+                      <option value="NO_ANSWER">No answer</option>
+                      <option value="WRONG_NUMBER">Wrong number</option>
+                    </select>
+                  </label>
+                  <label>
+                    Customer call note
+                    <textarea
+                      value={callNote}
+                      maxLength={300}
+                      disabled={busy}
+                      onChange={(event) => setCallNote(event.target.value)}
+                      placeholder="Record what the customer confirmed"
+                    />
+                  </label>
+                  <small>
+                    Record a call outcome and note. A customer confirmation is
+                    required before approval of a new sale.
+                  </small>
+                  <button
+                    type="button"
+                    disabled={
+                      busy || !callOutcome || callNote.trim().length < 5
+                    }
+                    onClick={() =>
+                      perform(async () => {
+                        await post(
+                          `/kyc-captures/${capture.id}/customer-call`,
+                          {
+                            version: capture.version,
+                            outcome: callOutcome,
+                            note: callNote.trim(),
+                          },
+                        );
+                        await onSaved();
+                      })
+                    }
+                  >
+                    Save call attempt · keep review pending
+                  </button>
+                </div>
+              )}
 
               <label className="review-check">
                 <input
@@ -600,6 +672,9 @@ export default function ReceiptReview({
                     busy ||
                     !checked ||
                     !reviewEvidenceReady ||
+                    (saleMode &&
+                      (callOutcome !== "ACTIVE_CONFIRMED" ||
+                        callNote.trim().length < 5)) ||
                     note.trim().length < 5
                   }
                   onClick={() => decide("VERIFIED")}
@@ -635,6 +710,28 @@ export default function ReceiptReview({
           </div>
         )}
       </section>
+      {((capture.customer_calls || []).length > 0 ||
+        capture.review?.customer_call) && (
+        <section className="panel review-call-history">
+          <h3>Backend customer calls</h3>
+          {[
+            ...(capture.customer_calls || []),
+            ...(capture.review?.customer_call
+              ? [capture.review.customer_call]
+              : []),
+          ].map((call: Row, index: number) => (
+            <div key={index}>
+              <b>
+                {String(call.outcome).replaceAll("_", " ")} · {call.reviewer}
+              </b>
+              <p>{call.note}</p>
+              <small>
+                {call.phone} · {new Date(call.at).toLocaleString()}
+              </small>
+            </div>
+          ))}
+        </section>
+      )}
       {capture.status === "VERIFIED" && (
         <div className="setup-summary" role="status">
           Transaction confirmed by backend

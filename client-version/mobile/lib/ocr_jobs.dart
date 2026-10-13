@@ -113,6 +113,7 @@ const orderCaptureFields = <String>[
   'msisdn',
   'order_fields',
   'payment_image',
+  'sr_manual',
 ];
 
 Json withoutStageCapture(Json current, String stage) {

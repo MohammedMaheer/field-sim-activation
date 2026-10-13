@@ -32,6 +32,7 @@ class SharedPreviewService extends RelayService {
     final sample = RegExp(r'^SAMPLE-REQ-(\d+)$').firstMatch(reference ?? '');
     return sample == null ? 'Not recorded' : 'SAMPLE-SR-${sample.group(1)}';
   }
+
   SharedPreviewService({String? baseUrl}) {
     dio.options.baseUrl = baseUrl ?? Uri.base.resolve('/api').toString();
   }
@@ -58,20 +59,8 @@ class SharedPreviewService extends RelayService {
   }
 
   @override
-  Future<void> login(String email, String password) async {
-    final response = await dio.post(
-      '/auth/mobile-demo/login',
-      data: {'email': email},
-    );
-    access = response.data['access_token'];
-    user = Map<String, dynamic>.from(response.data['user']);
-    await store.secure.write(
-      key: refreshStorageKey,
-      value: response.data['refresh_token'],
-    );
-    await sync();
-    notifyListeners();
-  }
+  Future<void> login(String email, String password) =>
+      loginRequest('/auth/mobile-demo/login', {'email': email});
 
   @override
   Future<Uint8List> previewIdentity() async =>

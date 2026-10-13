@@ -222,7 +222,8 @@ def fence_view(row):
         return None
     return {"id": row.id, "name": row.name, "branch_id": row.branch_id,
             "latitude": row.latitude, "longitude": row.longitude,
-            "radius_m": row.radius_m, "enabled": row.enabled}
+              "radius_m": row.radius_m, "enabled": row.enabled,
+              "updated_at": row.updated_at.isoformat() if row.updated_at else None}
 
 
 def classify(point, fence, stamp=None):
@@ -402,8 +403,9 @@ def begin_work(db, user, point, request=None):
     return session
 
 
-def end_work(db, user, session_id, request=None):
-    require(db, user, "location.self")
+def end_work(db, user, session_id, request=None, *, authorized_logout=False):
+    if not authorized_logout:
+        require(db, user, "location.self")
     lock_member(db, user.id)
     session = db.scalar(select(WorkSession).where(WorkSession.id == session_id, WorkSession.user_id == user.id))
     if not session:

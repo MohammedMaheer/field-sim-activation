@@ -554,11 +554,11 @@ export default function Dashboard() {
             <span>
               <b>
                 AED{" "}
-                {Number(d.incentive_total).toLocaleString("en-AE", {
+                {Number(d.final_incentive_total || 0).toLocaleString("en-AE", {
                   minimumFractionDigits: 2,
                 })}
               </b>
-              <small>Recorded incentives · this month</small>
+              <small>Final commissions · this month</small>
             </span>
             <ArrowUpRight size={17} />
           </button>

@@ -41,6 +41,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   final receiptScroll = ScrollController();
   Uint8List? bytes;
   String? receiptOriginalSr;
+  bool receiptOriginalManual = false;
   String? receiptSrNotice;
   bool receiptSrReading = false, receiptSrRetry = false;
   bool receiptSrMismatch = false, receiptSrUnclear = false;
@@ -233,11 +234,15 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
 
   Future<void> readReceiptSr(Uint8List image) async {
     if (intake['capture_mode'] != 'SCREENSHOT_SALE') return;
+    if (receiptOriginalSr == null) {
+      receiptOriginalManual = intake['sr_manual'] == true;
+    }
     receiptOriginalSr ??= (intake['receipt_sr_check'] ?? '').toString().isEmpty
         ? (intake['sr_number'] ?? '').toString()
         : '';
     intake.remove('receipt_sr_check');
     intake['sr_number'] = receiptOriginalSr;
+    intake['sr_manual'] = receiptOriginalManual;
     if (mounted) {
       setState(() {
         receiptSrReading = true;
@@ -271,7 +276,13 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       if (!mounted) return;
       setState(() {
         intake.addAll(fields);
-        receiptSrMismatch = receiptSrConflict(result, receiptOriginalSr ?? '');
+        receiptSrMismatch = receiptSrConflict(
+          result,
+          receiptOriginalManual ? '' : receiptOriginalSr ?? '',
+        );
+        if ((fields['receipt_sr_check'] ?? '').toString().isNotEmpty) {
+          intake['sr_manual'] = false;
+        }
         receiptSrUnclear = result['sr_status'] == 'UNCLEAR';
         receiptSrNotice = receiptSrMismatch
             ? 'Receipt SR does not match the order · replace or remove receipt'
@@ -280,7 +291,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
             : receiptSrUnclear
             ? 'SR number unclear · use a clearer receipt photo'
             : (fields['sr_number'] ?? '').toString().trim().isNotEmpty
-            ? 'SR number read from order · not shown on receipt'
+            ? receiptOriginalManual
+                  ? 'Manually recorded SR · not shown on receipt'
+                  : 'SR number read from order · not shown on receipt'
             : 'SR number not shown on receipt';
       });
     } on OcrReadCancelled {
@@ -317,6 +330,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         intake.remove('payment_image');
         intake.remove('receipt_sr_check');
         intake['sr_number'] = receiptOriginalSr ?? '';
+        intake['sr_manual'] = receiptOriginalManual;
         receiptReadRequest = null;
         receiptSrNotice = null;
         receiptSrRetry = false;
@@ -707,6 +721,15 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         initial: intake,
         onReady: (value) {
           setState(() {
+            if (intake['order_image'] != value['order_image']) {
+              bytes = null;
+              receiptOriginalSr = null;
+              receiptOriginalManual = false;
+              receiptReadRequest = null;
+              receiptSrNotice = null;
+              receiptSrRetry = receiptSrMismatch = receiptSrUnclear = false;
+              operation = const Uuid().v4();
+            }
             intake = Map<String, dynamic>.from(value);
             intakeReady = true;
           });

@@ -3,7 +3,15 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, post, Row } from "./api";
 import { Drawer, ErrorState, Loading } from "./components";
 import { useBranchScope } from "./BranchScope";
+import { useNavigate } from "react-router-dom";
 import { Link } from "react-router-dom";
+import { useContext } from "react";
+import { Context } from "./App";
+import {
+  BranchLocationFields,
+  BranchLocationValue,
+  branchLocationPayload,
+} from "./BranchLocation";
 
 type Kind = "branches" | "agents" | "teams";
 
@@ -504,12 +512,16 @@ export default function OrganizationSetup({
   assignExisting?: boolean;
 }) {
   const cache = useQueryClient();
+  const navigate = useNavigate();
   const scope = useBranchScope();
   const directory = useQuery<Row>({
     queryKey: ["organization"],
     queryFn: () => api("/organization"),
   });
-  const [kind, setKind] = useState<Kind>(initial);
+  const kind = initial;
+  const { user } = useContext(Context);
+  const [branchLocation, setBranchLocation] =
+    useState<BranchLocationValue | null>(null);
   const [branch, setBranch] = useState(initialBranchId || scope.branch);
   const [leader, setLeader] = useState("");
   const [existingLeader, setExistingLeader] = useState(assignExisting);
@@ -525,27 +537,16 @@ export default function OrganizationSetup({
       ? branchLeaders[0].id
       : "";
   return (
-    <Drawer title="Branch and staff setup" onClose={() => !busy && onClose()}>
-      <div className="setup-tabs" role="group" aria-label="Setup type">
-        {(["branches", "teams", "agents"] as Kind[]).map((item) => (
-          <button
-            key={item}
-            aria-pressed={kind === item}
-            disabled={busy}
-            onClick={() => {
-              setKind(item);
-              setError("");
-              setSuccess("");
-            }}
-          >
-            {item === "branches"
-              ? "Branch"
-              : item === "teams"
-                ? "Team leader"
-                : "Sales agent"}
-          </button>
-        ))}
-      </div>
+    <Drawer
+      title={
+        kind === "branches"
+          ? "Add branch"
+          : kind === "teams"
+            ? "Add team leader"
+            : "Add sales agent"
+      }
+      onClose={() => !busy && onClose()}
+    >
       {directory.isPending ? (
         <Loading />
       ) : directory.error ? (
@@ -565,6 +566,7 @@ export default function OrganizationSetup({
               <button
                 type="button"
                 aria-pressed={!existingLeader}
+                hidden={user.role !== "Administrator"}
                 disabled={busy}
                 onClick={() => {
                   setExistingLeader(false);
@@ -631,7 +633,14 @@ export default function OrganizationSetup({
                   const created = await post(
                     `/organization/${kind}`,
                     kind === "branches"
-                      ? { name: values.name }
+                      ? {
+                          name: values.name,
+                          ...(branchLocation
+                            ? {
+                                location: branchLocationPayload(branchLocation),
+                              }
+                            : {}),
+                        }
                       : {
                           ...values,
                           branch_id: branch,
@@ -641,6 +650,7 @@ export default function OrganizationSetup({
                         },
                   );
                   if (kind === "branches") {
+                    setBranchLocation(null);
                     setBranch(created.id);
                     setLeader("");
                     setExistingLeader(false);
@@ -649,13 +659,13 @@ export default function OrganizationSetup({
                   }
                   form.reset();
                   await cache.invalidateQueries();
-                  if (kind === "branches") setKind("teams");
-                  else if (kind === "teams") setKind("agents");
                   setSuccess(
                     kind === "branches"
-                      ? "Branch created. Add a team leader."
+                      ? user.role === "Administrator"
+                        ? "Branch created. Add or assign leaders from Team leaders."
+                        : "Branch created. Ask the Super admin to create staff accounts."
                       : kind === "teams"
-                        ? "Team leader assigned. Add sales agents."
+                        ? "Team leader assigned. Add sales agents from Sales agents."
                         : "Sales agent created and assigned to the branch.",
                   );
                 } catch (failure: any) {
@@ -665,13 +675,6 @@ export default function OrganizationSetup({
                 }
               }}
             >
-              <h3 className="wide">
-                {kind === "branches"
-                  ? "Add branch"
-                  : kind === "teams"
-                    ? "Add team leader"
-                    : "Add sales agent"}
-              </h3>
               {kind !== "branches" && (
                 <label className="wide">
                   Branch
@@ -707,6 +710,15 @@ export default function OrganizationSetup({
                   autoComplete="off"
                 />
               </label>
+              {kind === "branches" &&
+                user.permissions.includes("location.manage") && (
+                  <BranchLocationFields
+                    value={branchLocation}
+                    onChange={setBranchLocation}
+                    optional
+                    busy={busy}
+                  />
+                )}
               {kind === "agents" && (
                 <>
                   <label>
@@ -758,7 +770,8 @@ export default function OrganizationSetup({
                       type="button"
                       disabled={busy}
                       onClick={() => {
-                        setKind("teams");
+                        onClose();
+                        navigate("/team-leaders");
                         setError("");
                         setSuccess("");
                       }}

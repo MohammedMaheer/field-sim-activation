@@ -165,6 +165,30 @@ class RelayService extends ChangeNotifier {
   Timer? timer;
   StreamSubscription<List<ConnectivityResult>>? connectivity;
   Future<void>? refreshing;
+  final _sessionLock = Lock();
+  int _sessionGeneration = 0;
+  int? _syncGeneration;
+  bool _obsoleteRequest(RequestOptions options) =>
+      options.extra['sessionGeneration'] != _sessionGeneration;
+
+  // Sign-out deliberately revokes the captured old token, even if a new
+  // sign-in finishes while its remote cleanup is still in flight.
+  bool _preservedLogout(RequestOptions options) =>
+      options.path == '/auth/logout' &&
+      options.extra['preserveAuthorization'] == true;
+
+  DioException _endedSessionRequest(
+    RequestOptions options, {
+    Response<dynamic>? response,
+  }) => DioException(
+    requestOptions: options,
+    response: response,
+    type: DioExceptionType.cancel,
+    error: StateError(
+      'This request belongs to a sign-in session that has ended',
+    ),
+  );
+
   late final WorkLocationController workLocation;
   Future<String>? _workDeviceIdentity;
   Future<String> workDeviceIdentity() => _workDeviceIdentity ??= () async {
@@ -185,6 +209,14 @@ class RelayService extends ChangeNotifier {
     dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          options.extra.putIfAbsent(
+            'sessionGeneration',
+            () => _sessionGeneration,
+          );
+          if (_obsoleteRequest(options) && !_preservedLogout(options)) {
+            handler.reject(_endedSessionRequest(options));
+            return;
+          }
           if (isLocationCaptureRequest(options) &&
               (user?['permissions'] as List? ?? []).contains('location.self')) {
             workLocation.bindAccount(user);
@@ -192,12 +224,21 @@ class RelayService extends ChangeNotifier {
               await workLocation.ensureCaptureAllowed();
             } catch (error) {
               handler.reject(
-                DioException(requestOptions: options, error: error),
+                _obsoleteRequest(options)
+                    ? _endedSessionRequest(options)
+                    : DioException(requestOptions: options, error: error),
               );
               return;
             }
           }
-          if (access != null) {
+          // The location check can wait for permission, GPS or the network.
+          // Never attach the new account's bearer token to the old capture.
+          if (_obsoleteRequest(options) && !_preservedLogout(options)) {
+            handler.reject(_endedSessionRequest(options));
+            return;
+          }
+          if (access != null &&
+              options.extra['preserveAuthorization'] != true) {
             options.headers['Authorization'] = 'Bearer $access';
           }
           options.headers['X-Device-ID'] = 'Qanawat app';
@@ -226,20 +267,67 @@ class RelayService extends ChangeNotifier {
           }
           handler.next(options);
         },
+        onResponse: (response, handler) {
+          final options = response.requestOptions;
+          // Authentication has its own generation check before accepting or
+          // persisting tokens. Other responses must not populate the new
+          // account's mounted views or caches after an account switch.
+          if (!options.path.startsWith('/auth/') && _obsoleteRequest(options)) {
+            handler.reject(_endedSessionRequest(options, response: response));
+            return;
+          }
+          handler.next(response);
+        },
         onError: (error, handler) async {
+          if (!error.requestOptions.path.startsWith('/auth/') &&
+              _obsoleteRequest(error.requestOptions)) {
+            handler.next(
+              _endedSessionRequest(
+                error.requestOptions,
+                response: error.response,
+              ),
+            );
+            return;
+          }
           if (error.response?.statusCode == 401 &&
               !error.requestOptions.path.startsWith('/auth/') &&
-              error.requestOptions.extra['retried'] != true) {
+              error.requestOptions.extra['retried'] != true &&
+              error.requestOptions.extra['sessionGeneration'] ==
+                  _sessionGeneration) {
+            final generation = _sessionGeneration;
             try {
               await refresh();
+              if (generation != _sessionGeneration ||
+                  user == null ||
+                  access == null) {
+                handler.next(error);
+                return;
+              }
               error.requestOptions.headers['Authorization'] = 'Bearer $access';
               error.requestOptions.extra['retried'] = true;
-              handler.resolve(await dio.fetch(error.requestOptions));
+              final retried = await dio.fetch(error.requestOptions);
+              if (generation != _sessionGeneration) {
+                handler.next(
+                  _endedSessionRequest(error.requestOptions, response: retried),
+                );
+                return;
+              }
+              handler.resolve(retried);
               return;
-            } catch (_) {
-              user = null;
-              workLocation.bindAccount(null);
-              notifyListeners();
+            } catch (refreshError) {
+              final rejectedSession =
+                  refreshError is StateError ||
+                  (refreshError is DioException &&
+                      [401, 403].contains(refreshError.response?.statusCode));
+              // An outage is retryable. A late response from a previous account
+              // must never sign out or refresh the new account.
+              if (generation == _sessionGeneration && rejectedSession) {
+                _sessionGeneration++;
+                access = null;
+                user = null;
+                workLocation.bindAccount(null);
+                notifyListeners();
+              }
             }
           }
           handler.next(error);
@@ -267,56 +355,101 @@ class RelayService extends ChangeNotifier {
   }
 
   Future<void> login(String email, String password) async {
-    final r = await dio.post(
-      '/auth/login',
-      data: {
-        'email': email,
-        'password': password,
-        'device': 'Flutter field app',
-        'native': true,
-      },
-    );
-    access = r.data['access_token'];
-    user = Map<String, dynamic>.from(r.data['user']);
-    workLocation.bindAccount(user);
-    await store.secure.write(
-      key: refreshStorageKey,
-      value: r.data['refresh_token'],
-    );
+    await loginRequest('/auth/login', {
+      'email': email,
+      'password': password,
+      'device': 'Flutter field app',
+      'native': true,
+    });
+  }
+
+  /// Native sign-in and the browser sample-account endpoint share the same
+  /// session boundary; neither can be restored by an older refresh response.
+  Future<void> loginRequest(String endpoint, Json values) async {
+    final generation = ++_sessionGeneration;
+    refreshing = null;
+    final response = await dio.post(endpoint, data: values);
+    await _acceptAuthentication(response.data, generation);
     await sync();
     notifyListeners();
   }
 
-  Future<void> refresh() =>
-      refreshing ??= _refresh().whenComplete(() => refreshing = null);
+  Future<void> _acceptAuthentication(dynamic response, int generation) =>
+      _sessionLock.synchronized(() async {
+        if (generation != _sessionGeneration) {
+          throw StateError('This sign-in session has ended');
+        }
+        await store.secure.write(
+          key: refreshStorageKey,
+          value: response['refresh_token'],
+        );
+        if (generation != _sessionGeneration) {
+          throw StateError('This sign-in session has ended');
+        }
+        access = response['access_token'];
+        user = Map<String, dynamic>.from(response['user']);
+        workLocation.bindAccount(user);
+        notifyListeners();
+      });
+
+  Future<void> refresh() {
+    if (refreshing != null) return refreshing!;
+    late final Future<void> operation;
+    operation = _refresh().whenComplete(() {
+      if (identical(refreshing, operation)) refreshing = null;
+    });
+    return refreshing = operation;
+  }
+
   Future<void> _refresh() async {
+    final generation = _sessionGeneration;
     final token = await store.secure.read(key: refreshStorageKey);
+    if (generation != _sessionGeneration) {
+      throw StateError('This sign-in session has ended');
+    }
     if (token == null) throw StateError('Sign in required');
     final r = await dio.post('/auth/refresh', data: {'refresh_token': token});
-    access = r.data['access_token'];
-    user = Map<String, dynamic>.from(r.data['user']);
-    workLocation.bindAccount(user);
-    await store.secure.write(
-      key: refreshStorageKey,
-      value: r.data['refresh_token'],
-    );
+    await _acceptAuthentication(r.data, generation);
   }
 
   Future<void> logout() async {
+    final generation = ++_sessionGeneration;
+    refreshing = null;
+    final signedOutAccess = access;
+    // Initiate the remote end before removing the local session, then stop
+    // collection immediately rather than waiting for the network round trip.
+    final endingWork = online && workLocation.active
+        ? workLocation.end()
+        : null;
+    workLocation.bindAccount(null);
     try {
-      if (online && workLocation.active) await workLocation.end();
+      await endingWork;
     } catch (_) {
       // Sign-out remains available if ending the remote work session fails.
       // No further points are collected locally; the server marks them stale.
     }
-    workLocation.bindAccount(null);
     try {
-      if (online) await dio.post('/auth/logout');
+      if (online) {
+        await dio.post(
+          '/auth/logout',
+          options: Options(
+            headers: {'Authorization': 'Bearer $signedOutAccess'},
+            extra: {
+              'preserveAuthorization': true,
+              'sessionGeneration': generation,
+            },
+          ),
+        );
+      }
     } on DioException {
       // Local sign-out must remain available if the network or session expires.
     }
-    await store.secure.delete(key: refreshStorageKey);
-    await store.clear();
+    await _sessionLock.synchronized(() async {
+      if (generation != _sessionGeneration) return;
+      await store.secure.delete(key: refreshStorageKey);
+      await store.clear();
+    });
+    if (generation != _sessionGeneration) return;
     access = null;
     user = null;
     workLocation.bindAccount(null);
@@ -336,7 +469,7 @@ class RelayService extends ChangeNotifier {
       await store.put(key, {'rows': r.data});
       return (r.data as List).map((v) => Map<String, dynamic>.from(v)).toList();
     } on DioException catch (e) {
-      if (e.response != null) rethrow;
+      if (e.response != null || e.type == DioExceptionType.cancel) rethrow;
       online = false;
       final cached =
           await store.get(key) ??
@@ -358,7 +491,7 @@ class RelayService extends ChangeNotifier {
       await store.put(key, d);
       return d;
     } on DioException catch (e) {
-      if (e.response != null) rethrow;
+      if (e.response != null || e.type == DioExceptionType.cancel) rethrow;
       online = false;
       final d =
           await store.get(key) ??
@@ -380,7 +513,7 @@ class RelayService extends ChangeNotifier {
       await store.put(key, {'rows': rows});
       return rows;
     } on DioException catch (e) {
-      if (e.response != null) rethrow;
+      if (e.response != null || e.type == DioExceptionType.cancel) rethrow;
       online = false;
       final cached =
           await store.get(key) ??
@@ -395,29 +528,46 @@ class RelayService extends ChangeNotifier {
   }
 
   Future<void> sync() async {
-    if (syncing || user == null) return;
+    final generation = _sessionGeneration;
+    if ((syncing && _syncGeneration == generation) || user == null) return;
+    final callingRole = [
+      'Tele Verification Officer',
+      'Welcome Call Officer',
+    ].contains(user?['role']);
+    if (callingRole
+        ? !canVisitMobilePage('/call-work', user)
+        : !List<String>.from(user?['permissions'] ?? []).contains('read')) {
+      return;
+    }
     workLocation.bindAccount(user);
+    _syncGeneration = generation;
     syncing = true;
     syncError = null;
     notifyListeners();
     try {
       await dio.get('/health');
+      if (generation != _sessionGeneration) return;
       if ([
         'Tele Verification Officer',
         'Welcome Call Officer',
       ].contains(user?['role'])) {
         if (canVisitMobilePage('/call-work', user)) {
           await dio.get('/sales-management/call-tasks');
+          if (generation != _sessionGeneration) return;
         }
         if (canVisitMobilePage('/notifications', user)) {
           await dio.get('/notifications');
+          if (generation != _sessionGeneration) return;
         }
         online = true;
         return;
       }
       await dashboard();
+      if (generation != _sessionGeneration) return;
       await proposalList('incentives');
+      if (generation != _sessionGeneration) return;
       await proposalList('support-tickets');
+      if (generation != _sessionGeneration) return;
       for (final name in [
         'agents',
         'activations',
@@ -426,15 +576,20 @@ class RelayService extends ChangeNotifier {
         'plans',
       ]) {
         await list(name);
+        if (generation != _sessionGeneration) return;
       }
       online = true;
     } catch (e) {
-      if (e is DioException && e.response == null) online = false;
-      syncError = friendlyError(e);
+      if (generation == _sessionGeneration) {
+        if (e is DioException && e.response == null) online = false;
+        syncError = friendlyError(e);
+      }
     } finally {
-      syncing = false;
-      syncRevision++;
-      notifyListeners();
+      if (_syncGeneration == generation) {
+        syncing = false;
+        syncRevision++;
+        notifyListeners();
+      }
     }
   }
 
@@ -451,6 +606,9 @@ class RelayService extends ChangeNotifier {
 String friendlyError(Object error) {
   if (error is WorkLocationException) return error.message;
   if (error is DioException) {
+    if (error.type == DioExceptionType.cancel && error.error is StateError) {
+      return 'Your sign-in session changed. Open this page again in your current account.';
+    }
     if (error.error is WorkLocationException) {
       return (error.error as WorkLocationException).message;
     }

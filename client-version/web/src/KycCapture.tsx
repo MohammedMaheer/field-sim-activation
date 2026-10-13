@@ -18,7 +18,13 @@ import {
 } from "lucide-react";
 import { Context, useResource } from "./App";
 import { api, post, patch, download, Row } from "./api";
-import { ocrOperation, readStageOcr, ocrWarning, OcrOperation, OcrTemporaryFailure } from './ocrJobs';
+import {
+  ocrOperation,
+  readStageOcr,
+  ocrWarning,
+  OcrOperation,
+  OcrTemporaryFailure,
+} from "./ocrJobs";
 import { Badge, Panel, ErrorState, Loading, Drawer } from "./components";
 
 export default function KycCapture() {
@@ -32,7 +38,9 @@ export default function KycCapture() {
       ["activation.write", "ekyc.write"].includes(p),
     );
   const canReview = user.permissions.includes("compliance.write");
-  const canExport = user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read");
+  const canExport = user.permissions.includes(
+    user.role === "Field Agent" ? "read" : "report.read",
+  );
   const activity = useQuery<Row[]>({
     queryKey: ["kyc-captures", "overview", branch],
     queryFn: () =>
@@ -42,6 +50,7 @@ export default function KycCapture() {
   });
   const [intake, setIntake] = useState<Row>({});
   const capturedOrderSR = useRef("");
+  const originalManualSR = useRef("");
   const [intakeReady, setIntakeReady] = useState(false);
   const [draftsOpen, setDraftsOpen] = useState(false);
   const drafts = useQuery({
@@ -140,8 +149,8 @@ export default function KycCapture() {
       if (!current.receipt_sr_check) return current;
       const next = { ...current };
       delete next.receipt_sr_check;
-      if (capturedOrderSR.current) next.sr_number = capturedOrderSR.current;
-      else delete next.sr_number;
+      next.sr_number = capturedOrderSR.current || originalManualSR.current;
+      next.sr_manual = !capturedOrderSR.current && !!originalManualSR.current;
       return next;
     });
     setOperation(crypto.randomUUID());
@@ -168,35 +177,48 @@ export default function KycCapture() {
         reader.readAsDataURL(file);
       });
       if (!current) return;
-      const request = receiptRequest.current?.image === image_base64
-        ? receiptRequest.current
-        : (receiptRequest.current = ocrOperation('RECEIPT', image_base64));
+      const request =
+        receiptRequest.current?.image === image_base64
+          ? receiptRequest.current
+          : (receiptRequest.current = ocrOperation("RECEIPT", image_base64));
       const result = await readStageOcr(request, {
         isCurrent: () => current,
-        onStatus: message => { if (current) setReceiptMessage(message); },
+        onStatus: (message) => {
+          if (current) setReceiptMessage(message);
+        },
       });
       if (!current) return;
       if (result.fields?.sr_number && result.sr_check) {
-        const srKey = (value: string) => value.replace(/[^a-z0-9_]/gi, '').toLowerCase();
-        if (capturedOrderSR.current && srKey(capturedOrderSR.current) !== srKey(result.fields.sr_number)) {
+        const srKey = (value: string) =>
+          value.replace(/[^a-z0-9_]/gi, "").toLowerCase();
+        if (
+          capturedOrderSR.current &&
+          srKey(capturedOrderSR.current) !== srKey(result.fields.sr_number)
+        ) {
           setReceiptConflict(true);
-          setReceiptMessage('Receipt SR does not match the order. Replace or remove this receipt.');
+          setReceiptMessage(
+            "Receipt SR does not match the order. Replace or remove this receipt.",
+          );
           return;
         }
         setIntake((value) => ({
           ...value,
           sr_number: result.fields.sr_number,
+          sr_manual: false,
           receipt_sr_check: result.sr_check,
         }));
         setReceiptMessage("SR number read from receipt");
       } else {
-        setReceiptRetry(result.sr_status === 'UNCLEAR');
-        setReceiptMessage(ocrWarning(result) || "Receipt attached · SR number not found");
+        setReceiptRetry(result.sr_status === "UNCLEAR");
+        setReceiptMessage(
+          ocrWarning(result) || "Receipt attached · SR number not found",
+        );
       }
     })()
       .catch((failure: any) => {
         if (current) {
-          if (!(failure instanceof OcrTemporaryFailure)) receiptRequest.current = undefined;
+          if (!(failure instanceof OcrTemporaryFailure))
+            receiptRequest.current = undefined;
           setReceiptRetry(true);
           setReceiptMessage(
             failure.message || "Receipt attached · SR could not be read",
@@ -283,10 +305,10 @@ export default function KycCapture() {
             {showUpload && canWrite && !selected
               ? "New transaction"
               : canReview
-              ? "Backend verification"
-              : canWrite
-                ? "New transaction"
-                : "Transaction history"}
+                ? "Backend verification"
+                : canWrite
+                  ? "New transaction"
+                  : "Transaction history"}
           </h1>
         </div>
         <button
@@ -332,6 +354,7 @@ export default function KycCapture() {
                   });
                   setIntake({});
                   capturedOrderSR.current = "";
+                  originalManualSR.current = "";
                   setFile(null);
                   setSource("");
                   setOperation(crypto.randomUUID());
@@ -362,7 +385,12 @@ export default function KycCapture() {
                 <button
                   onClick={() => {
                     setIntake(d.data);
-                    capturedOrderSR.current = d.data.sr_number || "";
+                    capturedOrderSR.current = d.data.sr_manual
+                      ? ""
+                      : d.data.sr_number || "";
+                    originalManualSR.current = d.data.sr_manual
+                      ? d.data.sr_number || ""
+                      : "";
                     setIntakeReady(false);
                     setSelected("");
                     setShowUpload(true);
@@ -532,8 +560,16 @@ export default function KycCapture() {
               <CustomerIntake
                 value={intake}
                 onChange={(v) => {
-                  if (!v.receipt_sr_check)
-                    capturedOrderSR.current = v.sr_number || "";
+                  if ((intake.order_image || "") !== (v.order_image || ""))
+                    replaceReceipt(null);
+                  if (!v.receipt_sr_check) {
+                    capturedOrderSR.current = v.sr_manual
+                      ? ""
+                      : v.sr_number || "";
+                    originalManualSR.current = v.sr_manual
+                      ? v.sr_number || ""
+                      : "";
+                  }
                   setIntake(v);
                   if (v.agent_id) setAgent(v.agent_id);
                 }}
@@ -541,6 +577,7 @@ export default function KycCapture() {
                 onSaved={() => {
                   setIntake({});
                   capturedOrderSR.current = "";
+                  originalManualSR.current = "";
                   setFile(null);
                   setSource("");
                   setOperation(crypto.randomUUID());
@@ -592,18 +629,20 @@ export default function KycCapture() {
                         ))}
                       </select>
                     </label>
-                    {intake.capture_mode !== 'SCREENSHOT_SALE' && <label>
-                      Reference
-                      <input
-                        maxLength={120}
-                        placeholder="Order request ID"
-                        value={source || intake.order_reference || ""}
-                        onChange={(e) => {
-                          setSource(e.target.value);
-                          setOperation(crypto.randomUUID());
-                        }}
-                      />
-                    </label>}
+                    {intake.capture_mode !== "SCREENSHOT_SALE" && (
+                      <label>
+                        Reference
+                        <input
+                          maxLength={120}
+                          placeholder="Order request ID"
+                          value={source || intake.order_reference || ""}
+                          onChange={(e) => {
+                            setSource(e.target.value);
+                            setOperation(crypto.randomUUID());
+                          }}
+                        />
+                      </label>
+                    )}
                     <div className="capture-picker">
                       <ImageIcon size={28} />
                       <b>{file?.name || "Payment receipt · optional"}</b>
@@ -633,31 +672,73 @@ export default function KycCapture() {
                             }}
                           />
                         </label>
-                        {file && <button type="button" disabled={busy || receiptReading} onClick={() => replaceReceipt(null)}>Remove receipt</button>}
+                        {file && (
+                          <button
+                            type="button"
+                            disabled={busy || receiptReading}
+                            onClick={() => replaceReceipt(null)}
+                          >
+                            Remove receipt
+                          </button>
+                        )}
                       </div>
                     </div>
                     {(receiptReading || receiptMessage) && (
-                      <p role={receiptConflict ? "alert" : "status"} className={receiptConflict ? "capture-error" : "receipt-sr-status"}>
+                      <p
+                        role={receiptConflict ? "alert" : "status"}
+                        className={
+                          receiptConflict
+                            ? "capture-error"
+                            : "receipt-sr-status"
+                        }
+                      >
                         {receiptReading
                           ? "Reading receipt SR number…"
                           : receiptMessage}
                       </p>
                     )}
                     {receiptRetry && !receiptReading && (
-                      <button type="button" disabled={busy} onClick={() => setReceiptReadAttempt(attempt => attempt + 1)}>
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() =>
+                          setReceiptReadAttempt((attempt) => attempt + 1)
+                        }
+                      >
                         <RefreshCw size={16} /> Read SR again
                       </button>
                     )}
-                    {preview && <button type="button" className="receipt-preview-toggle" aria-label="View receipt" onClick={() => setReceiptPreviewOpen(true)}>
-                      <img src={preview} alt="Selected payment receipt" />
-                      <span>View receipt</span>
-                    </button>}
-                    {receiptPreviewOpen && preview && <Drawer title="Receipt preview" onClose={() => setReceiptPreviewOpen(false)}>
-                      <img className="receipt-preview-full" src={preview} alt="Selected payment receipt" />
-                    </Drawer>}
+                    {preview && (
+                      <button
+                        type="button"
+                        className="receipt-preview-toggle"
+                        aria-label="View receipt"
+                        onClick={() => setReceiptPreviewOpen(true)}
+                      >
+                        <img src={preview} alt="Selected payment receipt" />
+                        <span>View receipt</span>
+                      </button>
+                    )}
+                    {receiptPreviewOpen && preview && (
+                      <Drawer
+                        title="Receipt preview"
+                        onClose={() => setReceiptPreviewOpen(false)}
+                      >
+                        <img
+                          className="receipt-preview-full"
+                          src={preview}
+                          alt="Selected payment receipt"
+                        />
+                      </Drawer>
+                    )}
                     <button
                       className="primary"
-                      disabled={busy || receiptReading || receiptConflict || !agents.data?.length}
+                      disabled={
+                        busy ||
+                        receiptReading ||
+                        receiptConflict ||
+                        !agents.data?.length
+                      }
                     >
                       {busy ? "Submitting…" : "Submit sale"}
                     </button>
@@ -704,7 +785,10 @@ export default function KycCapture() {
                       subtitle={"Capture " + capture.id.slice(0, 8)}
                     >
                       <div className="capture-detail">
-                        <ActivationReceipt capture={capture} canExport={canExport} />
+                        <ActivationReceipt
+                          capture={capture}
+                          canExport={canExport}
+                        />
                         <details
                           className="capture-supporting"
                           open={
@@ -1112,22 +1196,24 @@ export default function KycCapture() {
                           {!!capture.rows?.length &&
                             capture.status !== "EXTRACTED" && (
                               <div className="capture-toolbar">
-                                {canExport && <button
-                                  disabled={busy || dirty}
-                                  onClick={() =>
-                                    run(() =>
-                                      download(
-                                        "/kyc-captures/" +
-                                          capture.id +
-                                          "/excel",
-                                        "kyc-" + capture.id + ".xlsx",
-                                      ),
-                                    )
-                                  }
-                                >
-                                  <FileSpreadsheet size={16} />
-                                  Generate Excel
-                                </button>}
+                                {canExport && (
+                                  <button
+                                    disabled={busy || dirty}
+                                    onClick={() =>
+                                      run(() =>
+                                        download(
+                                          "/kyc-captures/" +
+                                            capture.id +
+                                            "/excel",
+                                          "kyc-" + capture.id + ".xlsx",
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    <FileSpreadsheet size={16} />
+                                    Generate Excel
+                                  </button>
+                                )}
                                 {capture.status === "VALIDATED" && canWrite && (
                                   <button
                                     className="primary"

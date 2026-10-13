@@ -1,0 +1,81 @@
+.branch-location-fields {
+  min-width: 0;
+}
+.branch-location-fields fieldset {
+  border: 0;
+  padding: 0;
+  margin: 10px 0;
+  min-width: 0;
+}
+.branch-location-choice {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px;
+  border: 1px solid #d5c6dc;
+  background: #f7eff9;
+  border-radius: 12px;
+}
+.branch-location-choice input {
+  width: 20px !important;
+  min-height: 20px !important;
+  margin-top: 3px;
+}
+.branch-location-choice span {
+  min-width: 0;
+}
+.branch-location-choice small {
+  display: block;
+  color: #4e5c73;
+  margin-top: 4px;
+  line-height: 1.5;
+}
+.branch-location-fields .work-map {
+  height: 280px;
+}
+.branch-location-fields .location-form-grid {
+  margin: 14px 0;
+}
+.branch-location-editor {
+  border: 1px solid #d5c6dc;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 18px 0;
+  min-width: 0;
+}
+.branch-location-heading {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+}
+.branch-location-heading h3 {
+  margin: 0 0 5px;
+}
+.branch-location-heading p {
+  margin: 0;
+  color: #4e5c73;
+  overflow-wrap: anywhere;
+}
+.branch-location-editor form > label {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0;
+}
+.branch-location-editor form > label input {
+  width: 100%;
+  padding: 11px;
+  border: 1px solid #cdd3e1;
+  border-radius: 8px;
+}
+
+.account-role-options { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 20px; }
+.review-customer-call { display: grid; gap: 12px; padding: 14px; border: 1px solid #c9dce4; border-radius: 12px; background: #eef7f8; margin-bottom: 16px; }
+.review-customer-call h4 { margin: 0; }
+.review-customer-call label { display: grid; gap: 7px; }
+.review-customer-call select, .review-customer-call textarea { width: 100%; min-width: 0; border: 1px solid #c4d1df; border-radius: 8px; padding: 11px; background: white; color: #24354f; font: inherit; }
+.review-call-history { padding: 16px; }
+.review-call-history > div { border-top: 1px solid #d7deeb; padding: 12px 0; }
+.review-call-history p { margin: 6px 0; overflow-wrap: anywhere; }

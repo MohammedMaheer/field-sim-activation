@@ -5,7 +5,7 @@ from datetime import timedelta
 import bcrypt
 import jwt
 from cryptography.fernet import Fernet
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
@@ -73,6 +73,25 @@ def principal(credentials: HTTPAuthorizationCredentials = Depends(bearer), db=De
         return user
     except (AttributeError, ValueError, KeyError, jwt.PyJWTError):
         raise HTTPException(401, "Session expired. Please sign in again.")
+
+
+def sign_out_principal(request: Request, db=Depends(get_db)):
+    """Authenticate only ownership for revocation, including an expired access JWT."""
+    try:
+        authorization = request.headers.get("authorization", "")
+        if not authorization.startswith("Bearer "):
+            raise ValueError("Bearer session required")
+        token = jwt.decode(authorization[7:], SECRET, algorithms=["HS256"],
+                           audience="relay", options={"verify_exp": False})
+        session = db.get(Session, token["sid"])
+        if not session or session.user_id != token["sub"]:
+            raise ValueError("Invalid session ownership")
+        user = db.get(User, session.user_id)
+        if not user:
+            raise ValueError("Invalid subject")
+        return user, session
+    except (KeyError, ValueError, jwt.PyJWTError):
+        raise HTTPException(401, "A signed session is required to sign out") from None
 
 
 def issue(db, user, device):
