@@ -10,6 +10,7 @@ The separate `/mobile-demo/` page embeds the real Flutter UI inside a responsive
 - Home, transactions, stock, customer history, reports, incentives, support, notifications and profile use the shared mobile screens and role scope.
 - Work location uses actual browser permission and foreground GPS when the member starts work. See [Work location and boundaries](WORK-LOCATION.md) before enabling configured geofences. Synthetic capture shortcuts do not invent staff positions.
 - Reference bills use one paper logo, distinct Reference details, downward printing/replay, direct Home and complete standalone print output.
+- Build 82 adds two team leaders and four sales agents to the curated picker without resetting existing accounts or edited plans. Home and Profile show each sales agent's explicit designated leader. New branch examples include multiple leaders, pending/mismatched/matched SRs, original-date cancellation and the Home Wireless delivery/on-spot/without-router options. No GPS or boundary is simulated.
 - Native device camera, Android print integration and OS sharing need separate physical checks; browser checks alone do not verify them.
 
 ## Build and test

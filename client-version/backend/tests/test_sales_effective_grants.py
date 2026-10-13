@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 
 from test_client_scope import client, database, login
 from test_sales_policy_october import agents, new_sale, policy_records
-from app.db import DB, Permission, User
+from app.db import DB, Permission, User, Branch, Outlet
 
 
 @pytest.fixture
@@ -164,11 +164,15 @@ def test_stock_write_grant_does_not_require_organization_management(client, rest
 @pytest.mark.parametrize("account", ["admin", "ops"])
 def test_administration_inventory_uses_stock_grant_instead_of_organization_grant(client, restrict_grants, account):
     login(client, account)
-    outlet = client.get("/api/resources/outlets").json()[0]
+    # Permission checks must use an active branch; a previously closed branch
+    # correctly rejects stock regardless of the caller's grants.
+    with DB() as db:
+        outlet_id = db.scalar(select(Outlet.id).join(Branch, Outlet.branch_id == Branch.id).where(Branch.lifecycle_status == "ACTIVE"))
+    assert outlet_id
     restrict_grants(account, ["read", "inventory.write"])
     identifier = "GRANT-" + str(uuid4())
     response = client.post("/api/administration/inventory", json={
-        "values": {"iccid": identifier, "serial": identifier, "sim_type": "Physical", "outlet_id": outlet["id"]},
+        "values": {"iccid": identifier, "serial": identifier, "sim_type": "Physical", "outlet_id": outlet_id},
         "reason": "Add synthetic SIM using only stock management permissions"})
     assert response.status_code == 201, response.text
     assert response.json()["iccid"] == identifier

@@ -321,6 +321,9 @@ test("real customer records show authorized SR and sale history", async ({
   await signIn(page);
   await page.goto("/customers");
   await page
+    .getByRole("textbox", { name: "Search records", exact: true })
+    .fill(customer.name);
+  await page
     .getByRole("button", { name: `View ${customer.name}`, exact: true })
     .first()
     .click();

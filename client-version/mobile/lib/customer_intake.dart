@@ -67,7 +67,7 @@ class CameraUnavailable extends StatelessWidget {
         const Text(
           'Enable camera or upload photo',
           textAlign: TextAlign.center,
-          style: TextStyle(color: Color(0xffb4ccd9), fontSize: 12),
+          style: TextStyle(color: Color(0xffb4ccd9), fontSize: 13),
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
@@ -439,7 +439,7 @@ class _IntakeCameraState extends State<IntakeCamera>
                               'Position ${widget.document.toLowerCase()}',
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 12,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
@@ -1025,7 +1025,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         labelText: label,
         isDense: true,
         contentPadding: const EdgeInsets.symmetric(
-          horizontal: 13,
+          horizontal: 12,
           vertical: 12,
         ),
         errorText: missing.contains(key) ? 'Required' : null,
@@ -1192,7 +1192,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
               Text(
                 'Document · ${data['document_type'] == 'Passport' ? 'Passport' : 'Emirates ID'}',
                 style: const TextStyle(
-                  fontSize: 12,
+                  fontSize: 13,
                   fontWeight: FontWeight.w700,
                   color: RelayPalette.plum,
                 ),

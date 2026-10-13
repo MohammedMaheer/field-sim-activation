@@ -16,7 +16,7 @@ from sqlalchemy import DateTime, ForeignKey, JSON, String, Text, UniqueConstrain
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .db import Entity, SalesRecord, KycCapture, User, Role, Agent, Branch, get_db, now, business_date
-from .security import SECRET, cipher, permissions, principal
+from .security import SECRET, cipher, permissions, principal, visible_agents
 from .services import audit
 
 router = APIRouter(prefix="/api/sales-management/sr", tags=["SR verification"])
@@ -158,12 +158,17 @@ def read_report(body):
                 errors.append(f"Row {number}: use CLOSED, CANCELLED or IN_PROGRESS and a text request ID")
                 continue
             seen.add(sr)
-            entries[sr] = {"sr_number": value.strip(), "status": status, "request_id": request_id}
+            entries[sr] = {"sr_number": value.strip(), "status": status, "request_id": request_id,
+                           "row_number": number}
         except ValueError as error:
             errors.append(f"Row {number}: {error}")
     if not entries and not errors:
         errors.append("Add at least one SR number before reconciliation")
-    fingerprint = hashlib.sha256((body.business_date + "\n" + json.dumps(entries, sort_keys=True)).encode()).hexdigest()
+    # Row positions aid review but do not change an identical report's identity.
+    # Retain fingerprints used before row metadata was added.
+    identity = {key: {field: row[field] for field in ("sr_number", "status", "request_id")}
+                for key, row in entries.items()}
+    fingerprint = hashlib.sha256((body.business_date + "\n" + json.dumps(identity, sort_keys=True)).encode()).hexdigest()
     return entries, errors, fingerprint
 
 
@@ -175,6 +180,40 @@ def day_sales(db, day, lock=False):
     end = start + timedelta(days=1)
     query = select(SalesRecord).where(SalesRecord.created_at >= start, SalesRecord.created_at < end).order_by(SalesRecord.id)
     return list(db.scalars(query.with_for_update() if lock else query))
+
+
+def comparison_for(sale, entries, *, report_available=True):
+    """Show exact evidence and diagnostics without promoting a request-ID hint to an SR match."""
+    recorded_sr = sale.details.get("sr_number") or ""
+    recorded_request = (sale.request_id or "").strip()
+    try:
+        key = normal_sr(recorded_sr)
+    except ValueError:
+        key = ""
+    entry = entries.get(key) if report_available else None
+    related = []
+    if report_available and not entry and recorded_request:
+        related = [dict(row) for row in entries.values()
+                   if row.get("request_id") and row["request_id"].strip().casefold() == recorded_request.casefold()][:5]
+    report = dict(entry) if entry else None
+    if not report_available:
+        sr_result = "NOT_CHECKED"
+    elif not key:
+        sr_result = "NOT_RECORDED"
+    else:
+        sr_result = "MATCHED" if entry else "NOT_IN_REPORT"
+    if not entry:
+        request_result = "NOT_COMPARED"
+    elif not entry.get("request_id"):
+        request_result = "NOT_PROVIDED_IN_REPORT"
+    elif not recorded_request:
+        request_result = "NOT_RECORDED"
+    else:
+        request_result = "MATCHED" if entry["request_id"].casefold() == recorded_request.casefold() else "MISMATCH"
+    return {"recorded_sr": recorded_sr or None, "recorded_request_id": recorded_request or None,
+            "recorded_status": sale.status, "report_row": report, "related_report_rows": related,
+            "sr_result": sr_result, "request_id_result": request_result,
+            "report_available": report_available}
 
 
 def changes_for(db, sales, entries):
@@ -212,10 +251,11 @@ def changes_for(db, sales, entries):
                 reason = "SR matched; independent evidence review is still pending"
         current = sale_state(db, sale)
         agent = db.get(Agent, sale.agent_id)
-        changes.append({"sale_id": sale.id, "customer_name": sale.customer_name,
+        changes.append({"sale_id": sale.id, "customer_name": sale.customer_name, "branch_id": sale.branch_id,
                         "agent": db.get(User, agent.user_id).name, "branch": db.get(Branch, sale.branch_id).name,
                         "sr_number": sr_original, "from": current["status"], "to": status, "reason": reason,
-                        "sale_status_from": sale.status, "sale_status_to": sale_status})
+                        "sale_status_from": sale.status, "sale_status_to": sale_status,
+                        "comparison": comparison_for(sale, entries)})
     return changes
 
 
@@ -254,10 +294,92 @@ def template(business_date: str = "", user=Depends(principal), db=Depends(get_db
 @router.get("/batches")
 def batches(user=Depends(principal), db=Depends(get_db)):
     access(db, user)
-    return [{"id": row.id, "business_date": row.business_date, "filename": row.filename,
-             "created_at": row.created_at, "actor": db.get(User, row.actor_id).name,
-             **{key: row.summary.get(key, 0) for key in ("matched", "mismatch", "pending")}}
-            for row in db.scalars(select(SrBatch).order_by(SrBatch.created_at.desc()).limit(100))]
+    # History needs counts only; do not load up to 100 encrypted reports and
+    # thousands of comparison snapshots merely to render this compact list.
+    query = select(SrBatch.id, SrBatch.business_date, SrBatch.filename, SrBatch.created_at,
+                   User.name.label("actor"),
+                   *(SrBatch.summary[key].as_integer().label(key) for key in ("matched", "mismatch", "pending")))\
+        .join(User, User.id == SrBatch.actor_id).order_by(SrBatch.created_at.desc()).limit(100)
+    return [{**dict(row), **{key: row[key] or 0 for key in ("matched", "mismatch", "pending")}}
+            for row in db.execute(query).mappings()]
+
+
+def stored_entries(batch):
+    try:
+        rows = json.loads(cipher.decrypt(batch.report_encrypted.encode()))
+        return rows if isinstance(rows, dict) and all(isinstance(row, dict) for row in rows.values()) else None
+    except Exception:
+        return None
+
+
+@router.get("/results")
+def results(business_date: str = "", branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
+    """Current per-sale verification, including the report evidence behind each verdict."""
+    access(db, user)
+    day = report_date(business_date) if business_date else business_date_today()
+    allowed = set(visible_agents(db, user))
+    sales = [sale for sale in day_sales(db, day) if sale.agent_id in allowed and
+             (not branch_id or sale.branch_id == branch_id)]
+    truncated = len(sales) > 5000
+    sales = sales[:5000]
+    checks = {row.sale_id: row for row in db.scalars(select(SrCheck).where(SrCheck.sale_id.in_([sale.id for sale in sales])))}
+    batches_by_id = {row.id: row for row in db.scalars(select(SrBatch).where(SrBatch.id.in_({row.batch_id for row in checks.values()})))}
+    saved = {ident: {row["sale_id"]: row for row in batch.summary.get("comparisons", [])}
+             for ident, batch in batches_by_id.items()}
+    entries = {ident: stored_entries(batch) for ident, batch in batches_by_id.items()}
+    items = []
+    for sale in sales:
+        check = checks.get(sale.id)
+        batch = batches_by_id.get(check.batch_id) if check else None
+        snapshot = saved.get(check.batch_id, {}).get(sale.id) if check else None
+        agent = db.get(Agent, sale.agent_id)
+        comparison = (snapshot or {}).get("comparison") or comparison_for(
+            sale, entries.get(batch.id) or {} if batch else {},
+            report_available=bool(batch and entries.get(batch.id) is not None))
+        items.append({"sale_id": sale.id, "customer_name": sale.customer_name,
+            "agent": db.get(User, agent.user_id).name, "branch_id": sale.branch_id,
+            "branch": db.get(Branch, sale.branch_id).name, "sr_number": sale.details.get("sr_number") or "",
+            "to": check.status if check else "PENDING_SR_VERIFICATION",
+            "reason": check.reason if check else "Daily SR report not checked",
+            "comparison": comparison, "comparison_source": "SAVED_VERIFICATION" if snapshot else "CURRENT_SALE",
+            "record_changed": bool(snapshot and (comparison.get("recorded_sr") != (sale.details.get("sr_number") or None)
+                or comparison.get("recorded_request_id") != ((sale.request_id or "").strip() or None))),
+            "batch_id": batch.id if batch else None, "filename": batch.filename if batch else None,
+            "verified_at": check.verified_at if check else None})
+    return {"items": items, "business_date": day.isoformat(), "truncated": truncated,
+            "summary": {"matched": sum(row["to"] == "MATCHED" for row in items),
+                        "mismatch": sum(row["to"] == "MISMATCH" for row in items),
+                        "pending": sum(row["to"] == "PENDING_SR_VERIFICATION" for row in items)}}
+
+
+def business_date_today():
+    return business_date()
+
+
+@router.get("/batches/{batch_id}")
+def batch_detail(batch_id: str, branch_id: str = "", user=Depends(principal), db=Depends(get_db)):
+    access(db, user)
+    batch = db.get(SrBatch, batch_id)
+    if not batch:
+        raise HTTPException(404, "SR report import not found")
+    allowed = set(visible_agents(db, user))
+    sales = [sale for sale in day_sales(db, date.fromisoformat(batch.business_date))
+             if sale.agent_id in allowed and (not branch_id or sale.branch_id == branch_id)]
+    identifiers = {sale.id for sale in sales}
+    rows = batch.summary.get("comparisons")
+    historical = isinstance(rows, list)
+    if not historical:
+        entries = stored_entries(batch)
+        if entries is None:
+            raise HTTPException(503, "This stored report cannot be read. Upload the report again to compare it.")
+        rows = changes_for(db, sales, entries)
+    rows = [row for row in rows if row.get("sale_id") in identifiers]
+    return {"id": batch.id, "business_date": batch.business_date, "filename": batch.filename,
+            "created_at": batch.created_at, "changes": rows,
+            "comparison_source": "SAVED_VERIFICATION" if historical else "CURRENT_SALE",
+            "summary": {"matched": sum(row["to"] == "MATCHED" for row in rows),
+                        "mismatch": sum(row["to"] == "MISMATCH" for row in rows),
+                        "pending": sum(row["to"] == "PENDING_SR_VERIFICATION" for row in rows)}}
 
 
 @router.get("/email-status")
@@ -318,13 +440,13 @@ def reconcile(body: ReportBody, request: Request, user=Depends(principal), db=De
         )
         if unchanged:
             return {"applied": True, "already_applied": True, "batch_id": existing.id,
-                    "errors": [], "changes": [], "summary": summary, "preview_token": ""}
+                    "errors": [], "changes": changes, "summary": summary, "preview_token": ""}
     if body.apply:
         if not body.preview_token:
             validate_preview()
         batch_fingerprint = hashlib.sha256((fingerprint + "\n" + snapshot).encode()).hexdigest() if existing else fingerprint
         batch = SrBatch(business_date=day.isoformat(), fingerprint=batch_fingerprint, filename=body.filename,
-                        actor_id=user.id, summary={**summary, "report_fingerprint": fingerprint},
+                        actor_id=user.id, summary={**summary, "report_fingerprint": fingerprint, "comparisons": changes},
                         report_encrypted=cipher.encrypt(json.dumps(entries).encode()).decode())
         db.add(batch)
         db.flush()

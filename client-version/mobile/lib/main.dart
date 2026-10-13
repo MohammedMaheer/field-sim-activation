@@ -1,4 +1,5 @@
 import 'role_access.dart';
+import 'agent_assignment.dart';
 import 'branch_filter.dart';
 import 'sales_presentation.dart';
 import 'reports.dart';
@@ -28,7 +29,7 @@ import 'work_location_screen.dart';
 
 const burgundy = RelayPalette.brand,
     ink = RelayPalette.ink,
-    muted = Color(0xFF526079),
+    muted = RelayPalette.muted,
     green = RelayPalette.teal;
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -352,7 +353,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   color: muted,
                                 ),
                               ),
@@ -447,7 +448,7 @@ class _LoginState extends ConsumerState<LoginScreen> {
                 const Text(
                   'FIELD OPERATIONS / UAE',
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 13,
                     letterSpacing: 2,
                     color: muted,
                   ),
@@ -511,8 +512,8 @@ class _FieldShellState extends ConsumerState<FieldShell>
                     '${s.online ? 'SYNC PENDING' : 'OFFLINE'} · ${s.queued} queued operation(s)',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF9F7527),
+                      fontSize: 13,
+                      color: Color(0xFF795509),
                     ),
                   ),
                 ),
@@ -732,7 +733,7 @@ class HomeScreen extends ConsumerWidget {
           RetryView(error: e, onRetry: () => ref.invalidate(dashboardProvider)),
       data: (d) {
         final agents = (d['agents'] as List).cast<Json>(),
-            a = agents.isEmpty ? <String, dynamic>{} : agents.first;
+            a = ownAgent(agents, s.user);
         final onShift = a['on_shift'] == true;
         return RefreshIndicator(
           onRefresh: () async {
@@ -752,21 +753,26 @@ class HomeScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  Row(
-                    children: [
-                      Tooltip(
-                        message: 'Work location & shift',
-                        child: InkWell(
-                          onTap: canVisitMobilePage('/work-location', s.user)
-                              ? () => context.push('/work-location')
-                              : null,
-                          child: StatusPill(
-                            onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT',
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Tooltip(
+                            message: 'Work location & shift',
+                            child: InkWell(
+                              onTap:
+                                  canVisitMobilePage('/work-location', s.user)
+                                  ? () => context.push('/work-location')
+                                  : null,
+                              child: StatusPill(
+                                onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT',
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                      const NotificationBell(),
-                    ],
+                        const NotificationBell(),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -817,13 +823,15 @@ class HomeScreen extends ConsumerWidget {
                           size: 20,
                         ),
                         SizedBox(width: 8),
-                        Text(
-                          'NEXT TRANSACTION',
-                          style: TextStyle(
-                            color: Color(0xFFCEF2E0),
-                            fontSize: 11,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1,
+                        Expanded(
+                          child: Text(
+                            'NEXT TRANSACTION',
+                            style: TextStyle(
+                              color: Color(0xFFCEF2E0),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: .5,
+                            ),
                           ),
                         ),
                       ],
@@ -891,6 +899,13 @@ class HomeScreen extends ConsumerWidget {
                                   color: muted,
                                 ),
                               ),
+                              if (s.user?['role'] == 'Field Agent') ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Team leader · ${assignedLeader(a)}',
+                                  style: RelayTypography.label,
+                                ),
+                              ],
                             ],
                           ),
                         ),
@@ -998,17 +1013,17 @@ class HomeScreen extends ConsumerWidget {
                     padding: const EdgeInsets.all(18),
                     child: Column(
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          spacing: 12,
+                          runSpacing: 8,
                           children: [
-                            const Expanded(
-                              child: Text(
-                                'Target achievement',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  color: muted,
-                                  fontWeight: FontWeight.w600,
-                                ),
+                            const Text(
+                              'Target achievement',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: muted,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
                             Text(
@@ -1037,8 +1052,10 @@ class HomeScreen extends ConsumerWidget {
                           backgroundColor: const Color(0xFFF2E8EE),
                         ),
                         const SizedBox(height: 17),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        Wrap(
+                          alignment: WrapAlignment.spaceBetween,
+                          spacing: 12,
+                          runSpacing: 6,
                           children: [
                             Text(
                               '${d['aht']} min handling',
@@ -1311,7 +1328,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                                                       ),
                                                 style: const TextStyle(
                                                   color: burgundy,
-                                                  fontSize: 12,
+                                                  fontSize: 13,
                                                   fontWeight: FontWeight.w700,
                                                 ),
                                               ),
@@ -1855,7 +1872,7 @@ class OrderCard extends ConsumerWidget {
                         ),
                         subtitle: Text(
                           '${e['actor']} · ${shortTime(e['created_at'])}',
-                          style: const TextStyle(fontSize: 11),
+                          style: const TextStyle(fontSize: 13),
                         ),
                       ),
                     ),
@@ -1881,7 +1898,7 @@ class OrderCard extends ConsumerWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
                         color: burgundy,
                       ),
@@ -1902,7 +1919,7 @@ class OrderCard extends ConsumerWidget {
               const SizedBox(height: 6),
               Text(
                 '${order['plan']} · ${shortTime(order['created_at'])}',
-                style: const TextStyle(fontSize: 11, color: muted),
+                style: const TextStyle(fontSize: 13, color: muted),
               ),
             ],
           ),
@@ -2127,7 +2144,7 @@ class _StockState extends ConsumerState<StockScreen> {
                               Text(
                                 '${s['sim_type']} · ${s['business_category'] ?? 'Not recorded'}',
                                 style: const TextStyle(
-                                  fontSize: 12,
+                                  fontSize: 13,
                                   color: muted,
                                 ),
                               ),
@@ -2143,7 +2160,7 @@ class _StockState extends ConsumerState<StockScreen> {
                                   child: Text(
                                     '${s['activation_stage'].toString().replaceAll('_', ' ')} · Receipt ${s['payment_status'].toString().replaceAll('_', ' ').toLowerCase()}',
                                     style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 13,
                                       color: muted,
                                     ),
                                   ),
@@ -2158,7 +2175,7 @@ class _StockState extends ConsumerState<StockScreen> {
                                   child: Text(
                                     'Tap to return or report damage',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 13,
                                       color: muted,
                                     ),
                                   ),
@@ -2191,8 +2208,7 @@ class ProfileScreen extends ConsumerWidget {
         onRetry: () => ref.invalidate(resourceProvider('agents')),
       ),
       data: (rows) {
-        final ownRows = rows.where((row) => row['id'] == s.user?['agent_id']);
-        final a = ownRows.firstOrNull ?? <String, dynamic>{};
+        final a = ownAgent(rows, s.user);
         final canManageOwnShift =
             a['id'] != null &&
             a['id'] == s.user?['agent_id'] &&
@@ -2227,7 +2243,7 @@ class ProfileScreen extends ConsumerWidget {
             Text(
               salesRoleLabel(s.user!['role']),
               textAlign: TextAlign.center,
-              style: const TextStyle(color: muted, fontSize: 12),
+              style: const TextStyle(color: muted, fontSize: 13),
             ),
             const SizedBox(height: 25),
             Card(
@@ -2237,6 +2253,8 @@ class ProfileScreen extends ConsumerWidget {
                   children: [
                     KeyValue('Employee ID', a['employee_id'] ?? 'Not recorded'),
                     KeyValue('Branch', '$ownBranch'),
+                    if (s.user?['role'] == 'Field Agent')
+                      KeyValue('Team leader', assignedLeader(a)),
                     const KeyValue('Device', 'Qanawat app'),
                     const KeyValue('App version', '1.0.0'),
                   ],
@@ -2352,8 +2370,8 @@ class StatusPill extends StatelessWidget {
     final color = good
         ? green
         : bad
-        ? const Color(0xFFC64451)
-        : const Color(0xFFAD8233);
+        ? const Color(0xFFA3263B)
+        : const Color(0xFF795509);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
@@ -2364,7 +2382,7 @@ class StatusPill extends StatelessWidget {
         status.replaceAll('_', ' '),
         style: TextStyle(
           fontFamily: 'DM Sans',
-          fontSize: 12,
+          fontSize: 13,
           height: 1.25,
           letterSpacing: 0,
           color: color,

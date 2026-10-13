@@ -151,10 +151,10 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                     return Row(
                       children: [
                         printer,
-                        const Spacer(),
+                        const SizedBox(width: 8),
                         replay,
                         const SizedBox(width: 8),
-                        Flexible(child: status),
+                        Expanded(child: status),
                         const SizedBox(width: 9),
                         indicator,
                       ],

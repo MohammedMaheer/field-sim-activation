@@ -8,11 +8,13 @@ import 'package:relay_agent/services.dart';
 class ProfileService extends RelayService {
   String? shiftPath, shiftAction;
   final bool ownAgent, onShift;
+  final String? leader;
   ProfileService({
     bool agent = false,
     bool canShift = false,
     this.ownAgent = true,
     this.onShift = false,
+    this.leader = 'Designated Branch Leader',
   }) {
     user = {
       'id': 'leader-account',
@@ -51,6 +53,7 @@ class ProfileService extends RelayService {
         'name': 'Own Sales Agent',
         'employee_id': 'OWN-1042',
         'branch': 'Marina Branch',
+        'leader': leader,
         'on_shift': onShift,
       },
     {
@@ -76,6 +79,8 @@ void main() {
       expect(find.text('Branch Leader'), findsOneWidget);
       expect(find.text('SUBORDINATE-1041'), findsNothing);
       expect(find.text('Marina Branch'), findsOneWidget);
+      expect(find.text('Team leader'), findsNothing);
+      expect(find.text('Designated Branch Leader'), findsNothing);
       expect(find.text('Start shift'), findsNothing);
       expect(find.text('End shift'), findsNothing);
       expect(find.byType(FilledButton), findsNothing);
@@ -100,6 +105,8 @@ void main() {
         );
         await tester.pumpAndSettle();
         expect(find.text('OWN-1042'), findsOneWidget);
+        expect(find.text('Team leader'), findsOneWidget);
+        expect(find.text('Designated Branch Leader'), findsOneWidget);
         final action = find.text(onShift ? 'End shift' : 'Start shift');
         await tester.ensureVisible(action);
         await tester.pumpAndSettle();
@@ -137,4 +144,24 @@ void main() {
       },
     );
   }
+  testWidgets('missing designated leader is explicitly not assigned', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          serviceProvider.overrideWith(
+            (ref) => ProfileService(agent: true, leader: null),
+          ),
+        ],
+        child: const MaterialApp(home: Scaffold(body: ProfileScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Team leader'), findsOneWidget);
+    expect(find.text('Not assigned'), findsOneWidget);
+    expect(find.text('Branch Leader'), findsNothing);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

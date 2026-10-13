@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Map as LibreMap, Marker, GeoJSONSource } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
-import { MapPin, Maximize2 } from "lucide-react";
-import { Row } from "./api";
+import { MapPin, Maximize2, Search } from "lucide-react";
+import { api, Row } from "./api";
 
 export type Center = { latitude: number; longitude: number; radius_m: number };
 type MapView = "street" | "3d" | "satellite";
@@ -47,18 +47,26 @@ export default function GeofenceMap({
   onCenter,
   focus,
   imagery,
+  onMemberSelect,
 }: {
   boundary?: Center | null;
   members?: Row[];
   editable?: boolean;
   onCenter?: (center: { latitude: number; longitude: number }) => void;
-  focus?: { latitude: number; longitude: number; key: string } | null;
+  focus?: {
+    latitude: number;
+    longitude: number;
+    key: string;
+    radius_m?: number;
+  } | null;
   imagery?: Row;
+  onMemberSelect?: (userId: string) => void;
 }) {
   const container = useRef<HTMLDivElement>(null),
     map = useRef<LibreMap | null>(null);
-  const handlers = useRef({ editable, onCenter });
-  handlers.current = { editable, onCenter };
+  const [pinMode, setPinMode] = useState(editable);
+  const handlers = useRef({ editable, pinMode, onCenter, onMemberSelect });
+  handlers.current = { editable, pinMode, onCenter, onMemberSelect };
   const data = useRef({ boundary, members });
   data.current = { boundary, members };
   const markers = useRef(new Map<string, Marker>()),
@@ -69,6 +77,88 @@ export default function GeofenceMap({
     [ready, setReady] = useState(false);
   const imageryRef = useRef(imagery);
   imageryRef.current = imagery;
+  const streetCamera = useRef<{
+    center: [number, number];
+    zoom: number;
+    pitch: number;
+    bearing: number;
+  } | null>(null);
+  const [placeQuery, setPlaceQuery] = useState(""),
+    [searching, setSearching] = useState(false);
+  const [placeResults, setPlaceResults] = useState<Row[]>([]),
+    [searchError, setSearchError] = useState("");
+  const [searched, setSearched] = useState(false);
+  const searchGeneration = useRef(0);
+  useEffect(
+    () => () => {
+      searchGeneration.current++;
+    },
+    [],
+  );
+  const findPlace = async () => {
+    if (placeQuery.trim().length < 2) {
+      setSearchError("Enter a city, street or public place.");
+      return;
+    }
+    const generation = ++searchGeneration.current;
+    setSearching(true);
+    setSearchError("");
+    setSearched(false);
+    try {
+      const response = await api(
+        `/location-tracking/place-search?q=${encodeURIComponent(placeQuery.trim())}`,
+      );
+      if (generation === searchGeneration.current) {
+        setPlaceResults(response.results || []);
+        setSearched(true);
+      }
+    } catch (failure) {
+      if (generation === searchGeneration.current)
+        setSearchError(
+          (failure as Row)?.status === 429
+            ? "Place search is busy. Wait a couple of seconds and search again."
+            : failure instanceof Error
+              ? failure.message
+              : "Place search could not load. Drop a pin or enter coordinates.",
+        );
+    } finally {
+      if (generation === searchGeneration.current) setSearching(false);
+    }
+  };
+  const choosePlace = (place: Row) => {
+    setPlaceResults([]);
+    setSearched(false);
+    setPlaceQuery(place.name.slice(0, 160));
+    if (editable) {
+      setPinMode(true);
+      onCenter?.({ latitude: place.latitude, longitude: place.longitude });
+    }
+    map.current?.easeTo({
+      center: [place.longitude, place.latitude],
+      zoom:
+        view === "satellite" ? Number(imageryRef.current?.max_zoom) || 9 : 15,
+      duration: 450,
+    });
+  };
+  const fitBoundary = (current: Center, duration = 400) => {
+    const active = map.current;
+    if (!active) return;
+    const deltaLat = current.radius_m / 111195;
+    const deltaLon =
+      deltaLat / Math.max(0.05, Math.cos((current.latitude * Math.PI) / 180));
+    active.fitBounds(
+      [
+        [current.longitude - deltaLon, current.latitude - deltaLat],
+        [current.longitude + deltaLon, current.latitude + deltaLat],
+      ],
+      {
+        padding: 48,
+        maxZoom:
+          view === "satellite" ? Number(imageryRef.current?.max_zoom) || 9 : 18,
+        duration,
+      },
+    );
+  };
   useEffect(() => {
     let cancelled = false,
       observer: ResizeObserver | undefined;
@@ -93,7 +183,7 @@ export default function GeofenceMap({
           "top-right",
         );
         active.on("click", (event) => {
-          if (handlers.current.editable)
+          if (handlers.current.editable && handlers.current.pinMode)
             handlers.current.onCenter?.({
               latitude: Number(event.lngLat.lat.toFixed(6)),
               longitude: Number(event.lngLat.lng.toFixed(6)),
@@ -102,7 +192,7 @@ export default function GeofenceMap({
         active.on("error", (event) => {
           if ((event as unknown as Row).sourceId === "work-satellite") {
             setNotice(
-              "Satellite imagery is unavailable for this view. Street map restored; imagery may have cloud cover or missing coverage.",
+              "Satellite imagery could not load. Street map restored; coordinates and radius remain available.",
             );
             setView("street");
           } else if (!event.error?.message?.includes("WebGL")) {
@@ -115,8 +205,9 @@ export default function GeofenceMap({
               "Map rendering is unavailable. You can still enter coordinates and a radius.",
             );
         });
+        let styleReady = false;
         update.current = () => {
-          if (!active.isStyleLoaded()) return;
+          if (!styleReady) return;
           const { boundary: current, members: rows } = data.current;
           const source = active.getSource("work-boundary") as
             GeoJSONSource | undefined;
@@ -125,6 +216,16 @@ export default function GeofenceMap({
             active.addSource("work-boundary", {
               type: "geojson",
               data: circle(current),
+            });
+            active.addLayer({
+              id: "work-boundary-contrast",
+              type: "line",
+              source: "work-boundary",
+              paint: {
+                "line-color": "#ffffff",
+                "line-width": 6,
+                "line-opacity": 0.9,
+              },
             });
             active.addLayer({
               id: "work-boundary-fill",
@@ -144,13 +245,29 @@ export default function GeofenceMap({
             present.add("center");
             let marker = markers.current.get("center");
             if (!marker) {
-              const pin = document.createElement("span");
+              const pin = document.createElement("button");
+              pin.type = "button";
               pin.className = "work-map-center";
-              pin.title = "Boundary center";
-              marker = new library.Marker({ element: pin })
+              pin.title = editable
+                ? "Drag the boundary pin to move its center"
+                : "Boundary center";
+              pin.setAttribute("aria-label", "Boundary center pin");
+              marker = new library.Marker({
+                element: pin,
+                draggable:
+                  handlers.current.editable && handlers.current.pinMode,
+              })
                 .setLngLat([current.longitude, current.latitude])
                 .addTo(active);
               markers.current.set("center", marker);
+              const centerMarker = marker;
+              centerMarker.on("dragend", () => {
+                const point = centerMarker.getLngLat();
+                handlers.current.onCenter?.({
+                  latitude: Number(point.lat.toFixed(6)),
+                  longitude: Number(point.lng.toFixed(6)),
+                });
+              });
             } else marker.setLngLat([current.longitude, current.latitude]);
           }
           for (const member of rows) {
@@ -178,6 +295,10 @@ export default function GeofenceMap({
               "aria-label",
               `${member.name}, ${point.state?.toLowerCase() || "location recorded"}${point.fresh ? "" : ", last recorded location"}`,
             );
+            pin.onclick = (event) => {
+              event.stopPropagation();
+              handlers.current.onMemberSelect?.(member.user_id);
+            };
             const details = document.createElement("div");
             const title = document.createElement("strong");
             title.textContent = member.name || "Member";
@@ -207,11 +328,15 @@ export default function GeofenceMap({
         };
         active.on("load", () => {
           if (!cancelled) {
+            styleReady = true;
             setReady(true);
             update.current();
           }
         });
-        active.on("style.load", () => update.current());
+        active.on("style.load", () => {
+          styleReady = true;
+          update.current();
+        });
         observer = new ResizeObserver(() => active.resize());
         observer.observe(container.current);
       })
@@ -235,17 +360,37 @@ export default function GeofenceMap({
     [boundary?.latitude, boundary?.longitude, boundary?.radius_m, members],
   );
   useEffect(() => {
-    if (map.current && focus)
-      map.current.easeTo({
-        center: [focus.longitude, focus.latitude],
-        zoom: 16,
-        duration: 450,
-      });
-  }, [focus?.key]);
+    markers.current.get("center")?.setDraggable(editable && pinMode);
+  }, [editable, pinMode, boundary?.latitude, boundary?.longitude]);
+  useEffect(() => {
+    if (map.current && focus) {
+      if (focus.radius_m) fitBoundary(focus as Center);
+      else
+        map.current.easeTo({
+          center: [focus.longitude, focus.latitude],
+          zoom:
+            view === "satellite"
+              ? Number(imageryRef.current?.max_zoom) || 9
+              : 16,
+          duration: 450,
+        });
+    }
+  }, [focus?.key, ready]);
   useEffect(() => {
     const active = map.current;
     if (!active || !ready) return;
     if (view === "satellite" && imageryRef.current?.tile_url) {
+      if (!streetCamera.current) {
+        const center = active.getCenter();
+        streetCamera.current = {
+          center: [center.lng, center.lat],
+          zoom: active.getZoom(),
+          pitch: active.getPitch(),
+          bearing: active.getBearing(),
+        };
+      }
+      // Preserve the provider's native detail and restore the street camera.
+      active.setMaxZoom(Number(imageryRef.current.max_zoom) || 9);
       if (active.getLayer("work-buildings"))
         active.setLayoutProperty("work-buildings", "visibility", "none");
       if (!active.getSource("work-satellite"))
@@ -255,16 +400,33 @@ export default function GeofenceMap({
           tileSize: 256,
           maxzoom: Number(imageryRef.current.max_zoom) || 9,
           attribution:
-            '<a href="https://earthdata.nasa.gov/gibs">NASA GIBS</a>',
+            imageryRef.current.attribution || "Satellite imagery provider",
         });
       if (!active.getLayer("work-satellite"))
         active.addLayer(
           { id: "work-satellite", type: "raster", source: "work-satellite" },
-          "work-boundary-fill",
+          "work-boundary-contrast",
         );
       active.setLayoutProperty("work-satellite", "visibility", "visible");
-      active.easeTo({ pitch: 0, duration: 350 });
+      active.easeTo({
+        pitch: 0,
+        zoom: Math.min(
+          active.getZoom(),
+          Number(imageryRef.current.max_zoom) || 9,
+        ),
+        duration: 350,
+      });
       return;
+    }
+    active.setMaxZoom(22);
+    const restoring = !!streetCamera.current;
+    if (streetCamera.current) {
+      active.easeTo({
+        ...streetCamera.current,
+        pitch: view === "3d" ? 45 : 0,
+        duration: 350,
+      });
+      streetCamera.current = null;
     }
     if (active.getLayer("work-satellite"))
       active.setLayoutProperty("work-satellite", "visibility", "none");
@@ -296,11 +458,84 @@ export default function GeofenceMap({
       active.setLayoutProperty("work-buildings", "visibility", "visible");
     } else if (active.getLayer("work-buildings"))
       active.setLayoutProperty("work-buildings", "visibility", "none");
-    active.easeTo({ pitch: view === "3d" ? 45 : 0, duration: 350 });
+    const pitch = view === "3d" ? 45 : 0;
+    if (!restoring && Math.abs(active.getPitch() - pitch) > 0.1)
+      active.easeTo({ pitch, duration: 350 });
   }, [view, ready]);
   return (
     <div className="work-map-shell">
+      <div
+        className="map-place-search"
+        role="search"
+        aria-label="Find a worksite"
+      >
+        <label>
+          <span className="sr-only">Search place or address</span>
+          <input
+            value={placeQuery}
+            placeholder="City, street or public place"
+            maxLength={160}
+            onChange={(event) => setPlaceQuery(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void findPlace();
+              }
+            }}
+          />
+        </label>
+        <button
+          type="button"
+          disabled={searching}
+          onClick={() => void findPlace()}
+        >
+          <Search size={16} />
+          {searching ? "Searching…" : "Search place"}
+        </button>
+      </div>
+      {(searchError || (searched && !placeResults.length)) && (
+        <p
+          className="map-search-feedback"
+          role={searchError ? "alert" : "status"}
+        >
+          {searchError ||
+            "No matching place found. Try the city name, drop a pin or enter coordinates."}
+        </p>
+      )}
+      {!!placeResults.length && (
+        <div className="map-search-results" aria-label="Place search results">
+          {placeResults.map((place) => (
+            <button
+              type="button"
+              key={place.id}
+              onClick={() => choosePlace(place)}
+            >
+              <MapPin size={17} />
+              <span>{place.name}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <small className="map-search-attribution">
+        Search public places only ·{" "}
+        <a
+          href="https://operations.osmfoundation.org/policies/nominatim/"
+          target="_blank"
+          rel="noreferrer"
+        >
+          © OpenStreetMap contributors
+        </a>
+      </small>
       <div className="work-map-tools" aria-label="Map view">
+        {editable && (
+          <button
+            type="button"
+            aria-pressed={pinMode}
+            onClick={() => setPinMode((value) => !value)}
+          >
+            <MapPin size={16} /> Drop pin
+          </button>
+        )}
         <button
           type="button"
           aria-pressed={view === "street"}
@@ -327,19 +562,34 @@ export default function GeofenceMap({
         {boundary && (
           <button
             type="button"
-            onClick={() =>
-              map.current?.easeTo({
-                center: [boundary.longitude, boundary.latitude],
-                zoom: 15,
-                duration: 400,
-              })
-            }
+            onClick={() => fitBoundary(boundary)}
             aria-label="Center map on boundary"
           >
-            <Maximize2 size={16} />
+            <Maximize2 size={16} /> Fit radius
           </button>
         )}
       </div>
+      {boundary && (
+        <div className="map-external-views" aria-label="More detailed imagery">
+          <a
+            href={`https://www.google.com/maps/@?api=1&map_action=map&center=${encodeURIComponent(`${boundary.latitude},${boundary.longitude}`)}&zoom=18&basemap=satellite`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Google satellite ↗
+          </a>
+          <a
+            href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(`${boundary.latitude},${boundary.longitude}`)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Street View ↗
+          </a>
+          <span>
+            Opens Google Maps at this worksite. Coverage and image dates vary.
+          </span>
+        </div>
+      )}
       <div
         ref={container}
         className="work-map"
@@ -349,6 +599,11 @@ export default function GeofenceMap({
             : "Authorized member locations map"
         }
       />
+      {boundary && (
+        <span className="map-radius-label">
+          Boundary radius · {boundary.radius_m} m
+        </span>
+      )}
       {error && (
         <div className="work-map-error" role="status">
           <MapPin size={22} />
@@ -358,11 +613,32 @@ export default function GeofenceMap({
       <div className="work-map-caption">
         {notice && <span role="status">{notice} </span>}
         {view === "satellite"
-          ? `NASA GIBS · ${imagery?.available_date || "Date unavailable"} · ${imagery?.resolution_m || 250} m imagery. Cloud cover or missing coverage is possible. Regional context; street view is best for branch boundaries.`
+          ? `${imagery?.label || "Satellite overview"} · ${imagery?.provider || "NASA GIBS"} · ${imagery?.available_date || "Date unavailable"} · ${imagery?.resolution_m || 250} m imagery. ${imagery?.note || "Zoom is limited to native detail. Choose Street for precise worksite boundaries."}`
           : editable
-            ? "Click the map to choose the boundary center. Coordinates remain editable below."
+            ? pinMode
+              ? "Click the map to drop the boundary pin, or drag it to move the center. Coordinates remain editable below."
+              : "Turn on Drop pin to position the boundary, or search for a public place."
             : "Markers show the latest reported location; dimmed markers need a fresh update."}
       </div>
+      {view === "satellite" && imagery?.license_url && (
+        <p className="map-imagery-license">
+          <a
+            href={imagery.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            Sentinel-2 cloudless by EOX IT Services GmbH
+          </a>{" "}
+          · Contains modified Copernicus Sentinel data 2016 ·{" "}
+          <a
+            href={imagery.license_url}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            CC BY 4.0
+          </a>
+        </p>
+      )}
     </div>
   );
 }

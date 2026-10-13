@@ -22,7 +22,7 @@ abstract final class RelayTypography {
   static const body = TextStyle(
     fontFamily: 'DM Sans',
     fontSize: 14,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w500,
     height: 1.4,
     letterSpacing: 0,
     color: RelayPalette.ink,
@@ -38,18 +38,18 @@ abstract final class RelayTypography {
   static const label = TextStyle(
     fontFamily: 'DM Sans',
     fontSize: 13,
-    fontWeight: FontWeight.w500,
+    fontWeight: FontWeight.w600,
     height: 1.25,
     letterSpacing: 0,
-    color: Color(0xFF526079),
+    color: RelayPalette.muted,
   );
   static const caption = TextStyle(
     fontFamily: 'DM Sans',
-    fontSize: 12,
-    fontWeight: FontWeight.w500,
+    fontSize: 13,
+    fontWeight: FontWeight.w600,
     height: 1.35,
     letterSpacing: 0,
-    color: Color(0xFF526079),
+    color: RelayPalette.muted,
   );
   static const numeric = TextStyle(
     fontFamily: 'Manrope',
@@ -72,7 +72,7 @@ abstract final class RelayTypography {
     titleSmall: section.copyWith(fontSize: 14),
     bodyLarge: body.copyWith(fontSize: 15),
     bodyMedium: body,
-    bodySmall: caption.copyWith(fontSize: 12.5),
+    bodySmall: caption,
     labelLarge: bodyStrong.copyWith(height: 1.25),
     labelMedium: label.copyWith(fontWeight: FontWeight.w600),
     labelSmall: caption,

@@ -993,14 +993,14 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                                   Text(
                                     'RECEIPT DETAILS',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),
                                   Text(
                                     'VALUE',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 13,
                                       fontWeight: FontWeight.w800,
                                     ),
                                   ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'typography.dart';
+import 'experience.dart';
 import 'sr_verification.dart';
 
 /// Old saved projections keep their API shape; display the current bill name.
@@ -275,7 +276,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
         .copyWith(
           fontSize: 13,
           color: field['value'] == 'Not recorded'
-              ? const Color(0xff6a7180)
+              ? RelayPalette.muted
               : const Color(0xff25283d),
         );
   }
@@ -316,7 +317,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
                           Text(
                             referenceBillFieldLabel(field['label']),
                             style: RelayTypography.label.copyWith(
-                              color: const Color(0xff596675),
+                              color: RelayPalette.muted,
                             ),
                           ),
                           const SizedBox(height: 3),
@@ -335,7 +336,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
                             child: Text(
                               referenceBillFieldLabel(field['label']),
                               style: RelayTypography.label.copyWith(
-                                color: Color(0xff596675),
+                                color: RelayPalette.muted,
                               ),
                             ),
                           ),

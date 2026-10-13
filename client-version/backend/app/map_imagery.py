@@ -16,6 +16,8 @@ router = APIRouter(prefix="/api/location-tracking", tags=["Work location"])
 LAYER = "MODIS_Terra_CorrectedReflectance_TrueColor"
 CAPABILITIES = "https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/1.0.0/WMTSCapabilities.xml"
 SOURCE = "https://nasa-gibs.github.io/gibs-api-docs/access-basics/"
+CLOUDLESS_CAPABILITIES = "https://tiles.maps.eox.at/wmts?service=WMTS&request=GetCapabilities"
+CLOUDLESS_SOURCE = "https://s2maps.eu/"
 NS = {"w": "http://www.opengis.net/wmts/1.0", "o": "http://www.opengis.net/ows/1.1"}
 _lock = threading.Lock()
 _cached = None
@@ -48,22 +50,44 @@ def parse_metadata(document: bytes) -> dict:
     }
 
 
+def parse_cloudless_metadata(document: bytes) -> dict:
+    """Only use the commercially permitted 2016 CC-BY mosaic, with its real age."""
+    root = ElementTree.fromstring(document)
+    layer = next((row for row in root.findall(".//w:Layer", NS)
+                  if row.findtext("o:Identifier", namespaces=NS) == "s2cloudless_3857"), None)
+    if layer is None:
+        raise ValueError("Cloudless mosaic unavailable")
+    title = layer.findtext("o:Title", namespaces=NS) or ""
+    license_text = layer.findtext("o:Abstract", namespaces=NS) or ""
+    if "2016" not in title or "creativecommons.org/licenses/by/4.0/" not in license_text:
+        raise ValueError("The permitted imagery year or license changed")
+    if "GoogleMapsCompatible" not in [row.text for row in layer.findall("w:TileMatrixSetLink/w:TileMatrixSet", NS)]:
+        raise ValueError("Unsupported map projection")
+    return {"available": True, "available_date": "2016", "layer": "s2cloudless_3857",
+        "tile_url": "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg",
+        "max_zoom": 14, "resolution_m": 10, "source_url": CLOUDLESS_SOURCE,
+        "attribution": "Sentinel-2 cloudless by EOX IT Services GmbH (Contains modified Copernicus Sentinel data 2016)",
+        "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "label": "Cloudless satellite mosaic", "provider": "EOX / Copernicus",
+        "note": "Cloudless composite from 2016; this is not live or current imagery. Use street maps for current worksite boundaries, or open Google satellite / Street View for finer detail where available."}
+
+
 def imagery_metadata() -> dict:
     global _cached, _expires
     with _lock:
         if _cached is not None and time.monotonic() < _expires:
             return dict(_cached)
         try:
-            request = urllib.request.Request(CAPABILITIES, headers={"User-Agent": "QanawatMaps/1.0"})
+            request = urllib.request.Request(CLOUDLESS_CAPABILITIES, headers={"User-Agent": "QanawatMaps/1.0"})
             with urllib.request.urlopen(request, timeout=6) as response:
                 content = response.read(8 * 1024 * 1024 + 1)
             if len(content) > 8 * 1024 * 1024:
                 raise ValueError("Imagery metadata exceeds limit")
-            _cached = parse_metadata(content)
+            _cached = parse_cloudless_metadata(content)
             _expires = time.monotonic() + 6 * 60 * 60
         except Exception:
             # Optional provider failure must not break shifts, capture, or the map editor.
-            _cached = {"available": False, "reason": "Satellite imagery is temporarily unavailable. Street maps remain available.", "source_url": SOURCE}
+            _cached = {"available": False, "reason": "Cloudless satellite imagery is temporarily unavailable. Street maps remain available.", "source_url": CLOUDLESS_SOURCE}
             _expires = time.monotonic() + 60
         return dict(_cached)
 

@@ -2936,7 +2936,8 @@ def test_mobile_demo_account_picker_is_curated_and_has_no_credentials(client, mo
     addresses = {row["email"] for row in rows}
     assert {"agent1@relay.demo", "leader2@relay.demo", "admin@relay.demo", "compliance@relay.demo"} <= addresses
     assert "agent3@relay.demo" not in addresses and "cluster@relay.demo" not in addresses
-    assert len(addresses) <= 11
+    from app.main import MOBILE_DEMO_ACCOUNTS
+    assert addresses <= set(MOBILE_DEMO_ACCOUNTS)
     assert "test-client-password" not in response.text and "password_hash" not in response.text
     for row in rows:
         assert set(row) == {"email", "name", "role", "branch"}

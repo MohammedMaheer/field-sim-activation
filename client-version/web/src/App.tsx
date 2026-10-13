@@ -1093,12 +1093,20 @@ function AgentDrawer({
         <Avatar name={a.name} size="large" />
         <div>
           <h2>{a.name}</h2>
-          <p>
-            {a.employee_id} · {a.branch}
-          </p>
+          <p>{a.employee_id}</p>
           <Badge value={a.status} />
         </div>
       </div>
+      <dl className="agent-assignment-summary" aria-label="Sales agent assignment">
+        <div>
+          <dt>Branch</dt>
+          <dd>{a.branch || "Not assigned"}</dd>
+        </div>
+        <div>
+          <dt>Team leader</dt>
+          <dd>{a.leader || "Not assigned"}</dd>
+        </div>
+      </dl>
       {tab !== "Assignment" && <div className="mini-metrics">
         <div>
           <b>{a.activations}</b>
@@ -1156,8 +1164,6 @@ function AgentDrawer({
         <>
           <DetailList
             data={{
-              branch: a.branch,
-              team_leader: a.leader || "Not assigned",
               shift: a.on_shift ? "Active shift" : "Off shift",
               ekyc_pass_rate: a.ekyc_rate + "%",
               ocr_accuracy: a.ocr + "%",
@@ -1304,10 +1310,16 @@ const agentColumnByKey = {
     key: "branch",
     label: "Branch",
   },
+  leader: {
+    key: "leader",
+    label: "Team leader",
+    render: (r) => <span className="assignment-leader">{r.leader || "Not assigned"}</span>,
+  },
   activations: { key: "activations", label: "Activations" },
+  target: { key: "target", label: "Daily target" },
   achievement: {
     key: "achievement",
-    label: "Daily target",
+    label: "Achievement",
     render: (r) => <Progress value={r.achievement} />,
   },
   aht: { key: "aht", label: "AHT", render: (r) => r.aht + " min" },

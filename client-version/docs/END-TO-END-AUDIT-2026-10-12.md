@@ -1,5 +1,7 @@
 # Qanawat implementation audit — 12 October 2026
 
+> Later release: [Build 82 verification — 13 October](QANAWAT-BUILD-82-VERIFICATION-2026-10-13.md) covers the additional demo examples, individual boundaries, search/pin controls, SR comparisons, readability and installed final APK. Earlier counts below remain historical evidence.
+
 The maintained client edition was checked against the current October clarification, existing implementation and role permissions. This audit uses fresh synthetic transactions in isolated PostgreSQL copies. It does not replace hosted operational records, accounts or edited plans.
 
 ## Fixes made

@@ -36,6 +36,7 @@ from .sr_verification import router as sr_verification_router
 from .commissions import router as commissions_router
 from .location_tracking import router as location_tracking_router, enforce_capture as enforce_work_boundary, active_session as active_work_session, end_work, retain_locations, lock_member
 from .map_imagery import router as map_imagery_router
+from .place_search import router as place_search_router
 from .email_delivery import deliver_pending
 from .client_scope import configure as configure_client_scope
 
@@ -143,6 +144,7 @@ app.include_router(sr_verification_router)
 app.include_router(commissions_router)
 app.include_router(location_tracking_router)
 app.include_router(map_imagery_router)
+app.include_router(place_search_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
@@ -156,8 +158,14 @@ MOBILE_DEMO_DEVICE = "Mobile web demo"
 MOBILE_DEMO_ACCOUNTS = {
     "agent1@relay.demo": "Field Agent",
     "agent2@relay.demo": "Field Agent",
+    "demo.agent.1@relay.demo": "Field Agent",
+    "demo.agent.2@relay.demo": "Field Agent",
+    "demo.agent.3@relay.demo": "Field Agent",
+    "demo.agent.4@relay.demo": "Field Agent",
     "leader@relay.demo": "Team Leader",
     "leader2@relay.demo": "Team Leader",
+    "demo.leader.1@relay.demo": "Team Leader",
+    "demo.leader.2@relay.demo": "Team Leader",
     "admin@relay.demo": "Administrator",
     "ops@relay.demo": "Operations Manager",
     "compliance@relay.demo": "Compliance Officer",

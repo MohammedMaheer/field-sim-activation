@@ -2,7 +2,7 @@ import {test,expect} from '@playwright/test';
 import {mobileSignIn} from './mobile-session';
 async function login(page:any,account='admin') {await page.goto('/');await page.locator('input[type=email]').fill(`${account}@relay.demo`);await page.locator('input[type=password]').fill(process.env.DEMO_PASSWORD!);await page.getByRole('button',{name:'Sign in to workspace'}).click();await expect(page.locator('input[type=password]')).toBeHidden();}
 test('inbox categories read state reload and scoped links',async({page})=>{
- await login(page);await page.getByRole('link',{name:'Notifications',exact:true}).click();
+ await login(page);await page.getByRole('button',{name:'Notifications',exact:true}).click();
  await expect(page.getByRole('heading',{name:/Notifications/})).toBeVisible();
  await expect(page.locator('.notification-row').first()).toBeVisible();
  await page.screenshot({path:'../output/qa/notifications-desktop.png'});
@@ -33,7 +33,7 @@ test('phone demo inbox is connected and opens record',async({page})=>{
  const items=(await (await page.request.get('/api/notifications',{headers})).json()).items;
  const target=items.find((row:any)=>row.category==='Transactions');
  expect(target).toBeTruthy();
- await page.getByRole('button',{name:new RegExp(target.title+' Transactions '+target.message)}).first().click();
+ await page.getByRole('group',{name:new RegExp(target.title+' Transactions '+target.message)}).first().click();
  await expect.poll(async()=>{const data=await (await page.request.get('/api/notifications',{headers})).json();return data.items.find((row:any)=>row.id===target.id)?.read;}).toBe(true);
  await expect(page.getByRole('heading',{name:'Notifications',exact:true})).toBeHidden();
 });

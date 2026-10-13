@@ -84,7 +84,7 @@ export default function LocationTracking() {
   const fences = useQuery<Row[]>({
     queryKey: ["work-location", "fences", user.id],
     queryFn: () => api("/location-tracking/fences"),
-    enabled: canManage,
+    enabled: canRead || canManage,
     staleTime: 30000,
   });
   const settings = useQuery<Row>({
@@ -95,17 +95,22 @@ export default function LocationTracking() {
   const imagery = useQuery<Row>({
     queryKey: ["work-location", "imagery", user.id],
     queryFn: () => api("/location-tracking/map-imagery"),
-    staleTime: 60 * 60 * 1000,
+    staleTime: (query) =>
+      query.state.data?.available ? 60 * 60 * 1000 : 60000,
     retry: false,
   });
   const [search, setSearch] = useState(""),
     [stateFilter, setStateFilter] = useState("");
   const [selected, setSelected] = useState<Row | null>(null);
+  const [previewFence, setPreviewFence] = useState<Row | null>(null);
+  const [individualMember, setIndividualMember] = useState<Row | null>(null);
   const [focus, setFocus] = useState<{
     latitude: number;
     longitude: number;
     key: string;
+    radius_m?: number;
   } | null>(null);
+  const [editorFocus, setEditorFocus] = useState<typeof focus>(null);
   const [editing, setEditing] = useState<Row | null>(null),
     [form, setForm] = useState(defaultFence);
   const [busy, setBusy] = useState(false),
@@ -134,6 +139,7 @@ export default function LocationTracking() {
   };
   useEffect(() => {
     setSelected(null);
+    setPreviewFence(null);
     setExportMember("");
   }, [branch]);
   const allRows: Row[] = canRead
@@ -154,7 +160,52 @@ export default function LocationTracking() {
     [allRows, stateFilter, search],
   );
   const activeSession = me?.work_session && !me.work_session.ended_at;
-  const boundary = selected?.boundary || me?.boundary;
+  const currentSelected = selected
+    ? allRows.find((row) => row.user_id === selected.user_id) || null
+    : null;
+  const viewedFence = previewFence
+    ? fences.data?.find((row) => row.id === previewFence.id) || null
+    : null;
+  useEffect(() => {
+    if (
+      members.isSuccess &&
+      selected &&
+      !members.data.items.some((row: Row) => row.user_id === selected.user_id)
+    )
+      setSelected(null);
+  }, [members.data, members.isSuccess, selected]);
+  useEffect(() => {
+    if (
+      fences.isSuccess &&
+      previewFence &&
+      !fences.data.some((row) => row.id === previewFence.id)
+    )
+      setPreviewFence(null);
+  }, [fences.data, fences.isSuccess, previewFence]);
+  const branchFence = branch
+    ? fences.data?.find((row) => row.branch_id === branch)
+    : null;
+  const boundary = currentSelected
+    ? currentSelected.boundary
+    : viewedFence || (branch ? branchFence : me?.boundary);
+  const mapLabel = currentSelected
+    ? `${currentSelected.name}'s work boundary`
+    : viewedFence?.name ||
+      (branch
+        ? `${members.data?.branches?.find((row: Row) => row.id === branch)?.name || "Selected branch"} boundary`
+        : "Work location map");
+  useEffect(() => {
+    if (boundary)
+      setFocus({
+        ...boundary,
+        key: `${branch}:${currentSelected?.user_id || ""}:${viewedFence?.id || ""}:${boundary.id}`,
+      });
+    else if (currentSelected?.latest_location)
+      setFocus({
+        ...currentSelected.latest_location,
+        key: currentSelected.user_id,
+      });
+  }, [branch, currentSelected?.user_id, viewedFence?.id, boundary?.id]);
   const ownState = me ? status(me) : "NO_LOCATION";
   const totals = allRows.reduce(
     (counts: Record<string, number>, row) => {
@@ -186,8 +237,10 @@ export default function LocationTracking() {
       setBusy(false);
     }
   };
-  const editFence = (value?: Row) => {
+  const editFence = (value?: Row, member?: Row) => {
     setError("");
+    setEditorFocus(null);
+    setIndividualMember(member || null);
     setEditing(value || {});
     setForm(
       value
@@ -199,7 +252,23 @@ export default function LocationTracking() {
             radius_m: String(value.radius_m),
             enabled: value.enabled,
           }
-        : defaultFence(),
+        : member
+          ? {
+              ...defaultFence(),
+              name: `${member.name} work boundary`.slice(0, 120),
+              latitude: String(
+                member.boundary?.latitude ??
+                  member.latest_location?.latitude ??
+                  "",
+              ),
+              longitude: String(
+                member.boundary?.longitude ??
+                  member.latest_location?.longitude ??
+                  "",
+              ),
+              radius_m: String(member.boundary?.radius_m ?? 150),
+            }
+          : { ...defaultFence(), branch_id: branch },
     );
   };
   const formCenter = (): Center | null => {
@@ -238,13 +307,29 @@ export default function LocationTracking() {
     if (
       await write(
         () =>
-          editing?.id
-            ? patch(`/location-tracking/fences/${editing.id}`, body)
-            : post("/location-tracking/fences", body),
-        "Work boundary saved",
+          individualMember
+            ? api(
+                `/location-tracking/assignments/${individualMember.user_id}/boundary`,
+                {
+                  method: "PUT",
+                  body: JSON.stringify({
+                    ...body,
+                    branch_id: null,
+                    enabled: true,
+                  }),
+                },
+              )
+            : editing?.id
+              ? patch(`/location-tracking/fences/${editing.id}`, body)
+              : post("/location-tracking/fences", body),
+        individualMember
+          ? "Individual boundary saved and assigned"
+          : "Work boundary saved",
       )
-    )
+    ) {
       setEditing(null);
+      setIndividualMember(null);
+    }
   };
   const useCurrentCenter = async () => {
     setBusy(true);
@@ -256,10 +341,11 @@ export default function LocationTracking() {
         latitude: coordinate(point.latitude),
         longitude: coordinate(point.longitude),
       }));
-      setFocus({
+      setEditorFocus({
         latitude: point.latitude,
         longitude: point.longitude,
         key: crypto.randomUUID(),
+        radius_m: Number(form.radius_m),
       });
     } catch (failure) {
       setError(failureMessage(failure));
@@ -350,110 +436,123 @@ export default function LocationTracking() {
           </button>
         </div>
       </div>
-      <section
-        className={`own-work-card ${ownState === "OUTSIDE" ? "attention" : ""}`}
-        aria-label="My work tracking"
+      <details
+        className="own-work-disclosure"
+        open={canRead ? undefined : true}
       >
-        <div className="own-work-title">
-          <span className="location-symbol">
-            <LocateFixed size={23} />
+        <summary>
+          My work session{" "}
+          <span>
+            {activeSession ? "Tracking on" : "Off shift"} ·{" "}
+            {me.boundary?.name || "No boundary assigned"}
           </span>
-          <div>
-            <h2>
-              {activeSession && otherDevice
-                ? "Work tracking is active on another device"
-                : activeSession
-                  ? "Work tracking is on"
-                  : "Ready to start work tracking"}
-            </h2>
-            <p>
-              {me.boundary
-                ? `${me.boundary.name} · ${me.boundary.radius_m} m radius`
-                : "No work boundary assigned"}
-            </p>
+        </summary>
+        <section
+          className={`own-work-card ${ownState === "OUTSIDE" ? "attention" : ""}`}
+          aria-label="My work tracking"
+        >
+          <div className="own-work-title">
+            <span className="location-symbol">
+              <LocateFixed size={23} />
+            </span>
+            <div>
+              <h2>
+                {activeSession && otherDevice
+                  ? "Work tracking is active on another device"
+                  : activeSession
+                    ? "Work tracking is on"
+                    : "Ready to start work tracking"}
+              </h2>
+              <p>
+                {me.boundary
+                  ? `${me.boundary.name} · ${me.boundary.radius_m} m radius`
+                  : "No work boundary assigned"}
+              </p>
+            </div>
+            <span className={`location-state ${ownState.toLowerCase()}`}>
+              {stateNames[ownState] || ownState}
+            </span>
           </div>
-          <span className={`location-state ${ownState.toLowerCase()}`}>
-            {stateNames[ownState] || ownState}
-          </span>
-        </div>
-        <dl className="own-work-details">
-          <div>
-            <dt>Last location update</dt>
-            <dd>{recordedAt(me.latest_location)}</dd>
-          </div>
-          <div>
-            <dt>Accuracy</dt>
-            <dd>
-              {me.latest_location
-                ? `±${Math.round(me.latest_location.accuracy_m)} m`
-                : "Not recorded"}
-            </dd>
-          </div>
-          <div>
-            <dt>Boundary enforcement</dt>
-            <dd>
-              {me.enabled
-                ? "On · outside capture blocked"
-                : "Off · configuration mode"}
-            </dd>
-          </div>
-        </dl>
-        <div className="own-work-actions">
-          {!canTrack ? (
-            <p>
-              Work location recording is not permitted for this account. Your
-              authorized member view remains available.
-            </p>
-          ) : activeSession ? (
-            <>
-              {!otherDevice && (
+          <dl className="own-work-details">
+            <div>
+              <dt>Last location update</dt>
+              <dd>{recordedAt(me.latest_location)}</dd>
+            </div>
+            <div>
+              <dt>Accuracy</dt>
+              <dd>
+                {me.latest_location
+                  ? `±${Math.round(me.latest_location.accuracy_m)} m`
+                  : "Not recorded"}
+              </dd>
+            </div>
+            <div>
+              <dt>Boundary enforcement</dt>
+              <dd>
+                {me.enabled
+                  ? "On · outside capture blocked"
+                  : "Off · configuration mode"}
+              </dd>
+            </div>
+          </dl>
+          <div className="own-work-actions">
+            {!canTrack ? (
+              <p>
+                Work location recording is not permitted for this account. Your
+                authorized member view remains available.
+              </p>
+            ) : activeSession ? (
+              <>
+                {!otherDevice && (
+                  <button
+                    type="button"
+                    disabled={workBusy}
+                    onClick={() => void refresh()}
+                  >
+                    <LocateFixed size={16} /> Update my location
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={workBusy}
-                  onClick={() => void refresh()}
+                  onClick={() => void end()}
                 >
-                  <LocateFixed size={16} /> Update my location
+                  <Square size={15} />{" "}
+                  {otherDevice
+                    ? "End existing work tracking"
+                    : "End work tracking"}
                 </button>
-              )}
+              </>
+            ) : (
               <button
                 type="button"
+                className="primary"
                 disabled={workBusy}
-                onClick={() => void end()}
+                onClick={() => void start()}
               >
-                <Square size={15} />{" "}
-                {otherDevice
-                  ? "End existing work tracking"
-                  : "End work tracking"}
+                <MapPin size={16} />
+                {workBusy ? "Checking your location…" : "Start work tracking"}
               </button>
-            </>
-          ) : (
-            <button
-              type="button"
-              className="primary"
-              disabled={workBusy}
-              onClick={() => void start()}
+            )}
+            <p>
+              {otherDevice
+                ? "This browser is not recording location. End the existing session before starting work here. "
+                : ""}
+              Location is recorded during your work session while this browser
+              is visible. It may become stale when this page is in the
+              background.
+            </p>
+          </div>
+          {(locationError || (me.enabled && !me.can_capture && me.reason)) && (
+            <p
+              className="location-alert"
+              role={locationError ? "alert" : "status"}
             >
-              <MapPin size={16} />
-              {workBusy ? "Checking your location…" : "Start work tracking"}
-            </button>
+              {locationError || me.reason}
+            </p>
           )}
-          <p>
-            {otherDevice
-              ? "This browser is not recording location. End the existing session before starting work here. "
-              : ""}
-            Location is recorded during your work session while this browser is
-            visible. It may become stale when this page is in the background.
-          </p>
-        </div>
-        {(locationError || (me.enabled && !me.can_capture && me.reason)) && (
-          <p
-            className="location-alert"
-            role={locationError ? "alert" : "status"}
-          >
-            {locationError || me.reason}
-          </p>
-        )}
-      </section>
+        </section>
+      </details>
       {error && !editing && !assignment && !exportOpen && (
         <p role="alert" className="location-alert">
           {error}
@@ -485,26 +584,136 @@ export default function LocationTracking() {
       )}
       <div className="location-monitor-grid">
         <Panel
-          title={
-            selected ? `${selected.name}'s work boundary` : "Work location map"
+          title={mapLabel}
+          subtitle="Select a branch above or a member below to inspect their assigned radius."
+          action={
+            canManage ? (
+              <button
+                type="button"
+                onClick={() =>
+                  editFence(
+                    currentSelected ? undefined : branchFence || undefined,
+                    currentSelected || undefined,
+                  )
+                }
+              >
+                <MapPin size={16} />
+                {currentSelected
+                  ? "Set individual boundary"
+                  : branch
+                    ? branchFence
+                      ? "Edit branch boundary"
+                      : "Set branch boundary"
+                    : "Configure boundary"}
+              </button>
+            ) : undefined
           }
-          subtitle="Current permission scope applies to every marker and export."
         >
+          {canRead && (
+            <div className="map-focus-controls">
+              <label>
+                View on map
+                <select
+                  value={
+                    currentSelected
+                      ? `member:${currentSelected.user_id}`
+                      : viewedFence
+                        ? `fence:${viewedFence.id}`
+                        : ""
+                  }
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setSelected(
+                      value.startsWith("member:")
+                        ? allRows.find(
+                            (row) => row.user_id === value.slice(7),
+                          ) || null
+                        : null,
+                    );
+                    setPreviewFence(
+                      value.startsWith("fence:")
+                        ? fences.data?.find(
+                            (row) => row.id === value.slice(6),
+                          ) || null
+                        : null,
+                    );
+                  }}
+                >
+                  <option value="">
+                    {branch
+                      ? "Selected branch boundary"
+                      : "My boundary / all members"}
+                  </option>
+                  <optgroup label="Members">
+                    {allRows.map((row) => (
+                      <option key={row.user_id} value={`member:${row.user_id}`}>
+                        {row.name} · {salesAgentRole(row.role)}
+                      </option>
+                    ))}
+                  </optgroup>
+                  {!!fences.data?.length && (
+                    <optgroup label="Saved boundaries">
+                      {fences.data.map((row) => (
+                        <option key={row.id} value={`fence:${row.id}`}>
+                          {row.name} · {row.radius_m} m
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </select>
+              </label>
+            </div>
+          )}
+          <div
+            className="map-boundary-summary"
+            aria-label="Selected work boundary"
+          >
+            <MapPin size={18} />
+            <div>
+              <strong>{boundary?.name || "No boundary configured"}</strong>
+              <span>
+                {boundary
+                  ? `${boundary.radius_m} m radius · ${coordinate(boundary.latitude)}, ${coordinate(boundary.longitude)}${boundary.enabled ? "" : " · Disabled"}`
+                  : "Choose a configured branch or member. No radius is invented for unassigned members."}
+              </span>
+            </div>
+          </div>
           <GeofenceMap
             boundary={boundary}
             members={rows}
             focus={focus}
             imagery={imagery.data?.available ? imagery.data : undefined}
+            onMemberSelect={(id) => {
+              setSelected(allRows.find((row) => row.user_id === id) || null);
+              setPreviewFence(null);
+            }}
           />
-          {selected && (
-            <div className="map-selected-member">
-              <strong>{selected.name}</strong>
+          {imagery.data?.available === false && (
+            <div className="map-imagery-retry" role="status">
               <span>
-                {selected.branch || "No branch"} ·{" "}
-                {stateNames[status(selected)]}
+                Satellite overview is temporarily unavailable. Street map and
+                boundary controls remain available.
+              </span>
+              <button
+                type="button"
+                disabled={imagery.isFetching}
+                onClick={() => imagery.refetch()}
+              >
+                {imagery.isFetching
+                  ? "Checking imagery…"
+                  : "Retry satellite overview"}
+              </button>
+            </div>
+          )}
+          {currentSelected && (
+            <div className="map-selected-member">
+              <strong>{currentSelected.name}</strong>
+              <span>
+                {currentSelected.branch || "No branch"} ·{" "}
+                {stateNames[status(currentSelected)]}
               </span>
               <button type="button" onClick={() => setSelected(null)}>
-                Show my boundary
+                {branch ? "Show branch boundary" : "Show all members"}
               </button>
             </div>
           )}
@@ -575,6 +784,16 @@ export default function LocationTracking() {
                         {fence.enabled ? "Active" : "Disabled"}
                       </small>
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelected(null);
+                        setPreviewFence(fence);
+                      }}
+                      aria-label={`View ${fence.name} on map`}
+                    >
+                      View radius
+                    </button>
                     <button
                       type="button"
                       onClick={() => editFence(fence)}
@@ -688,17 +907,13 @@ export default function LocationTracking() {
                         <div className="location-row-actions">
                           <button
                             type="button"
-                            disabled={!member.latest_location}
                             onClick={() => {
                               setSelected(member);
-                              setFocus({
-                                ...member.latest_location,
-                                key: crypto.randomUUID(),
-                              });
+                              setPreviewFence(null);
                             }}
                             aria-label={`Show ${member.name} on map`}
                           >
-                            Map
+                            View radius
                           </button>
                           {canManage && (
                             <button
@@ -725,14 +940,23 @@ export default function LocationTracking() {
       )}
       {editing && (
         <Drawer
-          title={editing.id ? "Edit work boundary" : "Add work boundary"}
-          onClose={() => setEditing(null)}
+          title={
+            individualMember
+              ? `Individual boundary · ${individualMember.name}`
+              : editing.id
+                ? "Edit work boundary"
+                : "Add work boundary"
+          }
+          onClose={() => {
+            setEditing(null);
+            setIndividualMember(null);
+          }}
         >
           <div className="location-editor">
             <p>
-              Choose the center on the map or enter its coordinates. Members
-              inherit their branch boundary unless you assign a specific
-              worksite.
+              {individualMember
+                ? "Choose this member’s own worksite and radius. Saving changes only their geofence; branch and team leader stay the same."
+                : "Choose the center on the map or enter its coordinates. A branch boundary is inherited by its members unless they have an individual assignment."}
             </p>
             <GeofenceMap
               boundary={formCenter()}
@@ -744,7 +968,15 @@ export default function LocationTracking() {
                   longitude: String(point.longitude),
                 }))
               }
-              focus={focus}
+              focus={
+                editorFocus ||
+                (formCenter()
+                  ? {
+                      ...formCenter()!,
+                      key: `editor:${editing.id || individualMember?.user_id || "new"}`,
+                    }
+                  : null)
+              }
             />
             <div className="location-form-grid">
               <label className="full">
@@ -755,22 +987,24 @@ export default function LocationTracking() {
                   maxLength={120}
                 />
               </label>
-              <label className="full">
-                Applies to branch
-                <select
-                  value={form.branch_id}
-                  onChange={(event) => field("branch_id", event.target.value)}
-                >
-                  <option value="">
-                    Member worksite · assign individually
-                  </option>
-                  {members.data?.branches?.map((item: Row) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
+              {!individualMember && (
+                <label className="full">
+                  Applies to branch
+                  <select
+                    value={form.branch_id}
+                    onChange={(event) => field("branch_id", event.target.value)}
+                  >
+                    <option value="">
+                      Member worksite · assign individually
                     </option>
-                  ))}
-                </select>
-              </label>
+                    {members.data?.branches?.map((item: Row) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 Latitude
                 <input
@@ -807,21 +1041,36 @@ export default function LocationTracking() {
                   />
                   <input
                     type="number"
+                    aria-label="Boundary radius value"
                     min="25"
                     max="100000"
                     value={form.radius_m}
                     onChange={(event) => field("radius_m", event.target.value)}
                   />
                 </div>
+                <div className="radius-presets" aria-label="Radius presets">
+                  {[100, 250, 500, 1000].map((radius) => (
+                    <button
+                      type="button"
+                      key={radius}
+                      aria-pressed={Number(form.radius_m) === radius}
+                      onClick={() => field("radius_m", String(radius))}
+                    >
+                      {radius} m
+                    </button>
+                  ))}
+                </div>
               </label>
-              <label className="location-checkbox full">
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  onChange={(event) => field("enabled", event.target.checked)}
-                />{" "}
-                Boundary is active
-              </label>
+              {!individualMember && (
+                <label className="location-checkbox full">
+                  <input
+                    type="checkbox"
+                    checked={form.enabled}
+                    onChange={(event) => field("enabled", event.target.checked)}
+                  />{" "}
+                  Boundary is active
+                </label>
+              )}
             </div>
             <p className="location-help">
               Use the center of the actual worksite. GPS accuracy must fit
@@ -864,6 +1113,23 @@ export default function LocationTracking() {
               {assignment.boundary?.name || "Not assigned"} ·{" "}
               {assignment.branch || "No branch"}
             </p>
+            <div className="boundary-assignment-options">
+              <strong>Choose how this member gets a boundary</strong>
+              <p>
+                Use the branch default, select another saved worksite, or draw
+                an individual circle.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  const member = assignment;
+                  setAssignment(null);
+                  editFence(undefined, member);
+                }}
+              >
+                <Plus size={16} /> Set an individual boundary
+              </button>
+            </div>
             <label>
               Boundary assignment
               <select
@@ -880,6 +1146,17 @@ export default function LocationTracking() {
                   ))}
               </select>
             </label>
+            <GeofenceMap
+              boundary={
+                fenceId
+                  ? (fences.data?.find(
+                      (row) => row.id === fenceId,
+                    ) as Center) || null
+                  : (fences.data?.find(
+                      (row) => row.branch_id === assignment.branch_id,
+                    ) as Center) || null
+              }
+            />
             <p className="location-help">
               This changes only the work boundary. It does not move the member
               to another branch or team leader.

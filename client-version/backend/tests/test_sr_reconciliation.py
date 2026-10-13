@@ -236,6 +236,89 @@ def test_duplicate_captured_sr_and_request_mismatch_are_not_false_matches(client
     assert result["summary"]["matched"] == 0 and result["summary"]["mismatch"] == 3
 
 
+def test_sr_comparison_identifies_exact_field_and_related_report_row_without_false_match(client):
+    matched = make_sale(client, "SR-MATCH-FIELD")
+    wrong_request = make_sale(client, "SR-REQUEST-FIELD")
+    wrong_sr = make_sale(client, "SR-WRONG-FIELD")
+    with DB() as db:
+        requests = {ident: db.get(SalesRecord, ident).request_id for ident in (matched, wrong_request, wrong_sr)}
+    login(client)
+    report = f"sr_number,request_id,status\nSR-MATCH-FIELD,{requests[matched]},CLOSED\nSR-REQUEST-FIELD,OTHER-REQUEST,CLOSED\nSR-CORRECT-FIELD,{requests[wrong_sr]},CLOSED\n"
+    reply = client.post("/api/sales-management/sr/file", json=file_body(report))
+    assert reply.status_code == 200, reply.text
+    rows = {row["sale_id"]: row for row in reply.json()["changes"]}
+    assert rows[matched]["comparison"]["sr_result"] == "MATCHED"
+    assert rows[matched]["comparison"]["request_id_result"] == "MATCHED"
+    assert rows[matched]["comparison"]["report_row"]["row_number"] == 2
+    assert rows[wrong_request]["to"] == "MISMATCH"
+    assert rows[wrong_request]["comparison"]["request_id_result"] == "MISMATCH"
+    assert rows[wrong_request]["comparison"]["report_row"]["request_id"] == "OTHER-REQUEST"
+    assert rows[wrong_sr]["to"] == "MISMATCH"
+    assert rows[wrong_sr]["comparison"]["report_row"] is None
+    assert rows[wrong_sr]["comparison"]["related_report_rows"][0]["sr_number"] == "SR-CORRECT-FIELD"
+    assert rows[wrong_sr]["comparison"]["related_report_rows"][0]["row_number"] == 4
+
+
+def test_sr_comparison_blank_report_columns_are_not_inferred_and_fingerprint_stays_compatible(client):
+    identifier = make_sale(client, "SR-ONLY")
+    result = apply_report(client, "sr_number\nSR-ONLY\n")
+    comparison = result["changes"][0]["comparison"]
+    assert comparison["request_id_result"] == "NOT_PROVIDED_IN_REPORT"
+    assert comparison["report_row"]["request_id"] == "" and comparison["report_row"]["status"] == ""
+    expected_entries = {"sr-only": {"sr_number": "SR-ONLY", "request_id": "", "status": ""}}
+    expected_hash = hashlib.sha256(("2026-10-07\n" + json.dumps(expected_entries, sort_keys=True)).encode()).hexdigest()
+    with DB() as db:
+        assert db.get(SrBatch, result["batch_id"]).fingerprint == expected_hash
+        assert db.get(SalesRecord, identifier).status == "CLOSED"
+
+
+def test_current_and_saved_sr_comparisons_preserve_snapshot_and_apply_branch_scope(client):
+    identifier = make_sale(client, "SR-SAVED")
+    report = apply_report(client, "sr_number,status\nSR-SAVED,CLOSED\n")
+    with DB() as db:
+        sale = db.get(SalesRecord, identifier)
+        branch_id = sale.branch_id
+        sale.details = {**sale.details, "sr_number": "SR-EDITED"}
+        db.commit()
+    current = client.get("/api/sales-management/sr/results?business_date=2026-10-07").json()
+    row = next(row for row in current["items"] if row["sale_id"] == identifier)
+    assert row["record_changed"] and row["comparison_source"] == "SAVED_VERIFICATION"
+    assert row["comparison"]["recorded_sr"] == "SR-SAVED" and row["sr_number"] == "SR-EDITED"
+    assert "report_encrypted" not in json.dumps(current)
+    assert client.get("/api/sales-management/sr/results?business_date=2026-10-07&branch_id=missing").json()["items"] == []
+    saved = client.get(f"/api/sales-management/sr/batches/{report['batch_id']}?branch_id={branch_id}").json()
+    assert saved["comparison_source"] == "SAVED_VERIFICATION"
+    assert saved["changes"][0]["comparison"]["recorded_sr"] == "SR-SAVED"
+    assert client.get(f"/api/sales-management/sr/batches/{report['batch_id']}?branch_id=missing").json()["changes"] == []
+    for account in ("agent1", "leader", "cluster", "inventory", "tele", "welcome"):
+        login(client, account)
+        assert client.get("/api/sales-management/sr/results?business_date=2026-10-07").status_code == 403
+        assert client.get(f"/api/sales-management/sr/batches/{report['batch_id']}").status_code == 403
+    login(client, "salesmanager")
+    assert client.get("/api/sales-management/sr/results?business_date=2026-10-07").status_code == 200
+    assert client.get(f"/api/sales-management/sr/batches/{report['batch_id']}").status_code == 200
+
+
+def test_unchecked_sales_and_legacy_sr_reports_show_missing_evidence_truthfully(client):
+    identifier = make_sale(client, "SR-LEGACY")
+    login(client)
+    current = client.get("/api/sales-management/sr/results?business_date=2026-10-07").json()
+    row = next(row for row in current["items"] if row["sale_id"] == identifier)
+    assert row["to"] == "PENDING_SR_VERIFICATION"
+    assert row["comparison"]["report_available"] is False and row["comparison"]["sr_result"] == "NOT_CHECKED"
+    result = apply_report(client, "sr_number\nSR-LEGACY\n")
+    with DB() as db:
+        batch = db.get(SrBatch, result["batch_id"])
+        batch.summary = {key: value for key, value in batch.summary.items() if key != "comparisons"}
+        batch.report_encrypted = captures.cipher.encrypt(json.dumps({"sr-legacy": {
+            "sr_number": "SR-LEGACY", "status": "", "request_id": ""}}).encode()).decode()
+        db.commit()
+    saved = client.get(f"/api/sales-management/sr/batches/{result['batch_id']}").json()
+    assert saved["comparison_source"] == "CURRENT_SALE"
+    assert saved["changes"][0]["comparison"]["report_row"].get("row_number") is None
+    assert client.get(f"/api/sales-management/sr/batches/{uuid4()}").status_code == 404
+
+
 def test_matching_report_does_not_bypass_independent_screenshot_review(client):
     identifier = make_sale(client, "SR-REVIEW", "IN_PROGRESS")
     with DB() as db:

@@ -508,8 +508,26 @@ def fences(user=Depends(principal), db=Depends(get_db)):
     return [fence_view(row) for row in db.scalars(select(WorkFence).where(WorkFence.id.in_(ids)).order_by(WorkFence.name))]
 
 
-def save_fence(db, user, body, row, request):
+def lock_boundary_changes(db):
+    """Serialize short boundary edits/assignments, including cross-member sharing."""
+    if db.bind.dialect.name == "sqlite":
+        connection = db.connection().connection.driver_connection
+        if not connection.in_transaction:
+            db.execute(text("BEGIN IMMEDIATE"))
+    elif db.bind.dialect.name == "postgresql":
+        try:
+            db.execute(text("SET LOCAL lock_timeout = '2s'"))
+            db.execute(text("SELECT pg_advisory_xact_lock(82821015)"))
+        except OperationalError as error:
+            if getattr(error.orig, "sqlstate", None) not in {"55P03", "40P01"}:
+                raise
+            db.rollback()
+            raise HTTPException(409, "Work boundaries are being updated. Try again shortly.") from None
+
+
+def save_fence(db, user, body, row, request, *, commit=True):
     manage(db, user)
+    lock_boundary_changes(db)
     if body.branch_id:
         branch = db.get(Branch, body.branch_id)
         if not branch or branch.lifecycle_status != "ACTIVE":
@@ -527,7 +545,8 @@ def save_fence(db, user, body, row, request):
     row.updated_at = now()
     db.flush()
     audit(db, user, "Work boundary saved", row.id, old=old, new=fence_view(row), request=request)
-    db.commit()
+    if commit:
+        db.commit()
     return fence_view(row)
 
 
@@ -539,6 +558,7 @@ def add_fence(body: FenceInput, request: Request, user=Depends(principal), db=De
 @router.patch("/fences/{fence_id}")
 def edit_fence(fence_id: str, body: FenceInput, request: Request, user=Depends(principal), db=Depends(get_db)):
     manage(db, user)
+    lock_boundary_changes(db)
     row = db.get(WorkFence, fence_id)
     if not row:
         raise HTTPException(404, "Work boundary not found")
@@ -548,6 +568,7 @@ def edit_fence(fence_id: str, body: FenceInput, request: Request, user=Depends(p
 @router.put("/assignments/{user_id}")
 def assign(user_id: str, body: AssignmentInput, request: Request, user=Depends(principal), db=Depends(get_db)):
     manage(db, user)
+    lock_boundary_changes(db)
     target = lock_member(db, user_id)
     if not target:
         raise HTTPException(404, "Member not found")
@@ -567,6 +588,35 @@ def assign(user_id: str, body: AssignmentInput, request: Request, user=Depends(p
     audit(db, user, "Member work boundary updated", user_id, old={"fence_id": old}, new={"fence_id": body.fence_id}, request=request)
     db.commit()
     return {"user_id": user_id, "assignment_fence_id": body.fence_id, **status(db, target)}
+
+
+@router.put("/assignments/{user_id}/boundary")
+def individual_boundary(user_id: str, body: FenceInput, request: Request,
+                        user=Depends(principal), db=Depends(get_db)):
+    """Save and assign a personal circle atomically without moving the member."""
+    manage(db, user)
+    lock_boundary_changes(db)
+    target = lock_member(db, user_id)
+    if not target:
+        raise HTTPException(404, "Member not found")
+    if body.branch_id or not body.enabled:
+        raise HTTPException(422, "An individual boundary must be active and independent of a branch")
+    assignment = db.scalar(select(FenceAssignment).where(FenceAssignment.user_id == user_id))
+    previous = assignment.fence_id if assignment else None
+    current = db.get(WorkFence, previous) if previous else None
+    # An exclusive member worksite can be edited. A shared worksite or branch
+    # boundary must stay intact for other members, so create a personal copy.
+    exclusive = current and not current.branch_id and len(db.scalars(
+        select(FenceAssignment.user_id).where(FenceAssignment.fence_id == current.id)).all()) == 1
+    saved = save_fence(db, user, body, current if exclusive else None, request, commit=False)
+    if not assignment:
+        assignment = FenceAssignment(user_id=user_id)
+        db.add(assignment)
+    assignment.fence_id = saved["id"]
+    audit(db, user, "Member work boundary updated", user_id,
+          old={"fence_id": previous}, new={"fence_id": saved["id"]}, request=request)
+    db.commit()
+    return {"user_id": user_id, "assignment_fence_id": saved["id"], **status(db, target)}
 
 
 @router.get("/export")

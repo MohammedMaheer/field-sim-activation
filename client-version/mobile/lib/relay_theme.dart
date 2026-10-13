@@ -63,12 +63,13 @@ ThemeData relayTheme() => ThemeData(
     indicatorColor: const Color(0xFFE8D8FF),
     labelTextStyle: WidgetStateProperty.resolveWith(
       (states) => RelayTypography.caption.copyWith(
+        fontSize: 12,
         fontWeight: states.contains(WidgetState.selected)
             ? FontWeight.w700
-            : FontWeight.w500,
+            : FontWeight.w600,
         color: states.contains(WidgetState.selected)
             ? const Color(0xFF642BA6)
-            : const Color(0xFF526079),
+            : RelayPalette.muted,
       ),
     ),
   ),
@@ -91,9 +92,11 @@ ThemeData relayTheme() => ThemeData(
     filled: true,
     fillColor: Colors.white,
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
-    hintStyle: RelayTypography.body.copyWith(color: const Color(0xFF67758C)),
+    hintStyle: RelayTypography.body.copyWith(color: RelayPalette.muted),
     labelStyle: RelayTypography.label,
     floatingLabelStyle: RelayTypography.label.copyWith(
+      // Material shrinks floating labels to 75% of the configured size.
+      fontSize: 16,
       color: RelayPalette.brand,
     ),
     helperStyle: RelayTypography.caption,

@@ -103,7 +103,7 @@ class TransactionSteps extends StatelessWidget {
                         '${i + 1}. ${titles[i]}',
                         textAlign: TextAlign.center,
                         style: const TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
                           height: 1.35,
                           fontWeight: FontWeight.w600,
                           color: Color(0xFF51356F),

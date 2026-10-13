@@ -113,18 +113,22 @@ void expectCompleteValue(WidgetTester tester, String label, String value) {
   final RenderEditable editable = tester
       .state<EditableTextState>(editor)
       .renderEditable;
-  final boxes = editable.getBoxesForSelection(
-    TextSelection(baseOffset: 0, extentOffset: value.length),
-  );
-  expect(boxes, isNotEmpty);
-  for (final box in boxes) {
-    expect(box.left, greaterThanOrEqualTo(-.1));
-    expect(
-      box.right,
-      lessThanOrEqualTo(editable.size.width + .1),
-      reason:
-          '$label should wrap its complete captured value, not hide its ending',
+  // Selection rectangles include trailing spaces on a wrapped line. Check all
+  // visible words so those invisible advances cannot mask actual truncation.
+  for (final word in RegExp(r'\S+').allMatches(value)) {
+    final boxes = editable.getBoxesForSelection(
+      TextSelection(baseOffset: word.start, extentOffset: word.end),
     );
+    expect(boxes, isNotEmpty);
+    for (final box in boxes) {
+      expect(box.left, greaterThanOrEqualTo(-.1));
+      expect(
+        box.right,
+        lessThanOrEqualTo(editable.size.width + .1),
+        reason:
+            '$label should wrap its complete captured value, not hide its ending',
+      );
+    }
   }
 }
 
@@ -253,7 +257,11 @@ void main() {
           ),
         );
         await settleCompact(tester);
-        for (final title in ['1. Customer', '2. Order & plan', '3. Submit sale']) {
+        for (final title in [
+          '1. Customer',
+          '2. Order & plan',
+          '3. Submit sale',
+        ]) {
           final caption = find.text(title);
           final frame = find.ancestor(
             of: caption,

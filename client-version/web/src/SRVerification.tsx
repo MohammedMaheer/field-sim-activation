@@ -1,11 +1,225 @@
 import { useBranchScope } from "./BranchScope";
 import { useContext } from "react";
+import { Link } from "react-router-dom";
 import { Context } from "./App";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, Upload } from "lucide-react";
 import { api, download, post, Row } from "./api";
 import { ErrorState, Loading } from "./components";
+import "./sr-verification.css";
+
+const shown = (value: unknown, empty = "Not recorded") =>
+  value === undefined || value === null || value === "" ? empty : String(value);
+function SRComparison({ data, branch }: { data: Row; branch: string }) {
+  const [filter, setFilter] = useState("ALL"),
+    [search, setSearch] = useState("");
+  const source: Row[] = (data.changes || data.items || []).filter(
+    (row: Row) => !branch || row.branch_id === branch,
+  );
+  const counts = {
+    ALL: source.length,
+    MATCHED: source.filter((row) => row.to === "MATCHED").length,
+    MISMATCH: source.filter((row) => row.to === "MISMATCH").length,
+    PENDING_SR_VERIFICATION: source.filter(
+      (row) => row.to === "PENDING_SR_VERIFICATION",
+    ).length,
+  };
+  const rows = source.filter(
+    (row) =>
+      (filter === "ALL" || row.to === filter) &&
+      (!search ||
+        `${row.customer_name} ${row.agent} ${row.branch} ${row.sr_number} ${row.comparison?.recorded_request_id}`
+          .toLowerCase()
+          .includes(search.toLowerCase())),
+  );
+  return (
+    <div className="sr-comparison" aria-label="SR comparison results">
+      <div
+        className="sr-comparison-filters"
+        role="group"
+        aria-label="Verification result filters"
+      >
+        {(
+          [
+            ["ALL", "All sales"],
+            ["MISMATCH", "Mismatches"],
+            ["PENDING_SR_VERIFICATION", "Pending"],
+            ["MATCHED", "Matched"],
+          ] as const
+        ).map(([key, label]) => (
+          <button
+            type="button"
+            key={key}
+            aria-pressed={filter === key}
+            onClick={() => setFilter(key)}
+          >
+            {label} <b>{counts[key]}</b>
+          </button>
+        ))}
+        <label>
+          <span className="sr-only">Search verification results</span>
+          <input
+            value={search}
+            placeholder="Customer, SR, request ID or sales agent"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </div>
+      <p className="sr-comparison-help">
+        Compare the recorded sale with its uploaded report row. A related row
+        found by request ID is a hint, not an SR match. Blank report fields
+        remain unverified.
+      </p>
+      {data.truncated && (
+        <p role="status" className="sales-error">
+          Showing the first 5,000 sales. Select a branch to narrow the results.
+        </p>
+      )}
+      {!rows.length ? (
+        <p className="sales-empty">No sales in this result filter.</p>
+      ) : (
+        <div className="sales-table-wrap">
+          <table className="sales-table sr-comparison-table">
+            <thead>
+              <tr>
+                <th>Sale / sales agent</th>
+                <th>SR comparison</th>
+                <th>Request ID comparison</th>
+                <th>Report status / location</th>
+                <th>Result and reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const comparison = row.comparison || {},
+                  report = comparison.report_row;
+                return (
+                  <tr key={row.sale_id}>
+                    <td data-label="Sale and sales agent">
+                      <Link
+                        to={`/sales?selected=${encodeURIComponent(row.sale_id)}`}
+                      >
+                        {row.customer_name || "Open sale"}
+                      </Link>
+                      <small>
+                        {row.agent || "Not recorded"} ·{" "}
+                        {row.branch || "Not recorded"}
+                      </small>
+                    </td>
+                    <td data-label="SR comparison">
+                      <span>
+                        <b>Recorded</b>{" "}
+                        {shown(comparison.recorded_sr ?? row.sr_number)}
+                      </span>
+                      <span>
+                        <b>Report</b>{" "}
+                        {shown(
+                          report?.sr_number,
+                          comparison.sr_result === "NOT_RECORDED"
+                            ? "SR not recorded"
+                            : comparison.report_available === false ||
+                                row.to === "PENDING_SR_VERIFICATION"
+                              ? "Not checked"
+                              : "Not found",
+                        )}
+                      </span>
+                    </td>
+                    <td data-label="Request ID comparison">
+                      <span>
+                        <b>Recorded</b> {shown(comparison.recorded_request_id)}
+                      </span>
+                      <span>
+                        <b>Report</b>{" "}
+                        {shown(
+                          report?.request_id,
+                          report ? "Not provided in report" : "Not compared",
+                        )}
+                      </span>
+                      <small
+                        className={
+                          comparison.request_id_result === "MISMATCH"
+                            ? "sr-difference"
+                            : ""
+                        }
+                      >
+                        {comparison.request_id_result === "MISMATCH"
+                          ? "Request IDs differ"
+                          : comparison.request_id_result === "MATCHED"
+                            ? "Request IDs match"
+                            : comparison.request_id_result ===
+                                "NOT_PROVIDED_IN_REPORT"
+                              ? "Request ID was not supplied in the report"
+                              : "Request ID not compared"}
+                      </small>
+                    </td>
+                    <td data-label="Report status and row">
+                      <span>
+                        <b>Sale</b> {shown(comparison.recorded_status)}
+                      </span>
+                      <span>
+                        <b>Report</b>{" "}
+                        {shown(
+                          report?.status,
+                          report ? "Not provided in report" : "Not compared",
+                        )}
+                      </span>
+                      <small>
+                        {report?.row_number
+                          ? `Report row ${report.row_number}`
+                          : report
+                            ? "Report row number not recorded"
+                            : comparison.sr_result === "NOT_RECORDED"
+                              ? "Record SR to compare"
+                              : row.to === "PENDING_SR_VERIFICATION"
+                                ? "Awaiting comparison"
+                                : "No exact SR row"}
+                      </small>
+                      {row.filename && <small>{row.filename}</small>}
+                    </td>
+                    <td data-label="Verification result">
+                      <span
+                        className={`sales-status ${(row.to || "PENDING_SR_VERIFICATION").toLowerCase()}`}
+                      >
+                        {srStatus(row.to)}
+                      </span>
+                      <p className="sr-result-reason">
+                        {row.reason || "Daily SR report not checked"}
+                      </p>
+                      {row.record_changed && (
+                        <p className="sr-difference">
+                          Sale SR or request ID changed after this verification.
+                          Reconcile the report again.
+                        </p>
+                      )}
+                      {(comparison.related_report_rows || []).map(
+                        (hint: Row, index: number) => (
+                          <div
+                            className="sr-related-row"
+                            key={`${hint.row_number || index}:${hint.sr_number}`}
+                          >
+                            <b>Related row by request ID</b>
+                            <span>
+                              SR {shown(hint.sr_number)} ·{" "}
+                              {hint.row_number
+                                ? `row ${hint.row_number}`
+                                : "row number not recorded"}
+                            </span>
+                            <small>Recorded SR does not match this row.</small>
+                          </div>
+                        ),
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function srStatus(value: unknown): string {
   return (
@@ -40,6 +254,29 @@ export default function SRVerification() {
     [preview, setPreview] = useState<Row | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const [selectedBatch, setSelectedBatch] = useState("");
+  const current = useQuery<Row>({
+    queryKey: ["sales-management", "sr-results", user.id, date, branch],
+    queryFn: () =>
+      api(
+        `/sales-management/sr/results?business_date=${encodeURIComponent(date)}&branch_id=${encodeURIComponent(branch)}`,
+      ),
+    enabled: !!date,
+  });
+  const batch = useQuery<Row>({
+    queryKey: [
+      "sales-management",
+      "sr-batch-details",
+      user.id,
+      selectedBatch,
+      branch,
+    ],
+    queryFn: () =>
+      api(
+        `/sales-management/sr/batches/${encodeURIComponent(selectedBatch)}?branch_id=${encodeURIComponent(branch)}`,
+      ),
+    enabled: !!selectedBatch,
+  });
   const email = useQuery<Row>({
     queryKey: ["sales-management", "sr-email"],
     queryFn: () => api("/sales-management/sr/email-status"),
@@ -90,7 +327,9 @@ export default function SRVerification() {
       <div className="sales-section-head">
         <div>
           <h2>Daily SR verification</h2>
-          {branch && <small>Daily report · All branches</small>}
+          <small>
+            Find the exact SR or request ID difference for each sale.
+          </small>
         </div>
         <button
           disabled={busy}
@@ -105,43 +344,52 @@ export default function SRVerification() {
           Excel template
         </button>
       </div>
+      <div className="sales-form compact">
+        <label>
+          Sales date
+          <input
+            type="date"
+            required
+            value={date}
+            onChange={(e) => {
+              setDate(e.target.value);
+              setPreview(null);
+              setSelectedBatch("");
+            }}
+          />
+        </label>
+        {canWrite && (
+          <>
+            <label>
+              Etisalat report
+              <input
+                aria-label="Daily SR report"
+                type="file"
+                accept=".xlsx,.csv"
+                disabled={busy}
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] || null);
+                  setPreview(null);
+                  setError("");
+                }}
+              />
+            </label>
+            <button
+              className="primary"
+              disabled={busy || !file || !date}
+              onClick={() => process(false)}
+            >
+              <FileSpreadsheet size={16} />
+              {busy ? "Checking…" : "Preview matches"}
+            </button>
+          </>
+        )}
+      </div>
       {canWrite && (
-        <div className="sales-form compact">
-          <label>
-            Sales date
-            <input
-              type="date"
-              required
-              value={date}
-              onChange={(e) => {
-                setDate(e.target.value);
-                setPreview(null);
-              }}
-            />
-          </label>
-          <label>
-            Etisalat report
-            <input
-              aria-label="Daily SR report"
-              type="file"
-              accept=".xlsx,.csv"
-              disabled={busy}
-              onChange={(e) => {
-                setFile(e.target.files?.[0] || null);
-                setPreview(null);
-                setError("");
-              }}
-            />
-          </label>
-          <button
-            className="primary"
-            disabled={busy || !file || !date}
-            onClick={() => process(false)}
-          >
-            <FileSpreadsheet size={16} />
-            {busy ? "Checking…" : "Preview matches"}
-          </button>
-        </div>
+        <p className="sr-comparison-help">
+          Applying the daily file checks all branches. The selected branch only
+          filters the comparisons shown below.
+        </p>
       )}
       {!canWrite && <p className="muted">Read-only verification history</p>}
       {error && (
@@ -151,57 +399,15 @@ export default function SRVerification() {
       )}
       {preview && (
         <div className="sales-preview">
-          <div className="sr-result-summary">
-            {[
-              ["Matched", preview.summary?.matched ?? 0],
-              ["Mismatch", preview.summary?.mismatch ?? 0],
-              ["Pending", preview.summary?.pending ?? 0],
-            ].map(([label, value]) => (
-              <span key={label}>
-                <b>{value}</b>
-                {label}
-              </span>
-            ))}
-          </div>
+          <h3>
+            {preview.applied ? "Applied report comparison" : "Report preview"}
+          </h3>
           {(preview.errors || []).map((message: string, index: number) => (
             <p role="alert" key={index}>
               {message}
             </p>
           ))}
-          <div className="sales-table-wrap">
-            <table className="sales-table">
-              <thead>
-                <tr>
-                  <th>Sale</th>
-                  <th>Agent / branch</th>
-                  <th>SR number</th>
-                  <th>Result</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(preview.changes || []).map((row: Row, index: number) => (
-                  <tr key={row.sale_id || index}>
-                    <td>
-                      {row.customer_name || row.sale_id}
-                      <small>{row.reason}</small>
-                    </td>
-                    <td>
-                      {row.agent || "Not recorded"}
-                      <small>{row.branch}</small>
-                    </td>
-                    <td>{row.sr_number || "Not recorded"}</td>
-                    <td>
-                      <span
-                        className={`sales-status ${(row.to || "PENDING_SR_VERIFICATION").toLowerCase()}`}
-                      >
-                        {srStatus(row.to)}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <SRComparison data={preview} branch={branch} />
           {preview.applied ? (
             <p className="stock-clear" role="status">
               SR verification saved
@@ -217,6 +423,18 @@ export default function SRVerification() {
                 Apply verification
               </button>
             )
+          )}
+        </div>
+      )}
+      {!preview && (
+        <div className="sr-current-results">
+          <h3>Sales for {date}</h3>
+          {current.isPending ? (
+            <Loading />
+          ) : current.error ? (
+            <ErrorState error={current.error} retry={current.refetch} />
+          ) : (
+            <SRComparison data={current.data || {}} branch={branch} />
           )}
         </div>
       )}
@@ -245,6 +463,7 @@ export default function SRVerification() {
                 <th>Matched</th>
                 <th>Mismatch</th>
                 <th>Pending</th>
+                <th>Comparison</th>
               </tr>
             </thead>
             <tbody>
@@ -255,10 +474,46 @@ export default function SRVerification() {
                   <td>{row.matched ?? row.summary?.matched ?? 0}</td>
                   <td>{row.mismatch ?? row.summary?.mismatch ?? 0}</td>
                   <td>{row.pending ?? row.summary?.pending ?? 0}</td>
+                  <td>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBatch(row.id)}
+                    >
+                      View comparisons
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+      {selectedBatch && (
+        <div className="sr-saved-comparison">
+          <div className="sales-section-head">
+            <h3>{batch.data?.filename || "Saved report comparison"}</h3>
+            <button type="button" onClick={() => setSelectedBatch("")}>
+              Close comparison
+            </button>
+          </div>
+          {batch.isPending ? (
+            <Loading />
+          ) : batch.error ? (
+            <ErrorState error={batch.error} retry={batch.refetch} />
+          ) : (
+            <>
+              <p className="sr-comparison-help">
+                {batch.data?.comparison_source === "SAVED_VERIFICATION"
+                  ? `Values saved when this report was verified · ${batch.data?.business_date}`
+                  : "Historical comparison was not recorded. This shows the saved report against current sale details; it does not change the verification result."}
+              </p>
+              <SRComparison
+                key={selectedBatch}
+                data={batch.data || {}}
+                branch={branch}
+              />
+            </>
+          )}
         </div>
       )}
     </section>

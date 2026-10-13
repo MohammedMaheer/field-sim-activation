@@ -1,0 +1,180 @@
+/* Reading text stays clear on tinted cards without enlarging the form layout. */
+:root {
+  --ink: #202b40;
+  --muted: #4e5c73;
+  --text-caption: 0.875rem;
+  --text-small: 0.875rem;
+  --text-label: 0.875rem;
+  --text-body: 1rem;
+}
+body {
+  color: var(--ink);
+  font-weight: 450;
+}
+.sidebar .nav-label {
+  font-size: 12px;
+  color: #c2cee7;
+  font-weight: 650;
+  letter-spacing: 0.85px;
+}
+input,
+select,
+textarea {
+  color: var(--ink);
+  font-weight: 500;
+}
+label,
+.proposal-form label,
+.proposal-toolbar label,
+.sales-form label,
+.location-editor label {
+  color: #35445d;
+  font-size: var(--text-label);
+  font-weight: 600;
+}
+.muted,
+.page-header p,
+.panel-head p,
+.cell-sub,
+.person-cell small,
+.report-card p,
+.timeline p,
+.detail-list dt,
+.field-help,
+.assignment-help {
+  color: var(--muted);
+  font-weight: 500;
+}
+.record-overview-title,
+.record-overview-title span,
+.record-overview-item span,
+.leader-card-heading a {
+  font-size: var(--text-small);
+  font-weight: 550;
+}
+.panel-head p,
+.cell-sub,
+.person-cell small,
+.field-help,
+.pagination,
+.record-count,
+.metric-top,
+.metric-sub,
+.mini-metrics span,
+.leader-card-metrics span,
+.agent-management-form small,
+.sales-table small,
+.call-task small,
+.call-history small,
+.commission-workspace small,
+.location-table small,
+.location-fence-list small,
+.notification-copy small,
+.notification-copy time,
+.notification-copy > span {
+  font-size: var(--text-small);
+  line-height: 1.45;
+  font-weight: 500;
+}
+.mini-metrics span,
+.agent-profile p,
+.agent-management-form small,
+.sales-table small,
+.location-table small,
+.notification-copy small,
+.notification-copy time,
+.empty p,
+.empty h3 {
+  color: var(--muted);
+  font-weight: 500;
+}
+.agent-profile p {
+  font-size: var(--text-small);
+}
+.own-work-details dt,
+.own-work-actions p,
+.location-summary span,
+.sale-submission-summary dt,
+.sale-verification-summary dt,
+.sale-verification-summary span {
+  color: var(--muted);
+  font-size: var(--text-label);
+  line-height: 1.45;
+  font-weight: 500;
+}
+.premium-kpi p,
+.inline-legend,
+.chart-legend > div,
+.donut-center span,
+.pulse-progress small,
+.pulse-progress > div + div span,
+.branch-team-card small,
+.branch-team-card p,
+.dashboard-records small,
+.report-card > small {
+  color: var(--muted);
+  font-size: var(--text-caption);
+  line-height: 1.45;
+  font-weight: 500;
+}
+thead th,
+thead th button {
+  font-size: 14px;
+  font-weight: 650;
+  color: #354660;
+}
+tbody td {
+  font-weight: 500;
+}
+.badge {
+  font-size: 13px;
+  font-weight: 650;
+}
+.assignment-leader {
+  display: block;
+  min-width: 125px;
+  max-width: 220px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.agent-assignment-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px 16px;
+  margin: 0 0 18px;
+  border: 1px solid #d8e1ee;
+  border-radius: 12px;
+  background: #f4f7fc;
+}
+.agent-assignment-summary > div {
+  min-width: 0;
+}
+.agent-assignment-summary dt {
+  color: var(--muted);
+  font-size: var(--text-label);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.agent-assignment-summary dd {
+  color: var(--ink);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 1.4;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 720px) {
+  .assignment-leader {
+    min-width: 0;
+    max-width: none;
+  }
+}
+@media (max-width: 420px) {
+  .agent-assignment-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 14px;
+  }
+}

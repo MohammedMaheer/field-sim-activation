@@ -149,8 +149,11 @@ export default function ReceiptReview({
       setBusy(false);
     }
   }
-  const canExport = user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read");
-  const canExcel = canExport &&
+  const canExport = user.permissions.includes(
+    user.role === "Field Agent" ? "read" : "report.read",
+  );
+  const canExcel =
+    canExport &&
     !!capture.rows?.length &&
     ["VALIDATED", "SUBMITTED", "VERIFIED", "REJECTED"].includes(capture.status);
   async function downloadOriginal() {
@@ -413,20 +416,22 @@ export default function ReceiptReview({
                     : `${capture.rows?.length || 0} ${payment ? "payment" : "receipt"} ${capture.rows?.length === 1 ? "record" : "records"} · compare with image`}
               </small>
             </div>
-            {canExport && <button
-              disabled={busy || !canExcel}
-              onClick={() =>
-                perform(() =>
-                  download(
-                    `/kyc-captures/${capture.id}/excel`,
-                    `${payment ? "payment" : "receipt"}-${capture.id}.xlsx`,
-                  ),
-                )
-              }
-            >
-              <FileSpreadsheet size={17} />
-              Excel
-            </button>}
+            {canExport && (
+              <button
+                disabled={busy || !canExcel}
+                onClick={() =>
+                  perform(() =>
+                    download(
+                      `/kyc-captures/${capture.id}/excel`,
+                      `${payment ? "payment" : "receipt"}-${capture.id}.xlsx`,
+                    ),
+                  )
+                }
+              >
+                <FileSpreadsheet size={17} />
+                Excel
+              </button>
+            )}
           </div>
           <div
             className="review-data-tabs"
@@ -499,6 +504,19 @@ export default function ReceiptReview({
                       </dl>
                     </section>
                   ))}
+                {orderMode && (
+                  <section>
+                    <h4>SR verification reference</h4>
+                    <dl>
+                      <div>
+                        <dt>SR number</dt>
+                        <dd dir="auto">
+                          {capture.intake?.sr_number || "Not recorded"}
+                        </dd>
+                      </div>
+                    </dl>
+                  </section>
+                )}
               </div>
             ) : tab === "fields" ? (
               capture.rows?.length ? (
@@ -741,9 +759,7 @@ export default function ReceiptReview({
         </details>
       )}
       <details className="review-history">
-        <summary>
-          {payment ? "Reference bill" : "Historical receipt"}
-        </summary>
+        <summary>{payment ? "Reference bill" : "Historical receipt"}</summary>
         <ActivationReceipt capture={capture} canExport={canExport} />
       </details>
       <details className="review-history">

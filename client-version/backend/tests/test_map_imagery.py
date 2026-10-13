@@ -58,3 +58,21 @@ def test_optional_map_metadata_requires_effective_member_grant(client, monkeypat
         with DB() as db:
             db.add(Permission(**saved))
             db.commit()
+
+
+def cloudless_capabilities(title="Cloudless 2016", licence="https://creativecommons.org/licenses/by/4.0/"):
+    return f'''<Capabilities xmlns="http://www.opengis.net/wmts/1.0" xmlns:o="http://www.opengis.net/ows/1.1"><Contents><Layer><o:Identifier>s2cloudless_3857</o:Identifier><o:Title>{title}</o:Title><o:Abstract>{licence}</o:Abstract><TileMatrixSetLink><TileMatrixSet>GoogleMapsCompatible</TileMatrixSet></TileMatrixSetLink></Layer></Contents></Capabilities>'''.encode()
+
+
+def test_cloudless_map_is_precisely_dated_and_commercially_permitted():
+    data = imagery.parse_cloudless_metadata(cloudless_capabilities())
+    assert data['available_date'] == '2016'
+    assert data['resolution_m'] == 10 and data['max_zoom'] == 14
+    assert data['license_url'].endswith('/by/4.0/')
+    assert 's2cloudless_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg' in data['tile_url']
+    assert 'not live or current' in data['note']
+
+
+@pytest.mark.parametrize('title,licence', [('2024 mosaic', 'https://creativecommons.org/licenses/by/4.0/'), ('2016 mosaic','https://creativecommons.org/licenses/by-nc-sa/4.0/')])
+def test_cloudless_mosaic_rejects_changed_age_or_noncommercial_license(title,licence):
+    with pytest.raises(ValueError): imagery.parse_cloudless_metadata(cloudless_capabilities(title,licence))

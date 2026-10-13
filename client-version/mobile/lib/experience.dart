@@ -74,6 +74,7 @@ abstract final class RelayPalette {
   static const plum = Color(0xFF7439C7);
   static const teal = Color(0xFF087E6A);
   static const ink = Color(0xFF242B42);
+  static const muted = Color(0xFF43516A);
   static const canvas = Color(0xFFF3F1FC);
   static const hero = LinearGradient(
     begin: Alignment.topLeft,
