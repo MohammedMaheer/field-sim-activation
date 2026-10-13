@@ -1,4 +1,16 @@
 export type Row = Record<string, any>;
+export function canViewFinalCommissions(user: Row): boolean {
+  return (
+    !!user.permissions?.includes("read") &&
+    [
+      "Administrator",
+      "Operations Manager",
+      "Sales Manager",
+      "Team Leader",
+      "Field Agent",
+    ].includes(user.role)
+  );
+}
 export function canManageOrganization(user: Row): boolean {
   return (
     ["Administrator", "Operations Manager"].includes(user.role) &&

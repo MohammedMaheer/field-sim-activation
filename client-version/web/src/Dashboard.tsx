@@ -31,7 +31,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import { Context, canVisitPage } from "./App";
-import { api, Row } from "./api";
+import { api, Row, canViewFinalCommissions } from "./api";
 import { Badge, Panel, Loading, ErrorState, Empty } from "./components";
 
 export const palette = [
@@ -543,25 +543,30 @@ export default function Dashboard() {
             </span>
             <ArrowUpRight size={17} />
           </button>
-          <button
-            onClick={() => navigate("/incentives")}
-            aria-label="View recorded incentives"
-            disabled={!canVisitPage("incentives", user)}
-          >
-            <span className="priority-icon violet">
-              <Coins />
-            </span>
-            <span>
-              <b>
-                AED{" "}
-                {Number(d.final_incentive_total || 0).toLocaleString("en-AE", {
-                  minimumFractionDigits: 2,
-                })}
-              </b>
-              <small>Final commissions · this month</small>
-            </span>
-            <ArrowUpRight size={17} />
-          </button>
+          {canViewFinalCommissions(user) && (
+            <button
+              onClick={() => navigate("/incentives")}
+              aria-label="View recorded incentives"
+              disabled={!canVisitPage("incentives", user)}
+            >
+              <span className="priority-icon violet">
+                <Coins />
+              </span>
+              <span>
+                <b>
+                  AED{" "}
+                  {Number(d.final_incentive_total || 0).toLocaleString(
+                    "en-AE",
+                    {
+                      minimumFractionDigits: 2,
+                    },
+                  )}
+                </b>
+                <small>Final commissions · this month</small>
+              </span>
+              <ArrowUpRight size={17} />
+            </button>
+          )}
           <button
             disabled={!canVisitPage("activations", user)}
             onClick={() => navigate("/activations")}

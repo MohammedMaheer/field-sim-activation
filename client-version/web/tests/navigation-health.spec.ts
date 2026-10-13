@@ -189,6 +189,10 @@ test("administrator: sales, assets, notifications and commission subviews remain
     health.pending.clear();
     await page.goto("/incentives");
     await expectHealthyView(page, health, `${width}px incentives`);
+    const estimates = page.locator("details.incentive-recorded-history").filter({
+      has: page.locator("summary").filter({ hasText: "Calculated estimates and commission setup" }),
+    });
+    await estimates.locator(":scope > summary").click();
     const approved = page.locator(".commission-policies");
     await approved.locator(":scope > summary").click();
     const tables = approved.locator(".commission-policy");

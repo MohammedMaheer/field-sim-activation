@@ -7,7 +7,7 @@ import { useState } from "react";
 import { useBranchScope } from "./BranchScope";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ClipboardCheck, FileUp, Plus, RefreshCw } from "lucide-react";
-import { api, post, patch, Row } from "./api";
+import { api, post, patch, Row, canViewFinalCommissions } from "./api";
 import RecordOverview from "./RecordOverview";
 import {
   Badge,
@@ -382,33 +382,38 @@ export function Incentives({ user, notify }: Props) {
           <h1>Incentives</h1>
         </div>
       </div>
-      <FinalIncentives />
-      <details className="incentive-recorded-history">
-        <summary>Calculated estimates and commission setup</summary>
-        <div className="proposal-toolbar">
-          <label>
-            Month
-            <input
-              type="month"
-              value={period}
-              onChange={(e) => setPeriod(e.target.value)}
-            />
-          </label>
-        </div>
+      {canViewFinalCommissions(user) && <FinalIncentives />}
+      {canViewFinalCommissions(user) && (
+        <details className="incentive-recorded-history">
+          <summary>Calculated estimates and commission setup</summary>
+          <div className="proposal-toolbar">
+            <label>
+              Month
+              <input
+                type="month"
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+              />
+            </label>
+          </div>
 
-        <p>
-          Use this only when you need to calculate estimates from the approved
-          rules. Imported final amounts above do not need commission setup.
-        </p>
-        {[
-          "Administrator",
-          "Operations Manager",
-          "Sales Manager",
-          "Team Leader",
-          "Field Agent",
-        ].includes(user.role) && <CommissionCalculations period={period} />}
-      </details>
-      <details className="incentive-recorded-history">
+          <p>
+            Use this only when you need to calculate estimates from the approved
+            rules. Imported final amounts above do not need commission setup.
+          </p>
+          {[
+            "Administrator",
+            "Operations Manager",
+            "Sales Manager",
+            "Team Leader",
+            "Field Agent",
+          ].includes(user.role) && <CommissionCalculations period={period} />}
+        </details>
+      )}
+      <details
+        className="incentive-recorded-history"
+        open={canViewFinalCommissions(user) ? undefined : true}
+      >
         <summary>Recorded incentive entries · AED {total.toFixed(2)}</summary>
         {user.permissions.includes(
           user.role === "Field Agent" ? "read" : "report.read",

@@ -117,6 +117,7 @@ import {
   Row,
   canManageOrganization,
   canManageMasterData,
+  canViewFinalCommissions,
 } from "./api";
 import {
   Badge,
@@ -2233,17 +2234,20 @@ function Reports() {
           </Link>
         )}
       </PageHeader>
-      <section className="panel report-card" style={{ marginBottom: 16 }}>
-        <h2>Incentive tracking</h2>
-        <p>
-          Approved imported final amounts · separate from calculated estimates.
-        </p>
-        <ExportActions
-          path={`/incentives/final/export?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&branch_id=${encodeURIComponent(branch)}`}
-          name="qanawat-incentive-tracking"
-          label="Export incentive tracking"
-        />
-      </section>
+      {canViewFinalCommissions(user) && (
+        <section className="panel report-card" style={{ marginBottom: 16 }}>
+          <h2>Incentive tracking</h2>
+          <p>
+            Approved imported final amounts · separate from calculated
+            estimates.
+          </p>
+          <ExportActions
+            path={`/incentives/final/export?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&branch_id=${encodeURIComponent(branch)}`}
+            name="qanawat-incentive-tracking"
+            label="Export incentive tracking"
+          />
+        </section>
+      )}
       <section className="panel report-card" style={{ marginBottom: 16 }}>
         <h2>Sales, targets &amp; follow-ups</h2>
         <p>Current sales with product, sales agent, branch and call outcomes</p>
