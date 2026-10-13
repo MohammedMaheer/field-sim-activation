@@ -4,6 +4,7 @@ import CustomerIntake from "./CustomerIntake";
 import ReceiptReview from "./ReceiptReview";
 import KycJourney from "./KycJourney";
 import RecordOverview from "./RecordOverview";
+import { CaptureBoundaryNotice } from "./WorkLocation";
 import { useContext, useEffect, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -301,6 +302,7 @@ export default function KycCapture() {
           Refresh
         </button>
       </div>
+      {canWrite && showUpload && !selected && <CaptureBoundaryNotice />}
       <div className="capture-workspace-nav">
         <span />
         <div>

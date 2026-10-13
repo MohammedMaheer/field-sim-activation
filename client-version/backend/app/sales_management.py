@@ -25,6 +25,7 @@ from .db import (
 )
 from .security import agent_for_update, assert_agent, cipher, password_hash, permissions, principal, require
 from .services import audit
+from .location_tracking import enforce_capture
 
 router = APIRouter(prefix="/api/sales-management", tags=["Sales management"])
 ORDER_TYPES = ("NEW", "MNP", "P2P", "HW", "ELIFE", "WASEL", "VISITOR")
@@ -465,6 +466,7 @@ def performance(period: str = "", user=Depends(principal), db=Depends(get_db), o
 @router.post("/sales", status_code=201)
 def create_sale(body: SaleCreate, request: Request, user=Depends(principal), db=Depends(get_db)):
     can_record(db, user)
+    enforce_capture(db, user)
     if "read" not in permissions(db, user):
         raise HTTPException(403, "Your role cannot record sales")
     if db.get(Role, user.role_id).name == "Sales Manager":

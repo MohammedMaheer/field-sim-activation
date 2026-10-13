@@ -1,14 +1,16 @@
 # Mobile browser demo
 
-The separate `/mobile-demo/` page embeds the real Flutter UI inside a responsive phone frame. It uses `lib/preview_main.dart`, never the production login or API. Visitors need no credentials. This is a browser demonstration, not a native iOS build.
+The separate `/mobile-demo/` page embeds the real Flutter UI inside a responsive phone frame. It uses `lib/preview_main.dart` and the same signed-in backend as the management portal and Android app. The demo account picker preselects an account and fills its evaluation password. This browser surface is not a native iOS build.
 
 ## Behaviour
 
-- Synthetic fixtures only. Each browser session keeps changes in memory; Reset demo/reload restores the fixture.
-- Home, tasks, stock, customers, reports, incentives, support and profile use the existing mobile screens.
-- Capture buttons load a bundled synthetic receipt. OCR and reviewer approval are explicitly simulated. Edited rows generate a real Excel download. Activation remains external in Etisalat.
-- All Dio requests are intercepted locally, including unknown routes (rejected). No live account, upload, customer image, location permission or backend mutation is involved.
-- Native camera, device barcode scanning and OS sharing are not represented as physical-device tests.
+- Role access follows the signed-in evaluation account. Refresh app reloads the page; it does not delete saved backend sales, drafts or stock.
+- Customer and order capture shortcuts generate synthetic images. Those images pass through the real OCR and image-bound submission checks, and submitted sales appear in the portal and Android app.
+- The synthetic order contains a unique sample SR. Its optional payment receipt uses the same SR. Independent backend review and daily SR reconciliation remain separate real workflows; the demo does not simulate carrier approval.
+- Home, transactions, stock, customer history, reports, incentives, support, notifications and profile use the shared mobile screens and role scope.
+- Work location uses actual browser permission and foreground GPS when the member starts work. See [Work location and boundaries](WORK-LOCATION.md) before enabling configured geofences. Synthetic capture shortcuts do not invent staff positions.
+- Reference bills use one paper logo, distinct Reference details, downward printing/replay, direct Home and complete standalone print output.
+- Native device camera, Android print integration and OS sharing need separate physical checks; browser checks alone do not verify them.
 
 ## Build and test
 
@@ -27,11 +29,13 @@ Browser regression: from `client-version/web`, set `MOBILE_PREVIEW_URL` to the h
 
 ## Deployment and rollback
 
-Before publication, back up `/opt/relay-client/web/dist` and the client database, recording the current migration. No migrations, API changes, nginx changes or APK replacements are required. Publish only to `/opt/relay-client/web/dist/mobile-demo`. Preserve this subdirectory when deploying the separate React panel later.
+Before publication, back up the client deployment and database, recording the current migration. Shared workflow changes require the API, React panel, Flutter demo and Android APK to remain compatible. Publish only within `/opt/relay-client`. Preserve `/web/dist/mobile-demo` when publishing the React panel.
 
-Rollback: restore the previous mobile-demo directory if present; for first publication, remove only that verified directory. The backup contains the previous full web tree. Never restore a database for this static-only rollback. The full edition and all other VPS applications remain independent.
+For an assets-only rollback, restore the previous web/demo assets without replacing database records. Shared releases use their recorded deployment/image and migration rollback procedure. The full edition and all other VPS applications remain independent. Current evidence is recorded in [the build 81 release audit](WORK-LOCATION-RECEIPT-RELEASE-81.md).
 
-## Published verification — 28 September 2026
+## Historical standalone preview verification — 28 September 2026
+
+The following describes the old isolated preview before shared-backend sign-in. It is retained as historical evidence and does not describe the current demo.
 
 URL: https://relay-client.187-127-162-233.sslip.io/mobile-demo/
 

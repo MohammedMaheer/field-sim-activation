@@ -62,6 +62,9 @@ void main() {
       });
       expect(html, contains('Qanawat'));
       expect(html, contains('<h1>Reference bill</h1>'));
+      expect(html, contains('<h2>Reference details</h2>'));
+      expect(html, isNot(contains('<h2>Reference bill</h2>')));
+      expect(RegExp('<img ').allMatches(html), hasLength(1));
       expect(html, contains('Reference bill number'));
       expect(html, isNot(contains('Invoice')));
       expect(html, contains('Activated · SR mismatch'));

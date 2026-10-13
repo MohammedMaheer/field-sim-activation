@@ -9,6 +9,7 @@ import 'package:relay_agent/kyc_capture.dart';
 import 'package:relay_agent/customer_intake.dart';
 import 'package:relay_agent/saved_drafts.dart';
 import 'package:relay_agent/services.dart';
+import 'package:relay_agent/branding.dart';
 
 class DraftMemoryStore extends OfflineStore {
   final values = <String, Json>{};
@@ -429,6 +430,9 @@ void main() {
       );
       await waitFor(tester, find.byTooltip('New transaction'));
       expect(find.text('Reference bill'), findsWidgets);
+      expect(find.text('Reference details'), findsOneWidget);
+      expect(find.byType(QanawatBrand), findsOneWidget);
+      expect(find.text('REFERENCE BILL'), findsNothing);
       expect(find.byTooltip('Home').hitTestable(), findsOneWidget);
       await tester.tap(find.byTooltip('New transaction'));
       final name = find.widgetWithText(TextFormField, 'Full name');

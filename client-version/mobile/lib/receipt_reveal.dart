@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'typography.dart';
-import 'branding.dart';
 
 /// A single paper-feed reveal; refreshing the record never restarts it.
 class ReceiptReveal extends StatefulWidget {
@@ -48,7 +47,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Container(
-          constraints: const BoxConstraints(minHeight: 102),
+          constraints: const BoxConstraints(minHeight: 86),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           decoration: const BoxDecoration(
             borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -89,12 +88,12 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                     // never changes layout as printing finishes.
                     final stacked =
                         constraints.maxWidth <
-                        130 + 8 + 48 + 8 + statusMeasure.width + 9 + 8;
+                        28 + 8 + 48 + 8 + statusMeasure.width + 9 + 8;
                     statusMeasure.dispose();
-                    const brand = QanawatBrand(
-                      width: 120,
-                      height: 35,
-                      darkSurface: true,
+                    const printer = Icon(
+                      Icons.print_outlined,
+                      color: Color(0xff9ff4da),
+                      size: 24,
                     );
                     final replay = IconButton(
                       tooltip: 'Replay bill printing',
@@ -104,7 +103,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                       ),
                       padding: EdgeInsets.zero,
                       icon: const Icon(
-                        Icons.print_outlined,
+                        Icons.replay,
                         color: Color(0xff9ff4da),
                         size: 18,
                       ),
@@ -134,7 +133,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                         children: [
                           Row(
                             children: [
-                              brand,
+                              printer,
                               const Spacer(),
                               replay,
                               const SizedBox(width: 9),
@@ -151,7 +150,7 @@ class _ReceiptRevealState extends State<ReceiptReveal>
                     }
                     return Row(
                       children: [
-                        brand,
+                        printer,
                         const Spacer(),
                         replay,
                         const SizedBox(width: 8),

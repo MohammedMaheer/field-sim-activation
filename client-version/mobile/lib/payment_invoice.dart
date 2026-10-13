@@ -4,7 +4,10 @@ import 'sr_verification.dart';
 
 /// Old saved projections keep their API shape; display the current bill name.
 String referenceBillTitle(dynamic title) => switch (title) {
-  'Invoice' || 'Payment invoice' || 'Sale receipt' => 'Reference bill',
+  'Invoice' ||
+  'Payment invoice' ||
+  'Sale receipt' ||
+  'Reference bill' => 'Reference details',
   'More invoice details' => 'More reference bill details',
   _ => title.toString(),
 };
@@ -79,7 +82,7 @@ Map<String, dynamic> paymentInvoice(Map<String, dynamic> row) {
     'status': status,
     'sections': [
       {
-        'title': 'Reference bill',
+        'title': 'Reference details',
         'fields': [
           field('Reference bill number', 'PAY-${invoiceId.toUpperCase()}'),
           field('Date', dateText),
@@ -359,7 +362,7 @@ class _PaymentInvoiceSectionsState extends State<PaymentInvoiceSections> {
   Widget build(BuildContext context) {
     final sections = (widget.invoice['sections'] as List).cast<Map>();
     const primary = <String, List<String>>{
-      'Reference bill': [
+      'Reference details': [
         'Reference bill number',
         'Invoice number',
         'Sale reference',

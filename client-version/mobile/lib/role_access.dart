@@ -16,6 +16,7 @@ bool canVisitMobilePage(String path, Map<String, dynamic>? user) {
   if (user == null || !knownRoles.contains(user['role'])) return false;
   final role = user['role'];
   final permissions = (user['permissions'] as List? ?? []).cast<String>();
+  if (path == '/work-location') return permissions.contains('location.self');
   if (path == '/notifications') {
     return permissions.any(
       (permission) =>

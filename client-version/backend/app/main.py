@@ -34,6 +34,8 @@ from .sales_management import router as sales_management_router, scoped as scope
 from .field_assets import router as field_assets_router
 from .sr_verification import router as sr_verification_router
 from .commissions import router as commissions_router
+from .location_tracking import router as location_tracking_router, enforce_capture as enforce_work_boundary, active_session as active_work_session, end_work, retain_locations, lock_member
+from .map_imagery import router as map_imagery_router
 from .email_delivery import deliver_pending
 from .client_scope import configure as configure_client_scope
 
@@ -76,15 +78,27 @@ async def email_worker():
             logging.getLogger("relay.email").error("Email queue could not complete; persisted messages will retry")
 
 
+async def location_retention_worker():
+    while True:
+        try:
+            await asyncio.to_thread(retain_locations)
+        except Exception:
+            import logging
+            logging.getLogger("qanawat.location").error("Work-location retention will retry")
+        await asyncio.sleep(1800)
+
+
 @asynccontextmanager
 async def lifespan(app):
     task = asyncio.create_task(worker())
     ocr_task = asyncio.create_task(capture_worker())
     mail_task = asyncio.create_task(email_worker())
+    location_task = asyncio.create_task(location_retention_worker())
     yield
     task.cancel()
     ocr_task.cancel()
     mail_task.cancel()
+    location_task.cancel()
     try:
         await task
     except asyncio.CancelledError:
@@ -95,6 +109,10 @@ async def lifespan(app):
         pass
     try:
         await ocr_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await location_task
     except asyncio.CancelledError:
         pass
 
@@ -123,6 +141,8 @@ app.include_router(sales_management_router)
 app.include_router(field_assets_router)
 app.include_router(sr_verification_router)
 app.include_router(commissions_router)
+app.include_router(location_tracking_router)
+app.include_router(map_imagery_router)
 origin = os.getenv("WEB_ORIGIN", "http://localhost:5173")
 app.add_middleware(
     CORSMiddleware,
@@ -164,11 +184,20 @@ async def safeguards(request: Request, call_next):
         if request.url.path.startswith("/api/auth")
         else "api",
     )
+    # Authenticated point collectors share office IPs. Give each signed member
+    # its own bounded bucket; unauthenticated traffic retains the IP limit.
+    if request.url.path == "/api/location-tracking/points":
+        try:
+            value = request.headers.get("authorization", "")
+            token = jwt.decode(value.removeprefix("Bearer "), SECRET, algorithms=["HS256"], audience="relay")
+            key = (str(token["sub"]), "location")
+        except (jwt.PyJWTError, KeyError, TypeError):
+            pass
     window = limits[key]
     stamp = time.monotonic()
     while window and stamp - window[0] > 60:
         window.popleft()
-    if len(window) >= {"login": 30, "session": 120, "api": 600}[key[1]]:
+    if len(window) >= {"login": 30, "session": 120, "api": 600, "location": 60}[key[1]]:
         return Response(
             "Too many requests. Try again shortly.", status_code=429, headers={"Retry-After": "60"}
         )
@@ -1193,7 +1222,13 @@ def shift(
 ):
     require(db, user, "shift.write")
     assert_agent(db, user, agent_id)
+    lock_member(db, user.id)
     agent = db.scalar(select(Agent).where(Agent.id == agent_id).with_for_update())
+    if body.action == "start":
+        from .location_tracking import policy_enabled
+        if policy_enabled(db) and agent.user_id != user.id:
+            raise HTTPException(403, "Members must start their own work tracking from their device")
+        enforce_work_boundary(db, user)
     active = db.scalar(select(Shift).where(Shift.agent_id == agent_id, Shift.ended_at.is_(None)))
     if body.action == "start" and not active:
         db.add(Shift(agent_id=agent_id))
@@ -1201,6 +1236,8 @@ def shift(
     elif body.action == "end" and active:
         active.ended_at = now()
         agent.status = "OFFLINE"
+        if agent.user_id == user.id and (work := active_work_session(db, user.id)):
+            end_work(db, user, work.id, request)
     agent.last_sync = now()
     audit(db, user, "Shift " + body.action, agent_id, agent_id, request=request)
     db.commit()
@@ -1715,6 +1752,9 @@ def update_role(
         "call.welcome.write",
         "shift.write",
         "location.write",
+        "location.self",
+        "location.read",
+        "location.manage",
     }
     if not set(body.permissions) <= allowed:
         raise HTTPException(422, "Unsupported permission")

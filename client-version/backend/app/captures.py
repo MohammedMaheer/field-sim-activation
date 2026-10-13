@@ -41,6 +41,7 @@ from .security import principal, permissions, require, assert_agent, visible_age
 from .services import audit
 from .invoices import invoice
 from .capture_ocr import extractor, inspect_image, OcrBusy
+from .location_tracking import enforce_capture
 
 router = APIRouter(prefix="/api/kyc-captures", tags=["KYC transaction captures"])
 SAMPLE_REFERENCE_PREFIXES = (
@@ -577,6 +578,7 @@ def valid_mrz_part(value, check):
 @router.post("/read-document")
 def read_document(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    enforce_capture(db, user)
     user_id = user.id
     # Authorization has completed; do not occupy a pool checkout during Tesseract.
     db.rollback()
@@ -772,6 +774,7 @@ def order_fields(lines, warnings=None):
 @router.post("/read-order")
 def read_order(body: IdentityImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    enforce_capture(db, user)
     user_id = user.id
     db.rollback()
     try:
@@ -918,6 +921,7 @@ def receipt_sr_number(lines):
 @router.post("/receipt-fields")
 def read_receipt_fields(body: ReceiptImage, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    enforce_capture(db, user)
     user_id = user.id
     db.rollback()
     try:
@@ -1008,6 +1012,7 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
         if existing.creator_id != user.id or existing.agent_id != body.agent_id or payload(existing).get("submission_hash") != fingerprint:
             raise HTTPException(409, "This submission identifier was already used for another sale")
         return view(existing)
+    enforce_capture(db, user)
     if body.intake.capture_mode != "SCREENSHOT_SALE":
         raise HTTPException(422, "Use the current sale capture workflow")
     body.intake.complete()
@@ -1073,6 +1078,7 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
 @router.post("", status_code=201)
 def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    enforce_capture(db, user)
     assert_agent(db, user, body.agent_id)
     try:
         data = base64.b64decode(body.image_base64, validate=True)
@@ -1471,6 +1477,7 @@ def submit(
     db=Depends(get_db),
 ):
     access(db, user, True)
+    enforce_capture(db, user)
     row = get_capture(db, user, capture_id, True)
     if row.status == "SUBMITTED":
         return view(row)
@@ -1577,6 +1584,7 @@ def retry(
     db=Depends(get_db),
 ):
     access(db, user, True)
+    enforce_capture(db, user)
     from .ocr_queue import admission_lock, ensure_admission
     admission_lock(db)
     row = get_capture(db, user, capture_id, True)

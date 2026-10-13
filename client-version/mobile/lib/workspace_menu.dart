@@ -11,6 +11,7 @@ class WorkspaceMenu extends ConsumerWidget {
     final user = ref.watch(serviceProvider).user;
     final pages = <String, String>{
       '/sales-management': 'Sales records & targets',
+      '/work-location': 'Work location',
       '/records': 'Historical activations',
       '/transactions': 'Backend transaction history',
       '/call-work': 'Calling queues',

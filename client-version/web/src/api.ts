@@ -10,6 +10,20 @@ export function canManageMasterData(user: Row, kind: string): boolean {
     kind === 'incentives' ? user.permissions.includes('incentive.write') : canManageOrganization(user);
 }
 let access = "";
+let captureLocationGuard: (() => Promise<void>) | null = null;
+let captureLocationCheck: Promise<void> | null = null;
+let workLogoutGuard: (() => Promise<void>) | null = null;
+export function setWorkLogoutGuard(guard: (() => Promise<void>) | null) {
+  workLogoutGuard = guard;
+}
+export function setCaptureLocationGuard(guard: (() => Promise<void>) | null) {
+  captureLocationGuard = guard;
+}
+const captureCreates = new Set([
+  "/kyc-captures/ocr-jobs", "/kyc-captures/read-document",
+  "/kyc-captures/read-order", "/kyc-captures/receipt-fields",
+  "/kyc-captures/sale-submissions", "/kyc-captures", "/sales-management/sales", "/transactions",
+]);
 let refreshPromise: Promise<any> | null = null;
 export function setAccess(token: string) {
   access = token;
@@ -38,6 +52,14 @@ export async function api(
   options: RequestInit = {},
   retry = true,
 ): Promise<any> {
+  if (options.method === "POST" && path === "/auth/logout" && workLogoutGuard) {
+    await workLogoutGuard();
+  }
+  if (options.method === "POST" && captureCreates.has(path.split("?")[0]) && captureLocationGuard) {
+    // Concurrent scanner/submission requests share one fresh device-location check.
+    if (!captureLocationCheck) captureLocationCheck = captureLocationGuard().finally(() => { captureLocationCheck = null; });
+    await captureLocationCheck;
+  }
   const r = await fetch("/api" + path, {
     ...options,
     credentials: "include",
@@ -57,7 +79,7 @@ export async function api(
   }
   if (!r.ok) {
     if (r.status === 429)
-      throw Object.assign(new Error("Too many requests. Wait a minute and try again."), { status: r.status });
+      throw Object.assign(new Error(r.headers.get("Retry-After") === "1" ? "Location updates are arriving too quickly. Try again in a second." : "Too many requests. Wait a minute and try again."), { status: r.status });
     const body = await r
       .json()
       .catch(() => ({ detail: "Request failed. Please try again." }));

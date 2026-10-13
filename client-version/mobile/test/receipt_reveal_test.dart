@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:relay_agent/receipt_reveal.dart';
+import 'package:relay_agent/branding.dart';
 
 const headerKey = ValueKey('invoice-header');
 const footerKey = ValueKey('invoice-footer');
@@ -95,6 +96,11 @@ void main() {
           ),
         );
         final status = find.byKey(const ValueKey('receipt-printer-status'));
+        expect(
+          find.byType(QanawatBrand),
+          findsNothing,
+          reason: 'The printer leaves branding to the single paper header',
+        );
         final headerHeight = tester.getTopLeft(paperClip()).dy;
         expect(find.text('PRINTING…'), findsOneWidget);
         await tester.pumpAndSettle();

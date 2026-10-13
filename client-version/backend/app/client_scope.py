@@ -61,6 +61,7 @@ def configure(app):
         or r.path.startswith(
             (
                 "/api/notifications",
+                "/api/location-tracking",
                 "/api/transactions",
                 "/api/organization",
                 "/api/administration",

@@ -762,9 +762,10 @@ def test_readonly_records_and_api_contract(client):
     assert not any("/orders" in p or "/roles" in p for p in paths)
 
 
-def test_location_collection_is_removed(client):
+def test_legacy_location_surface_is_removed_and_work_tracking_is_explicit(client):
     data = login(client, "agent1")
     assert "location.write" not in data["user"]["permissions"]
+    assert "location.self" in data["user"]["permissions"]
     a = client.get("/api/resources/agents").json()[0]
     assert not {"lat", "lng", "accuracy", "geofence", "distance"} & a.keys()
     assert (
@@ -777,8 +778,9 @@ def test_location_collection_is_removed(client):
         assert client.get("/api/resources/" + resource).status_code == 404
     assert client.get("/api/reports/geofence").status_code == 404
     assert not any(
-        "/location" in p or "/territories" in p for p in client.get("/openapi.json").json()["paths"]
+        p == "/api/agents/{agent_id}/location" or "/territories" in p for p in client.get("/openapi.json").json()["paths"]
     )
+    assert client.get("/api/location-tracking/me").json()["work_session"] is None
 
 
 def test_branch_filters_intersect_role_scope_and_charts_reconcile(client):

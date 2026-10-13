@@ -945,24 +945,9 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
                       padding: const EdgeInsets.all(12),
                       child: Column(
                         children: [
-                          Wrap(
-                            alignment: WrapAlignment.spaceBetween,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            spacing: 12,
-                            runSpacing: 8,
-                            children: [
-                              const QanawatBrand(width: 164, height: 47),
-                              Text(
-                                payment
-                                    ? 'REFERENCE BILL'
-                                    : 'ACTIVATION RECEIPT',
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  letterSpacing: 1,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: QanawatBrand(width: 164, height: 47),
                           ),
                           const Divider(height: 16),
                           if (payment)

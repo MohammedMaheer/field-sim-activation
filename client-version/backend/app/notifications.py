@@ -135,6 +135,19 @@ def feed(db, user):
         home = "/call-work" if role in {"Tele Verification Officer", "Welcome Call Officer"} else "/"
         add(f"notice:{row.id}", "Stock" if stock else "Workspace", "SIM activity" if stock else "Workspace update",
             row.message, row.created_at, "/inventory" if stock else home, "/stock" if stock else home)
+    if granted & {"location.self", "location.read"}:
+        from .location_tracking import LatestWorkLocation, WorkSession, scoped_users, current_point
+        members = {person.id: person for person in scoped_users(db, user)}
+        active = set(db.scalars(select(WorkSession.user_id).where(WorkSession.user_id.in_(members), WorkSession.ended_at.is_(None))))
+        for point in db.scalars(select(LatestWorkLocation).where(LatestWorkLocation.user_id.in_(active),
+                                                                LatestWorkLocation.state.in_(["OUTSIDE", "UNCERTAIN"]))):
+            person = members[point.user_id]
+            if not current_point(db, person, point):
+                continue
+            title = "Outside work boundary" if point.state == "OUTSIDE" else "Work location needs a clearer signal"
+            add(f"work-location:{point.id}:{point.state}:{point.state_changed_at.isoformat()}", "Workspace", title,
+                f"{person.name} · Open work locations for the latest update", point.state_changed_at,
+                "/location-tracking", "/work-location", True)
     result.sort(key=lambda item: (item["created_at"], item["id"]), reverse=True)
     return result[:500]
 

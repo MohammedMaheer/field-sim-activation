@@ -20,7 +20,8 @@ function privateValue(label: string, value: unknown) {
 export function referenceBillSections(sections: Row[]) {
   return sections.map((section) => ({
     ...section,
-    title: section.title === "Invoice" ? "Reference bill" : section.title,
+    title: ["Invoice", "Payment invoice", "Sale receipt", "Reference bill"].includes(section.title)
+      ? "Reference details" : section.title,
     fields: (section.fields || []).map((field: Row) => ({
       ...field,
       label: field.label === "Invoice number" ? "Reference bill number" : field.label,

@@ -24,6 +24,7 @@ import 'relay_theme.dart';
 import 'typography.dart';
 import 'branding.dart';
 import 'exports.dart';
+import 'work_location_screen.dart';
 
 const burgundy = RelayPalette.brand,
     ink = RelayPalette.ink,
@@ -44,6 +45,10 @@ final router = GoRouter(
   },
   routes: [
     GoRoute(path: '/', builder: (c, s) => const Gate()),
+    GoRoute(
+      path: '/work-location',
+      builder: (c, s) => const WorkLocationScreen(),
+    ),
     GoRoute(
       path: '/notifications',
       builder: (c, s) => const NotificationsScreen(),
@@ -159,6 +164,10 @@ class RelayApp extends ConsumerWidget {
       debugShowCheckedModeBanner: false,
       routerConfig: router,
       theme: relayTheme(),
+      builder: (context, child) => WorkLocationBanner(
+        child: child!,
+        onOpen: () => router.push('/work-location'),
+      ),
     );
   }
 }
@@ -194,6 +203,7 @@ class _GateState extends ConsumerState<Gate> {
           title: const Text('Inventory'),
           actions: [
             const NotificationBell(),
+            const WorkLocationButton(),
             IconButton(
               onPressed: () => context.push('/assets'),
               icon: const Icon(Icons.inventory_2_outlined),
@@ -744,7 +754,17 @@ class HomeScreen extends ConsumerWidget {
                   const SizedBox(width: 8),
                   Row(
                     children: [
-                      StatusPill(onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT'),
+                      Tooltip(
+                        message: 'Work location & shift',
+                        child: InkWell(
+                          onTap: canVisitMobilePage('/work-location', s.user)
+                              ? () => context.push('/work-location')
+                              : null,
+                          child: StatusPill(
+                            onShift ? 'ACTIVE SHIFT' : 'OFF SHIFT',
+                          ),
+                        ),
+                      ),
                       const NotificationBell(),
                     ],
                   ),
@@ -2224,7 +2244,14 @@ class ProfileScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 20),
-            if (canManageOwnShift) ...[
+            if (canVisitMobilePage('/work-location', s.user)) ...[
+              OutlinedButton.icon(
+                onPressed: () => context.push('/work-location'),
+                icon: const Icon(Icons.my_location_outlined),
+                label: const Text('Work location & shift'),
+              ),
+              const SizedBox(height: 12),
+            ] else if (canManageOwnShift) ...[
               FilledButton.icon(
                 onPressed: () async {
                   try {

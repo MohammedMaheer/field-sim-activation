@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from .capture_ocr import OcrBusy, extractor, inspect_image
 from .db import Agent, DB, Entity, KycCapture, Role, User, get_db, now
 from .security import CAPTURE_WRITERS, cipher, permissions, principal
+from .location_tracking import enforce_capture
 
 router = APIRouter(prefix="/api/kyc-captures/ocr-jobs", tags=["Document extraction"])
 ACTIVE = {"QUEUED", "PROCESSING"}
@@ -155,6 +156,7 @@ def view(row):
 @router.post("", status_code=202)
 def create_job(body: JobBody, response: Response, user=Depends(principal), db=Depends(get_db)):
     capture_access(db, user)
+    enforce_capture(db, user)
     try:
         data = base64.b64decode(body.image_base64, validate=True)
         inspect_image(data)

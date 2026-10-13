@@ -18,6 +18,7 @@ from .security import principal, require, assert_agent, visible_agents, cipher
 from .services import audit, order_view, raw, submit
 from .capture_ocr import extractor, inspect_image, OcrBusy
 from . import providers
+from .location_tracking import enforce_capture
 
 router = APIRouter(prefix="/api/transactions", tags=["Reference transaction journey"])
 
@@ -64,6 +65,8 @@ def view(db, order):
 
 def owned(db, user, identifier, version=None, editable=False):
     require(db, user, "ekyc.write" if editable else "read")
+    if editable:
+        enforce_capture(db, user)
     order = db.scalar(select(Order).where(Order.id == identifier).with_for_update())
     if not order or "transaction_data" not in order.draft:
         raise HTTPException(404, "Transaction not found")
@@ -83,6 +86,7 @@ class Start(BaseModel):
 @router.post("")
 def start(body: Start, request: Request, user=Depends(principal), db=Depends(get_db)):
     require(db, user, "ekyc.write")
+    enforce_capture(db, user)
     assert_agent(db, user, body.agent_id)
     if db.bind.dialect.name == "postgresql":
         db.execute(

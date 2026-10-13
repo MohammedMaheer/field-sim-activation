@@ -6,6 +6,7 @@ import 'services.dart';
 import 'role_access.dart';
 import 'branch_filter.dart';
 import 'typography.dart';
+import 'work_location_screen.dart';
 
 bool canRecordCall(Json task, Json? user) {
   if (!['PENDING', 'FAILED'].contains(task['status'])) return false;
@@ -373,6 +374,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
         title: const Text('Call work queue'),
         actions: [
           const NotificationBell(),
+          const WorkLocationButton(),
           if (compact)
             PopupMenuButton<String>(
               tooltip: 'Call actions',

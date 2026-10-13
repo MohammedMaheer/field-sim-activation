@@ -45,7 +45,7 @@ def invoice(row, data):
     )
     sections = [
         {
-            "title": "Reference bill",
+            "title": "Reference details",
             "fields": [
                 field("Sale reference" if sale_mode else "Reference bill number", ("SALE-" if sale_mode else "PAY-") + row.id[:8].upper()),
                 field("Date", row.created_at.strftime("%d %b %Y, %H:%M UTC")),

@@ -24,6 +24,8 @@ import CallWorkspace from "./CallWorkspace";
 import FieldAssets from "./FieldAssets";
 import { Incentives, Support } from "./ProposalOperations";
 import PageBoundary from "./PageBoundary";
+import LocationTracking from "./LocationTracking";
+import { WorkLocationProvider, WorkLocationNotice } from "./WorkLocation";
 
 import Dashboard, { BranchFilter } from "./Dashboard";
 import {
@@ -145,6 +147,7 @@ const navigation = [
     items: [
       ["", "Overview", LayoutDashboard],
       ["live", "Live operations", Radio],
+      ["location-tracking", "Work locations", MapPinned],
     ],
   },
   {
@@ -207,6 +210,8 @@ export function canVisitPage(path: string, user: Row) {
     return ["read", "call.tele.read", "call.welcome.read"].some((permission) =>
       user.permissions?.includes(permission),
     );
+  if (path === "location-tracking")
+    return ["location.self", "location.read", "location.manage"].some((grant) => user.permissions?.includes(grant));
   if (path === "sr-verification")
     return (
       user.permissions?.includes("read") &&
@@ -474,7 +479,7 @@ export default function App() {
       ["Tele Verification Officer", "Welcome Call Officer"].includes(
         user.role,
       ) &&
-      !["/call-work", "/notifications"].includes(location.pathname)
+      !["/call-work", "/notifications", "/location-tracking"].includes(location.pathname)
     )
       navigate("/call-work", { replace: true });
   }, [user, location.pathname, navigate]);
@@ -594,6 +599,7 @@ export default function App() {
   return (
     <Context.Provider value={{ user, notify: setToast }}>
       <BranchScope key={user.id} user={user}>
+        <WorkLocationProvider key={user.id} user={user}>
         <div className="app-shell">
           <a className="skip-link" href="#workspace-content">
             Skip to content
@@ -803,6 +809,7 @@ export default function App() {
               </div>
             </header>
             <main className="content" id="workspace-content" tabIndex={-1}>
+              <WorkLocationNotice />
               <div className="route-stage" key={location.pathname}>
                 <PageBoundary key={location.pathname}>
                   {canVisitPage(location.pathname, user) ? (
@@ -818,6 +825,7 @@ export default function App() {
                         element={<SRVerification />}
                       />
                       <Route path="/call-work" element={<CallWorkspace />} />
+                      <Route path="/location-tracking" element={<LocationTracking />} />
                       <Route path="/equipment" element={<FieldAssets />} />
                       <Route
                         path="/screenshot-capture"
@@ -906,6 +914,7 @@ export default function App() {
             </button>
           </div>
         )}
+        </WorkLocationProvider>
       </BranchScope>
     </Context.Provider>
   );
@@ -2075,7 +2084,9 @@ function Reports() {
         eyebrow="INSIGHTS THAT TRAVEL"
         title="Reports & exports"
         description="Structured data. Clear reporting. Ready for your next decision."
-      />
+      >
+        {canVisitPage("location-tracking", user) && <Link className="button" to="/location-tracking?export=1"><MapPin size={17} /> Work location export</Link>}
+      </PageHeader>
       <section className="panel report-card" style={{ marginBottom: 16 }}>
         <h2>Sales, targets &amp; follow-ups</h2>
         <p>Current sales with product, sales agent, branch and call outcomes</p>

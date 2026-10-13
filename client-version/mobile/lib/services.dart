@@ -11,6 +11,8 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:synchronized/synchronized.dart';
 import 'role_access.dart';
+import 'location_tracking.dart';
+import 'package:uuid/uuid.dart';
 
 typedef Json = Map<String, dynamic>;
 const apiUrl = String.fromEnvironment(
@@ -163,10 +165,38 @@ class RelayService extends ChangeNotifier {
   Timer? timer;
   StreamSubscription<List<ConnectivityResult>>? connectivity;
   Future<void>? refreshing;
-  RelayService() {
+  late final WorkLocationController workLocation;
+  Future<String>? _workDeviceIdentity;
+  Future<String> workDeviceIdentity() => _workDeviceIdentity ??= () async {
+    final key = 'qanawat_work_device_$refreshStorageKey';
+    var identifier = await store.secure.read(key: key);
+    if (identifier == null || identifier.isEmpty) {
+      identifier = const Uuid().v4();
+      await store.secure.write(key: key, value: identifier);
+    }
+    return '${isPreview ? 'Qanawat mobile demo' : 'Qanawat mobile app'}:$identifier';
+  }();
+  RelayService({WorkPositionSource? workPositions}) {
+    workLocation = WorkLocationController(
+      dio,
+      positions: workPositions,
+      deviceIdentity: workDeviceIdentity,
+    );
     dio.interceptors.add(
       InterceptorsWrapper(
-        onRequest: (options, handler) {
+        onRequest: (options, handler) async {
+          if (isLocationCaptureRequest(options) &&
+              (user?['permissions'] as List? ?? []).contains('location.self')) {
+            workLocation.bindAccount(user);
+            try {
+              await workLocation.ensureCaptureAllowed();
+            } catch (error) {
+              handler.reject(
+                DioException(requestOptions: options, error: error),
+              );
+              return;
+            }
+          }
           if (access != null) {
             options.headers['Authorization'] = 'Bearer $access';
           }
@@ -208,6 +238,7 @@ class RelayService extends ChangeNotifier {
               return;
             } catch (_) {
               user = null;
+              workLocation.bindAccount(null);
               notifyListeners();
             }
           }
@@ -247,6 +278,7 @@ class RelayService extends ChangeNotifier {
     );
     access = r.data['access_token'];
     user = Map<String, dynamic>.from(r.data['user']);
+    workLocation.bindAccount(user);
     await store.secure.write(
       key: refreshStorageKey,
       value: r.data['refresh_token'],
@@ -263,6 +295,7 @@ class RelayService extends ChangeNotifier {
     final r = await dio.post('/auth/refresh', data: {'refresh_token': token});
     access = r.data['access_token'];
     user = Map<String, dynamic>.from(r.data['user']);
+    workLocation.bindAccount(user);
     await store.secure.write(
       key: refreshStorageKey,
       value: r.data['refresh_token'],
@@ -270,6 +303,13 @@ class RelayService extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    try {
+      if (online && workLocation.active) await workLocation.end();
+    } catch (_) {
+      // Sign-out remains available if ending the remote work session fails.
+      // No further points are collected locally; the server marks them stale.
+    }
+    workLocation.bindAccount(null);
     try {
       if (online) await dio.post('/auth/logout');
     } on DioException {
@@ -279,6 +319,7 @@ class RelayService extends ChangeNotifier {
     await store.clear();
     access = null;
     user = null;
+    workLocation.bindAccount(null);
     _branchId = null;
     _branchAccount = null;
     queued = 0;
@@ -355,6 +396,7 @@ class RelayService extends ChangeNotifier {
 
   Future<void> sync() async {
     if (syncing || user == null) return;
+    workLocation.bindAccount(user);
     syncing = true;
     syncError = null;
     notifyListeners();
@@ -400,13 +442,18 @@ class RelayService extends ChangeNotifier {
   void dispose() {
     timer?.cancel();
     connectivity?.cancel();
+    workLocation.dispose();
     dio.close();
     super.dispose();
   }
 }
 
 String friendlyError(Object error) {
+  if (error is WorkLocationException) return error.message;
   if (error is DioException) {
+    if (error.error is WorkLocationException) {
+      return (error.error as WorkLocationException).message;
+    }
     final data = error.response?.data;
     if (data is Map && data['detail'] is String) return data['detail'];
     if (error.response == null) {

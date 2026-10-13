@@ -28,6 +28,10 @@ void main() async {
 // Sessions and capture shortcuts still use the shared role-scoped API.
 class SharedPreviewService extends RelayService {
   String? sampleReference;
+  String demoSrForReference(String? reference) {
+    final sample = RegExp(r'^SAMPLE-REQ-(\d+)$').firstMatch(reference ?? '');
+    return sample == null ? 'Not recorded' : 'SAMPLE-SR-${sample.group(1)}';
+  }
   SharedPreviewService({String? baseUrl}) {
     dio.options.baseUrl = baseUrl ?? Uri.base.resolve('/api').toString();
   }
@@ -82,6 +86,7 @@ class SharedPreviewService extends RelayService {
       'Package Name: 5G Unlimited Ultra',
       'MSISDN: 0500000000',
       'Request Id: $sampleReference',
+      'SR Number: ${demoSrForReference(sampleReference)}',
       'Basic Plan: AED 350 Monthly - AED 0 Prepayment',
       'Grand Total: 350 Monthly / 0 Prepayment',
       'not including VAT',
@@ -93,7 +98,7 @@ class SharedPreviewService extends RelayService {
     'Success',
     'Order created successfully',
     'Request Id: ${reference ?? sampleReference ?? "Not recorded"}',
-    'SR Number: SAMPLE-SR-${DateTime.now().microsecondsSinceEpoch}',
+    'SR Number: ${demoSrForReference(reference ?? sampleReference)}',
     'Customer: Avery Stone',
     'Date: ${DateTime.now().toIso8601String().substring(0, 10)}',
   ]);

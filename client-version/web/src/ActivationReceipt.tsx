@@ -79,7 +79,7 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
   );
   const sections: Row[] = referenceBillSections(capture.invoice?.sections || []);
   const primaryLabels: Record<string, string[]> = {
-    "Reference bill": ["Reference bill number", "Sale reference", "SR number", "Date"],
+    "Reference details": ["Reference bill number", "Sale reference", "SR number", "Date"],
     Customer: ["Customer name", "Document number", "Phone number"],
     "SIM & plan": orderMode
       ? ["Request ID", "Plan", "Monthly charge", "Prepayment on order"]
@@ -141,8 +141,8 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
       </Link>
       <div className="receipt-kiosk-machine">
         <div className="receipt-kiosk-screen">
-          <img src="/branding/qanawat-logo.png" alt="Qanawat" style={{width: 126, height: "auto", background: "white", borderRadius: 6, padding: 5}} />
-          <span>{generatedBill ? "REFERENCE BILL" : "ACTIVATION RECEIPT"}</span>
+          <Printer size={23} aria-hidden="true" />
+          <span>Paper printer</span>
           <button
             type="button"
             aria-label={generatedBill ? "Replay reference bill printing" : "Replay receipt printing"}
@@ -193,9 +193,6 @@ export default function ActivationReceipt({ capture, canExport }: { capture: Row
           {error && <p role="alert">{error}</p>}
           <div className="receipt-paper-brand">
             <img src="/branding/qanawat-logo.png" alt="Qanawat Connect Solutions LLC" style={{width: 200, maxWidth: "60%", height: "auto"}} />
-            <span>
-              {generatedBill ? "REFERENCE BILL" : "ACTIVATION RECEIPT"}
-            </span>
           </div>
           {saleMode && (
             <dl className="sale-verification-summary">

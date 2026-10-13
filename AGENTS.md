@@ -1,3 +1,7 @@
+# Work location clarification - 13 October 2026
+
+The owner has explicitly added geofencing and work-location recording for all signed-in member roles, superseding the earlier exclusion. Administrators configure branch or member boundaries using location, radius and optional map selection. When enforcement is enabled, starting a shift or capturing a sale outside the assigned boundary is blocked on the server as well as in the clients. Missing, stale, mocked or uncertain location cannot establish that a member is inside. Track only a visibly started work session with device permission; stop collection on sign-out or work-session end. Managers see only their authorized current members. Location exports follow the same scope. Default enforcement remains off until real boundaries have been configured; do not invent staff positions or client branch coordinates. Public street/3D maps and dated satellite overviews may be used with attribution and clear availability/resolution labels. The earlier full-edition territory endpoints remain independent.
+
 # Branch management and access clarification - 9 October 2026
 
 Administrators review and manage transactions but cannot capture new sales. Operations staff and sales agents retain authorized capture access. Use Sales agent in client-facing labels while preserving internal role/API identifiers. A branch may have multiple team leaders; every sales agent has an explicit designated leader. Creating or editing a leader never silently reassigns sales agents. Only authorized management may change assignments; historical sales and notifications retain the saved leader. Branch selection is shared across pages and account-scoped. Reports start with today's date. Product targets cover NEW, MNP, P2P, HW, ELIFE, WASEL and VISITOR. Manage workspace and sidebar Notifications are removed from navigation; the top notification bell remains. This supersedes earlier single-leader and administrator capture notes.
@@ -28,7 +32,7 @@ The maintained product is `client-version/`: FastAPI/PostgreSQL, React/TypeScrip
 
 - Update web and mobile together for changes to shared workflows and field names.
 - Teams belong to branches. Intersect branch filters with the authenticated user's authorized agents; never broaden access through a UI filter.
-- Location, territory and geofencing are excluded. Do not add location permissions, collection, maps or geofence reports to the client edition.
+- Work-location and geofencing now follow the 13 October 2026 owner clarification above; earlier territory modules are not revived.
 - Current flow: identity capture, SIM/plan/phone/signature, payment-confirmation image upload, independent review, then externally completed activation recorded by backend staff. Preserve historical activation-receipt records. No simulated carrier or biometric approval.
 - Retain synthetic records; keep demo and technical paragraphs out of client-facing screens.
 - Use synthetic demo data. Keep secrets, device credentials, captured customer images, database snapshots and generated binaries outside Git.

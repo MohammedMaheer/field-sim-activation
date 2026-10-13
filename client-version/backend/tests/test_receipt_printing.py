@@ -61,7 +61,7 @@ def test_new_reference_bill_places_sr_once_with_primary_sale_details(client):
     assert response.status_code == 200
     sections = response.json()['invoice']['sections']
     first = sections[0]
-    assert first['title'] == 'Reference bill'
+    assert first['title'] == 'Reference details'
     assert first['fields'][3]['label'] == 'Activation'
     assert {'label': 'SR number', 'value': sr} in first['fields']
     assert len([field for section in sections for field in section['fields'] if field['label'] == 'SR number']) == 1
@@ -92,7 +92,7 @@ def test_print_preparation_rechecks_effective_export_permission_and_scope(client
     url = f"/api/kyc-captures/{submitted['id']}/print-data"
     response = client.get(url)
     assert response.status_code == 200 and 'no-store' in response.headers['cache-control']
-    assert response.json()['invoice']['sections'][0]['title'] == 'Reference bill'
+    assert response.json()['invoice']['sections'][0]['title'] == 'Reference details'
     assert response.json()['invoice']['sr_verification']['verified_at'] == '2026-10-11T08:00:00'
     assert 'images' not in response.json() and 'lines' not in response.json()
     login(client, 'agent2')

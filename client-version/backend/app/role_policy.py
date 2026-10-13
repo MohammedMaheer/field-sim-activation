@@ -34,3 +34,11 @@ ROLE_PERMISSIONS = {'Field Agent': ['read', 'ekyc.write', 'shift.write', 'invent
                    'device.ping',
                    'compliance.write',
                    'shift.write']}
+
+# Work-location grants are separate from historic customer/sales visibility.
+for _role, _grants in ROLE_PERMISSIONS.items():
+    _grants.append("location.self")
+    if _role in {"Administrator", "Operations Manager", "Sales Manager", "Branch Manager", "Team Leader"}:
+        _grants.append("location.read")
+    if _role in {"Administrator", "Operations Manager"}:
+        _grants.append("location.manage")

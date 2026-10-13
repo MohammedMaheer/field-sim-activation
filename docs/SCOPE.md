@@ -1,3 +1,7 @@
+# Work location addition — 13 October 2026
+
+The owner has added work-session location recording and configurable geofencing for every member role. Administrators set a branch or member's center and radius, optionally by map selection. Enabled enforcement blocks shift starts and sale capture outside the boundary, and fails closed for missing, stale, mocked or uncertain GPS. Work tracking is visible and permission-based; clients stop collection when a work session ends or the user signs out. Current role/branch assignments govern location visibility and exports. Enforcement starts disabled until real boundaries are configured. Street/3D maps and dated satellite overviews are optional external map sources; they do not determine GPS authorization or sale status. This supersedes the earlier location exclusion.
+
 # October client clarification - 9 October 2026
 
 See [October client update](OCTOBER-2026-CLIENT-UPDATE.md) for the latest rules. New sales capture customer and order screens, then review and submit with an optional payment receipt; there is no separate payment-confirmation gate. Backend evidence review is independent, team leaders receive read-only updates, and daily SR reconciliation has a separate pending/mismatch state that does not block recording external activation. Approved incentive rates and CRR/DRR are implemented; unknown policy inputs and projection remain on hold. Cancelled sales are excluded from original-date net totals. This supersedes earlier workflow notes below.
@@ -48,6 +52,6 @@ The invoice is projected from saved data. The chosen plan's price is distinct fr
 
 ## Excluded or external
 
-Location, territory and geofencing are excluded. Etisalat activation and payment-provider authorization are external. No live biometric verification, carrier activation, payroll execution or real customer identity data is claimed. The separate phone-framed browser experience is an isolated synthetic demonstration of the mobile screens; the installed APK uses the shared backend.
+The original location exclusion is superseded by the 13 October 2026 addition above. Earlier territory/task modules remain excluded. Etisalat activation and payment-provider authorization are external. No live biometric verification, carrier activation, payroll execution or real customer identity data is claimed. The phone-framed browser experience uses the shared backend and synthetic capture shortcuts; it never invents work locations.
 
 The earlier receipt-upload and payment-excluded flows are historical decisions superseded by this document. See `docs/KYC-TRANSACTION-FLOW.md` for current API states and review controls.

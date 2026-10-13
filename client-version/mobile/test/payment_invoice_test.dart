@@ -4,6 +4,18 @@ import 'package:relay_agent/payment_invoice.dart';
 import 'package:relay_agent/preview_main.dart';
 
 void main() {
+  test('saved document headings normalize to a distinct details section', () {
+    for (final title in [
+      'Invoice',
+      'Payment invoice',
+      'Sale receipt',
+      'Reference bill',
+      'Reference details',
+    ]) {
+      expect(referenceBillTitle(title), 'Reference details');
+    }
+    expect(referenceBillTitle('Customer'), 'Customer');
+  });
   test(
     'sale reference bill shows SR only once with its verification status',
     () {
