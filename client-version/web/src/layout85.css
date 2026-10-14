@@ -1,0 +1,157 @@
+/* A control row owns spacing; field labels must not add invisible row margins. */
+:root {
+  --control-row-height: 44px;
+}
+.branch-filter,
+.top-actions .branch-filter {
+  margin: 0;
+  min-height: var(--control-row-height);
+  padding: 0 10px;
+}
+.branch-filter select {
+  margin: 0;
+  padding: 0 2px;
+  height: calc(var(--control-row-height) - 2px);
+  min-height: calc(var(--control-row-height) - 2px);
+  flex: 1;
+  min-width: 0;
+}
+.branch-filter > svg {
+  flex-shrink: 0;
+}
+.branch-filter:has([role="alert"]) {
+  flex-wrap: wrap;
+}
+.branch-filter > [role="alert"] {
+  flex-basis: 100%;
+  padding-bottom: 8px;
+}
+
+:is(.sales-form, .location-form-grid) > label,
+.review-inbox-header > label,
+.report-row-search > label,
+.location-editor .location-form-grid label,
+:is(
+    .sales-toolbar,
+    .sr-comparison-filters,
+    .location-table-filters,
+    .map-place-search,
+    .map-focus-controls
+  )
+  > label,
+.map-focus-controls label {
+  margin: 0;
+}
+:is(.sales-form, .location-form-grid)
+  label
+  > :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea),
+:is(
+    .sales-toolbar,
+    .sr-comparison-filters,
+    .location-table-filters,
+    .map-place-search,
+    .map-focus-controls
+  )
+  label
+  > :is(input:not([type="checkbox"]):not([type="radio"]), select),
+.map-focus-controls select,
+.table-tools .search input {
+  margin-top: 0;
+}
+.review-inbox-header label > :is(input, select),
+.report-row-search label > input {
+  margin-top: 0;
+}
+.table-tools .search {
+  min-height: var(--control-row-height);
+}
+.table-tools .search input {
+  height: calc(var(--control-row-height) - 2px);
+  min-height: calc(var(--control-row-height) - 2px);
+}
+.table-tools .filter-control select {
+  min-height: var(--control-row-height);
+}
+.sales-form {
+  align-items: end;
+}
+.sales-form
+  label
+  > :is(input:not([type="checkbox"]):not([type="radio"]), select),
+.sales-toolbar label > input,
+.export-controls > select {
+  height: var(--control-row-height);
+  min-height: var(--control-row-height);
+}
+.sales-form input[type="file"] {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+.sr-comparison-filters > button {
+  line-height: 1.3;
+  white-space: nowrap;
+}
+:is(
+  .location-head-actions,
+  .sales-toolbar,
+  .map-place-search,
+  .export-controls
+) {
+  align-items: center;
+}
+:is(
+    .location-head-actions,
+    .page-actions,
+    .leader-header-actions,
+    .sales-toolbar,
+    .sales-section-head,
+    .proposal-toolbar,
+    .map-place-search,
+    .export-controls
+  )
+  > button,
+.sales-form > button,
+.export-controls > select,
+.sr-comparison-filters > button,
+.sr-comparison-filters input,
+.location-table-filters input,
+.location-table-filters select,
+.map-place-search input,
+.top-actions > button:not(.icon-btn) {
+  min-height: var(--control-row-height);
+}
+/* Labels remain visible above filters; controls share the same lower baseline. */
+.location-table-filters {
+  align-items: end;
+}
+
+/* Row content must not determine where the date/status column begins. */
+.review-inbox-list > button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px max-content;
+  gap: 20px;
+  align-items: center;
+}
+.review-inbox-list > button > span {
+  min-width: 0;
+}
+.review-inbox-list > button > span:nth-child(2) .badge {
+  justify-self: start;
+}
+.review-inbox-list > button > b {
+  white-space: nowrap;
+}
+@media (min-width: 601px) and (max-width: 1200px) {
+  .sales-form.compact {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .review-inbox-list > button {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+  .review-inbox-list > button > span:first-child {
+    grid-column: 1 / -1;
+  }
+}
