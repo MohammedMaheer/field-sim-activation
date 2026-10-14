@@ -2,8 +2,12 @@ import { expect, test } from "@playwright/test";
 
 test.beforeEach(({ baseURL }) => {
   const host = new URL(baseURL || "http://invalid").hostname;
-  const isolated = process.env.RELAY_ALLOW_SETUP_TEST === "1" && ["localhost", "127.0.0.1"].includes(host);
-  const hosted = process.env.RELAY_ALLOW_READONLY_TEST === "1" && host === "relay-client.187-127-162-233.sslip.io";
+  const isolated =
+    process.env.RELAY_ALLOW_SETUP_TEST === "1" &&
+    ["localhost", "127.0.0.1"].includes(host);
+  const hosted =
+    process.env.RELAY_ALLOW_READONLY_TEST === "1" &&
+    host === "relay-client.187-127-162-233.sslip.io";
   test.skip(
     !isolated && !hosted,
     "Requires explicitly selected isolated QA or read-only hosted evaluation",
@@ -40,9 +44,7 @@ for (const width of [1440, 390]) {
     await expect(
       page.getByRole("heading", { name: "Incentives", exact: true }),
     ).toBeVisible();
-    await page
-      .getByText("Calculated estimates and commission setup", { exact: true })
-      .click();
+    await page.getByRole("button", { name: "Estimates", exact: true }).click();
     await page.locator(".commission-policies > summary").click();
     const policies = page.locator(".commission-policy");
     await expect(policies).toHaveCount(4);

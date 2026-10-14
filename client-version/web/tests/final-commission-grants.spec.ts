@@ -9,7 +9,13 @@ const eligible = new Set([
   "Field Agent",
 ]);
 
-async function fixture(page: Page, role: string, path: string) {
+async function fixture(
+  page: Page,
+  role: string,
+  path: string,
+  grants?: string[],
+  failEarlier = false,
+) {
   await previewBuild(page);
   const requests: string[] = [],
     errors: string[] = [];
@@ -28,6 +34,11 @@ async function fixture(page: Page, role: string, path: string) {
         status: 403,
         json: { detail: "Commission access is unavailable for this role" },
       });
+    if (pathname === "/api/incentives" && failEarlier)
+      return route.fulfill({
+        status: 500,
+        json: { detail: "Earlier ledger unavailable" },
+      });
     let data: unknown = [];
     if (pathname === "/api/auth/refresh")
       data = {
@@ -37,7 +48,8 @@ async function fixture(page: Page, role: string, path: string) {
           name: "Commission scope reviewer",
           role,
           permissions:
-            role === "Field Agent" ? ["read"] : ["read", "report.read"],
+            grants ||
+            (role === "Field Agent" ? ["read"] : ["read", "report.read"]),
           agent_id: role === "Field Agent" ? "agent-scope-one" : undefined,
         },
       };
@@ -136,7 +148,7 @@ for (const role of ["Branch Manager", "Inventory Manager"]) {
 }
 
 for (const role of eligible) {
-  test(`${role}: authorized final ledger and subject filters stay visible`, async ({
+  test(`${role}: authorized final ledger exposes only useful people filters`, async ({
     page,
   }) => {
     const { requests, errors } = await fixture(page, role, "/incentives");
@@ -155,16 +167,26 @@ for (const role of eligible) {
         name: /FINAL-SCOPE-001 Approved final amount/,
       }),
     ).toBeVisible();
-    await expect(
-      ledger
-        .getByRole("combobox", {
-          name: "Sales agent / team leader",
+    if (["Field Agent", "Team Leader"].includes(role)) {
+      await expect(
+        ledger.getByRole("combobox", { name: "Person", exact: true }),
+      ).toHaveCount(0);
+      await expect(
+        ledger.getByRole("combobox", {
+          name: "Reporting team leader",
           exact: true,
-        })
-        .locator("option[value='commission-scope-user']"),
-    ).toHaveCount(1);
+        }),
+      ).toHaveCount(0);
+      expect(requests).not.toContain("/api/commissions/subjects");
+    } else {
+      await expect(
+        ledger
+          .getByRole("combobox", { name: "Person", exact: true })
+          .locator("option[value='commission-scope-user']"),
+      ).toHaveCount(1);
+      expect(requests).toContain("/api/commissions/subjects");
+    }
     expect(requests).toContain("/api/incentives/final");
-    expect(requests).toContain("/api/commissions/subjects");
     await expect(page.locator(".error-state")).toHaveCount(0);
     expect(errors).toEqual([]);
   });
@@ -226,3 +248,61 @@ for (const role of ["Administrator", "Operations Manager", "Sales Manager"]) {
     expect(errors).toEqual([]);
   });
 }
+
+test("final commissions stay available when earlier ledger fails and views load independently", async ({
+  page,
+}) => {
+  const { requests } = await fixture(
+    page,
+    "Administrator",
+    "/incentives",
+    ["read", "report.read"],
+    true,
+  );
+  await expect(
+    page.getByRole("cell", { name: /FINAL-SCOPE-001/ }),
+  ).toBeVisible();
+  expect(requests).not.toContain("/api/incentives");
+  expect(requests).not.toContain("/api/commissions/summary");
+  await page
+    .getByRole("button", { name: "Earlier records", exact: true })
+    .click();
+  await expect(page.locator(".error-state")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Final commissions", exact: true })
+    .click();
+  await expect(
+    page.getByRole("cell", { name: /FINAL-SCOPE-001/ }),
+  ).toBeVisible();
+  await expect(page.locator(".error-state")).toHaveCount(0);
+});
+
+test("custom role without report permission can view amounts without an unusable export action", async ({
+  page,
+}) => {
+  await fixture(page, "Sales Manager", "/incentives", ["read"]);
+  await expect(
+    page.getByRole("heading", {
+      name: "Final commission amounts",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Export final amounts", exact: true }),
+  ).toHaveCount(0);
+});
+
+test("invalid date range does not display a false zero or allow export", async ({
+  page,
+}) => {
+  await fixture(page, "Administrator", "/incentives");
+  await page.getByLabel("From date", { exact: true }).fill("2026-12-31");
+  await page.getByLabel("To date", { exact: true }).fill("2026-01-01");
+  await expect(page.getByRole("alert")).toContainText("Choose both dates");
+  await expect(
+    page.getByRole("button", { name: "Export final amounts", exact: true }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("region", { name: "Recorded commission summary" }),
+  ).toHaveCount(0);
+});

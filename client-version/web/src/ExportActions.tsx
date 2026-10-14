@@ -8,11 +8,13 @@ export default function ExportActions({
   label = "Export",
   name,
   formats = ["xlsx", "csv", "pdf"],
+  disabled = false,
 }: {
   path: string;
   label?: string;
   name: string;
   formats?: string[];
+  disabled?: boolean;
 }) {
   const [format, setFormat] = useState(formats[0]);
   const [busy, setBusy] = useState(false);
@@ -22,7 +24,7 @@ export default function ExportActions({
       <div className="export-controls">
         <select
           aria-label={`${label} format`}
-          disabled={busy}
+          disabled={busy || disabled}
           value={format}
           onChange={(event) => setFormat(event.target.value)}
         >
@@ -33,7 +35,7 @@ export default function ExportActions({
           ))}
         </select>
         <button
-          disabled={busy}
+          disabled={busy || disabled}
           onClick={async () => {
             setBusy(true);
             setError("");

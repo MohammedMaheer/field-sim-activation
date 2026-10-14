@@ -13,7 +13,7 @@ String commissionPeriod(DateTime instant) => instant
     .toIso8601String()
     .substring(0, 7);
 String commissionAmount(Json row) => row['amount'] == null
-    ? 'Awaiting configuration'
+    ? 'Estimate unavailable'
     : 'AED ${(double.tryParse('${row['amount']}') ?? 0).toStringAsFixed(2)}';
 String commissionLabel(dynamic value) =>
     '$value'.replaceAll('_', ' ').toLowerCase();
@@ -38,7 +38,7 @@ String _rateLabel(dynamic value) => switch ('$value') {
   _ => commissionLabel(value),
 };
 
-/// Uses the shared backend calculation; no estimated payouts on the device.
+/// Separates recorded final commissions from server-calculated estimates.
 class CommissionCalculations extends ConsumerStatefulWidget {
   const CommissionCalculations({super.key, required this.history, this.finals});
   final Widget history;
@@ -47,26 +47,37 @@ class CommissionCalculations extends ConsumerStatefulWidget {
   ConsumerState<CommissionCalculations> createState() => _CommissionState();
 }
 
-class _CommissionState extends ConsumerState<CommissionCalculations> {
+class _CommissionState extends ConsumerState<CommissionCalculations>
+    with SingleTickerProviderStateMixin {
   String period = commissionPeriod(DateTime.now());
   List<Json> rows = [], policies = [];
   String error = '';
   bool loading = true, fetching = false;
   bool reloadPending = false;
   Timer? poll;
+  late TabController tabs;
+  int selectedView = 0;
+  int get estimateIndex => widget.finals == null ? 0 : 1;
+  bool get estimatesVisible => tabs.index == estimateIndex;
   @override
   void initState() {
     super.initState();
-    load();
-    poll = Timer.periodic(
-      const Duration(seconds: 20),
-      (_) => load(quiet: true),
-    );
+    tabs = TabController(length: widget.finals == null ? 2 : 3, vsync: this);
+    tabs.addListener(() {
+      if (tabs.index == selectedView) return;
+      selectedView = tabs.index;
+      if (estimatesVisible) unawaited(load(quiet: !loading));
+    });
+    if (estimatesVisible) load();
+    poll = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (estimatesVisible) unawaited(load(quiet: true));
+    });
   }
 
   @override
   void dispose() {
     poll?.cancel();
+    tabs.dispose();
     super.dispose();
   }
 
@@ -83,6 +94,9 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
     }
     fetching = true;
     final requested = period;
+    final service = ref.read(serviceProvider);
+    final branch = service.branchId;
+    final userId = service.user?['id'];
     if (!quiet) {
       setState(() {
         loading = true;
@@ -90,8 +104,7 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
       });
     }
     try {
-      final api = ref.read(serviceProvider).dio;
-      final branch = ref.read(serviceProvider).branchId;
+      final api = service.dio;
       final result = await Future.wait([
         api.get(
           '/commissions/summary',
@@ -103,7 +116,8 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
       ]);
       if (mounted &&
           requested == period &&
-          ref.read(serviceProvider).branchId == branch) {
+          ref.read(serviceProvider).branchId == branch &&
+          ref.read(serviceProvider).user?['id'] == userId) {
         setState(() {
           rows = (result[0].data['rows'] as List)
               .map((v) => Json.from(v))
@@ -113,10 +127,22 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
         });
       }
     } catch (e) {
-      if (mounted && !quiet) setState(() => error = friendlyError(e));
+      if (mounted &&
+          !quiet &&
+          requested == period &&
+          service.branchId == branch &&
+          service.user?['id'] == userId) {
+        setState(() => error = friendlyError(e));
+      }
     } finally {
       fetching = false;
-      if (mounted && !quiet) setState(() => loading = false);
+      if (mounted &&
+          !quiet &&
+          requested == period &&
+          service.branchId == branch &&
+          service.user?['id'] == userId) {
+        setState(() => loading = false);
+      }
       if (mounted && reloadPending) {
         reloadPending = false;
         unawaited(load());
@@ -141,6 +167,12 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
       children: [
         const BranchFilter(),
         const SizedBox(height: 12),
+        const Text('Estimated commissions', style: RelayTypography.section),
+        const SizedBox(height: 6),
+        const Text(
+          'Calculated from closed sales and commission setup. These amounts are estimates; the Final commissions view shows imported final amounts.',
+        ),
+        const SizedBox(height: 8),
         Row(
           children: [
             IconButton(
@@ -150,7 +182,9 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
             ),
             Expanded(
               child: Text(
-                period,
+                MaterialLocalizations.of(
+                  context,
+                ).formatMonthYear(DateTime.parse('$period-01')),
                 textAlign: TextAlign.center,
                 style: RelayTypography.section,
               ),
@@ -165,9 +199,9 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
         ExportActions(
           endpoint: '/commissions/export',
           filenameStem: 'qanawat-calculated-commissions-$period',
-          label: 'Export calculated incentives',
+          label: 'Export estimates',
           query: {'period': period},
-          enabled: !loading,
+          enabled: !loading && error.isEmpty,
         ),
         const SizedBox(height: 12),
         if (loading) const LinearProgressIndicator(),
@@ -178,82 +212,117 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
         if (!loading && error.isEmpty && rows.isEmpty)
           const Padding(
             padding: EdgeInsets.all(24),
-            child: Text('No incentive profiles in your scope'),
+            child: Text('No commission profiles for this month and branch.'),
           ),
-        for (final row in rows)
-          Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('${row['name']}', style: RelayTypography.section),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${salesRoleLabel(row['role'])} · ${row['policy_name']}',
-                    style: RelayTypography.caption,
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    commissionAmount(row),
-                    style: RelayTypography.section.copyWith(
-                      color: row['amount'] == null
-                          ? const Color(0xFF885400)
-                          : const Color(0xFF087D69),
+        if (error.isEmpty)
+          for (final row in rows)
+            Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${row['name']}', style: RelayTypography.section),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${salesRoleLabel(row['role'])} · ${row['policy_name']}',
+                      style: RelayTypography.caption,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 6,
-                    children: [
-                      Text('${row['net_sales']} net sales'),
-                      Text('${row['cancelled']} cancelled'),
-                      Text('${row['in_progress']} in progress'),
-                    ],
-                  ),
-                  if ((row['missing_inputs'] as List? ?? []).isNotEmpty)
-                    ExpansionTile(
-                      tilePadding: EdgeInsets.zero,
-                      title: const Text('Required configuration'),
+                    const SizedBox(height: 12),
+                    Text(
+                      commissionAmount(row),
+                      style: RelayTypography.section.copyWith(
+                        color: row['amount'] == null
+                            ? const Color(0xFF885400)
+                            : const Color(0xFF087D69),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 6,
                       children: [
-                        for (final value in row['missing_inputs'])
-                          Align(
-                            alignment: Alignment.centerLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.only(bottom: 6),
-                              child: Text(commissionLabel(value)),
-                            ),
-                          ),
+                        Text('${row['net_sales']} net sales'),
+                        Text('${row['cancelled']} cancelled'),
+                        Text('${row['in_progress']} in progress'),
                       ],
                     ),
-                  for (final item in row['components'] as List? ?? [])
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      dense: true,
-                      title: Text('${item['name']}'),
-                      subtitle: Text(
-                        item['reason']?.toString().isNotEmpty == true
-                            ? '${item['reason']}'
-                            : commissionLabel(item['status']),
+                    if ((row['missing_inputs'] as List? ?? []).isNotEmpty)
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('Why is this estimate unavailable?'),
+                        children: [
+                          Text(
+                            ref
+                                        .read(serviceProvider)
+                                        .user?['permissions']
+                                        ?.contains('incentive.write') ==
+                                    true
+                                ? 'Review commission setup in the web portal.'
+                                : 'Ask your admin to review commission setup.',
+                            style: RelayTypography.caption,
+                          ),
+                          const SizedBox(height: 8),
+                          for (final value in row['missing_inputs'])
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: Padding(
+                                padding: const EdgeInsets.only(bottom: 6),
+                                child: Text(commissionLabel(value)),
+                              ),
+                            ),
+                        ],
                       ),
-                      trailing: Text(
-                        item['amount'] == null
-                            ? 'Pending'
-                            : 'AED ${item['amount']}',
+                    if ((row['components'] as List? ?? []).isNotEmpty)
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: const Text('View calculation breakdown'),
+                        children: [
+                          for (final item in row['components'])
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Text(
+                                    '${item['name']}',
+                                    style: RelayTypography.bodyStrong,
+                                  ),
+                                  Text(
+                                    item['reason']?.toString().isNotEmpty ==
+                                            true
+                                        ? '${item['reason']}'
+                                        : commissionLabel(item['status']),
+                                  ),
+                                  Text(
+                                    item['amount'] == null
+                                        ? 'Amount unavailable'
+                                        : 'AED ${item['amount']}',
+                                    style: RelayTypography.bodyStrong,
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
+        if (!loading && error.isEmpty && policies.isNotEmpty)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('View commission rate tables'),
+            subtitle: const Text('Reference rates used by the calculation'),
+            children: [rates()],
           ),
       ],
     ),
   );
 
-  Widget rates() => ListView(
-    padding: const EdgeInsets.all(16),
+  Widget rates() => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       for (final policy in policies)
         Card(
@@ -415,28 +484,76 @@ class _CommissionState extends ConsumerState<CommissionCalculations> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(serviceProvider.select((service) => service.branchId), (
+      _,
+      _,
+    ) {
+      rows = [];
+      loading = true;
+      if (estimatesVisible) unawaited(load());
+    });
     ref.listen<String?>(
-      serviceProvider.select((service) => service.branchId),
-      (_, _) => load(),
+      serviceProvider.select((service) => service.user?['id'] as String?),
+      (_, _) {
+        setState(() {
+          rows = [];
+          policies = [];
+          error = '';
+          loading = true;
+        });
+        if (estimatesVisible && ref.read(serviceProvider).user != null) {
+          unawaited(load());
+        }
+      },
     );
-    return DefaultTabController(
-      length: widget.finals == null ? 3 : 4,
-      child: Column(
-        children: [
-          TabBar(
-            isScrollable: widget.finals != null,
-            tabs: [
-              if(widget.finals != null) const Tab(text:'Final amounts'),
-              const Tab(text: 'Calculated'),
-              const Tab(text: 'Rate tables'),
-              const Tab(text: 'History'),
+    final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    return Column(
+      children: [
+        TabBar(
+          controller: tabs,
+          isScrollable: textScale > 1.35,
+          tabAlignment: textScale > 1.35
+              ? TabAlignment.start
+              : TabAlignment.fill,
+          labelPadding: const EdgeInsets.symmetric(horizontal: 8),
+          tabs: [
+            if (widget.finals != null)
+              Tab(
+                height: 56 * textScale.clamp(1, 2),
+                child: const Text(
+                  'Final commissions',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            Tab(text: 'Estimates', height: 56 * textScale.clamp(1, 2)),
+            Tab(
+              height: 56 * textScale.clamp(1, 2),
+              child: const Text('Earlier records', textAlign: TextAlign.center),
+            ),
+          ],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: tabs,
+            children: [
+              if (widget.finals != null) widget.finals!,
+              summary(),
+              Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
+                    child: Text(
+                      'Earlier incentive records are kept for reference. They are excluded from Final commissions totals.',
+                      style: RelayTypography.caption,
+                    ),
+                  ),
+                  Expanded(child: widget.history),
+                ],
+              ),
             ],
           ),
-          Expanded(
-            child: TabBarView(children: [if(widget.finals != null) widget.finals!,summary(), rates(), widget.history]),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

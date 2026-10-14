@@ -6,7 +6,7 @@ import { useSearchParams } from "react-router-dom";
 import { Plus, RefreshCw } from "lucide-react";
 import { Context } from "./App";
 import { api, post, download, Row, canManageOrganization } from "./api";
-import { ErrorState, Loading } from "./components";
+import { Drawer, ErrorState, Loading } from "./components";
 import "./sales-management.css";
 
 const categories: Record<string, string> = {
@@ -17,6 +17,173 @@ const categories: Record<string, string> = {
   UNIFORM: "Uniform",
   OTHER: "Other",
 };
+
+function StockAdjustment({
+  asset,
+  onClose,
+  onSave,
+}: {
+  asset: Row;
+  onClose: () => void;
+  onSave: (delta: number, reason: string) => Promise<void>;
+}) {
+  const [direction, setDirection] = useState("add");
+  const [quantity, setQuantity] = useState("");
+  const [reason, setReason] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const processing = useRef(false);
+  const count = Number(quantity);
+  const delta = direction === "remove" ? -count : count;
+  const result = Number(asset.quantity) + delta;
+  const valid =
+    Number.isInteger(count) &&
+    count > 0 &&
+    result >= 0 &&
+    reason.trim().length >= 5;
+  return (
+    <Drawer
+      title="Adjust stock quantity"
+      onClose={() => !processing.current && onClose()}
+    >
+      <form
+        className="sales-form stock-adjustment-form"
+        onSubmit={async (event) => {
+          event.preventDefault();
+          if (!valid || processing.current) return;
+          if (!reviewing) {
+            setReviewing(true);
+            setError("");
+            return;
+          }
+          processing.current = true;
+          setBusy(true);
+          setError("");
+          try {
+            await onSave(delta, reason.trim());
+          } catch (failure) {
+            setError(
+              failure instanceof Error
+                ? failure.message
+                : "Could not save the adjustment. Try again.",
+            );
+          } finally {
+            processing.current = false;
+            setBusy(false);
+          }
+        }}
+      >
+        <section
+          className="assignment-current wide"
+          aria-label="Stock adjustment summary"
+        >
+          <h3>{asset.label}</h3>
+          <dl>
+            <div>
+              <dt>Branch</dt>
+              <dd>{asset.branch || "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Current quantity</dt>
+              <dd>{asset.quantity}</dd>
+            </div>
+            {quantity && Number.isInteger(count) && count > 0 && (
+              <div>
+                <dt>Quantity after adjustment</dt>
+                <dd>{result}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
+        {!reviewing ? (
+          <>
+            <label>
+              Adjustment type
+              <select
+                aria-label="Adjustment type"
+                value={direction}
+                onChange={(event) => setDirection(event.target.value)}
+              >
+                <option value="add">Add stock</option>
+                <option value="remove">Remove stock</option>
+              </select>
+            </label>
+            <label>
+              Adjustment quantity
+              <input
+                type="number"
+                min={1}
+                step={1}
+                required
+                value={quantity}
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+            </label>
+            <label className="wide">
+              Reason for adjustment
+              <textarea
+                aria-label="Reason for adjustment"
+                required
+                minLength={5}
+                maxLength={300}
+                value={reason}
+                onChange={(event) => setReason(event.target.value)}
+                placeholder="For example, received extra uniforms or corrected a stock count"
+              />
+            </label>
+            {result < 0 && (
+              <p className="form-error wide" role="alert">
+                You can remove up to {asset.quantity} items. The quantity cannot
+                go below zero.
+              </p>
+            )}
+          </>
+        ) : (
+          <section
+            className="assignment-review wide"
+            aria-label="Review stock adjustment"
+          >
+            <h3>Review adjustment</h3>
+            <p>
+              <b>
+                {direction === "remove" ? "Remove" : "Add"} {count}{" "}
+                {count === 1 ? "item" : "items"}
+              </b>{" "}
+              · {asset.quantity} → {result}
+            </p>
+            <p>
+              <b>Reason:</b> {reason}
+            </p>
+            <p>This change is saved in stock movement history.</p>
+          </section>
+        )}
+        {error && (
+          <p className="form-error wide" role="alert">
+            {error}
+          </p>
+        )}
+        <div className="assignment-actions wide">
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => (reviewing ? setReviewing(false) : onClose())}
+          >
+            {reviewing ? "Back to edit" : "Cancel"}
+          </button>
+          <button className="primary" disabled={busy || !valid}>
+            {busy
+              ? "Saving…"
+              : reviewing
+                ? "Save stock adjustment"
+                : "Review adjustment"}
+          </button>
+        </div>
+      </form>
+    </Drawer>
+  );
+}
+
 export default function FieldAssets() {
   const { user, notify } = useContext(Context);
   const client = useQueryClient();
@@ -38,6 +205,7 @@ export default function FieldAssets() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState<Row | null>(null);
+  const [adjustment, setAdjustment] = useState<Row | null>(null);
   const { branch, setBranch } = useBranchScope();
   const [localFilter, setLocalFilter] = useState({
     category: "",
@@ -123,6 +291,7 @@ export default function FieldAssets() {
       setLocalFilter((current) => ({ ...current, agent_id: "" }));
       setMove(null);
       setIssue(null);
+      setAdjustment(null);
       setImportPreview(null);
       setImportFile(null);
       importRevision.current++;
@@ -255,32 +424,23 @@ export default function FieldAssets() {
       setBusy(false);
     }
   }
-  async function adjust(asset: Row) {
-    const value = window.prompt(
-      `Quantity change for ${asset.label} (for example, 5 or -2)`,
-    );
-    if (value === null) return;
-    const delta = Number(value);
-    if (!Number.isInteger(delta) || delta === 0) {
-      setError("Enter a non-zero whole number");
-      return;
-    }
-    const reason = window.prompt("Reason for stock adjustment");
-    if (!reason || reason.trim().length < 5) return;
-    setBusy(true);
-    setError("");
-    try {
-      await post(`/field-assets/${asset.id}/adjust`, { delta, reason });
-      await refresh();
-      notify("Stock adjusted");
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
-  }
   return (
     <div className="sales-page">
+      {adjustment && canManage && (
+        <StockAdjustment
+          asset={adjustment}
+          onClose={() => setAdjustment(null)}
+          onSave={async (delta, reason) => {
+            await post(`/field-assets/${adjustment.id}/adjust`, {
+              delta,
+              reason,
+            });
+            await refresh();
+            notify("Stock adjustment saved");
+            setAdjustment(null);
+          }}
+        />
+      )}
       <header className="page-header">
         <div>
           <span className="eyebrow">FIELD EQUIPMENT</span>
@@ -785,7 +945,7 @@ export default function FieldAssets() {
                               a.serial === "Not recorded" && (
                                 <>
                                   <button
-                                    onClick={() => adjust(a)}
+                                    onClick={() => setAdjustment(a)}
                                     disabled={busy}
                                   >
                                     Adjust qty

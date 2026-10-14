@@ -1,0 +1,218 @@
+.commission-page {
+  min-width: 0;
+  gap: 16px;
+}
+.commission-page > .page-header {
+  padding: 18px 20px;
+  margin-bottom: 0;
+}
+.commission-page > .page-header h1 {
+  margin: 8px 0;
+}
+.commission-page .page-header p {
+  margin: 8px 0 0;
+  color: #4d586b;
+}
+.commission-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  background: #ece8f4;
+  border-radius: 14px;
+  margin-bottom: 0;
+  width: fit-content;
+  max-width: 100%;
+}
+.commission-views button {
+  border: 0;
+  background: transparent;
+  padding: 12px 20px;
+  color: #394158;
+  font-weight: 650;
+}
+.commission-views button[aria-pressed="true"] {
+  background: #fff;
+  color: #762452;
+  box-shadow: 0 2px 8px #36224114;
+}
+.commission-actions,
+.commission-range,
+.commission-pagination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.commission-range {
+  margin: 12px 0;
+}
+.commission-range button[aria-pressed="true"] {
+  background: #eee6fa;
+  border-color: #9561b5;
+  color: #632b83;
+}
+.commission-final .sales-section-head {
+  align-items: flex-start;
+  gap: 12px;
+}
+.commission-filters {
+  margin-bottom: 18px;
+}
+.commission-totals {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  margin: 16px 0 10px;
+}
+.commission-totals > div {
+  padding: 16px;
+  background: #f5f2fb;
+  border: 1px solid #e4dced;
+  border-radius: 12px;
+  min-width: 0;
+}
+.commission-totals span {
+  display: block;
+  color: #45536a;
+  font-size: 14px;
+  font-weight: 600;
+}
+.commission-totals strong {
+  display: block;
+  font-size: 23px;
+  margin-top: 6px;
+  color: #29243d;
+  overflow-wrap: anywhere;
+}
+.commission-help {
+  color: #4b586d;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.commission-empty {
+  padding: 24px 0;
+  text-align: center;
+}
+.commission-empty h3 {
+  margin: 0 0 8px;
+}
+.commission-empty p {
+  color: #4d586b;
+}
+.commission-amount {
+  white-space: nowrap;
+  font-weight: 650;
+}
+.commission-pagination {
+  justify-content: space-between;
+  margin: 16px 0 0;
+  color: #47536a;
+  font-size: 14px;
+}
+.commission-import {
+  color: #344057;
+  font-size: 15px;
+  line-height: 1.6;
+}
+.commission-import section {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid #e4dcec;
+}
+.commission-import h3 {
+  margin: 0 0 12px;
+  color: #29243d;
+  font-size: 18px;
+}
+.commission-file {
+  display: grid;
+  gap: 8px;
+  font-weight: 600;
+}
+.commission-file input {
+  max-width: 100%;
+  padding: 12px;
+  background: #f5f2fa;
+  border: 1px solid #ddd5e9;
+  border-radius: 12px;
+}
+.commission-import p {
+  overflow-wrap: anywhere;
+}
+.commission-preview-list {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0;
+}
+.commission-preview-list li {
+  padding: 14px 0;
+  border-bottom: 1px solid #e5deed;
+}
+.commission-preview-list li > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: #29243d;
+}
+.commission-preview-list p {
+  margin: 4px 0;
+  font-size: 14px;
+}
+.commission-preview-list li > div span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4c5471;
+}
+.commission-import-result {
+  padding: 18px;
+  background: #e8f5ef;
+  border: 1px solid #b7ddca;
+  border-radius: 12px;
+}
+.commission-config > p {
+  margin: 0;
+}
+.commission-config details {
+  border: 1px solid #e3dcea;
+  padding: 12px;
+  border-radius: 10px;
+}
+.commission-config details > summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.commission-config details[open] > summary {
+  margin-bottom: 14px;
+}
+@media (max-width: 600px) {
+  .commission-views {
+    width: 100%;
+    gap: 4px;
+  }
+  .commission-views button {
+    flex: 1 1 90px;
+    padding: 11px 8px;
+    font-size: 14px;
+  }
+  .commission-actions {
+    width: 100%;
+  }
+  .commission-actions > button {
+    flex: 1;
+  }
+  .commission-totals {
+    gap: 8px;
+    grid-template-columns: repeat(auto-fit, minmax(115px, 1fr));
+  }
+  .commission-totals > div {
+    padding: 12px;
+  }
+  .commission-totals strong {
+    font-size: 20px;
+  }
+  .commission-pagination {
+    justify-content: center;
+  }
+}

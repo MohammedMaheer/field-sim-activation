@@ -1,0 +1,69 @@
+/* Import controls use the width of their drawer, rather than a page-wide grid. */
+.drawer .sales-form.compact:has(input[type="file"]) {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 14px;
+}
+.drawer .sales-form.compact:has(input[type="file"]) > label {
+  min-width: 0;
+  margin: 0;
+}
+.drawer .sales-form.compact:has(input[type="file"]) > button {
+  min-height: 44px;
+  white-space: nowrap;
+}
+.drawer .sales-form.compact input[type="file"] {
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+}
+.drawer .plan-editor > label {
+  margin: 0;
+}
+.drawer .plan-editor input {
+  margin-top: 0;
+}
+
+/* Long dialog names and staff names retain room beside their fixed icons. */
+.drawer-head {
+  gap: 16px;
+}
+.drawer-head h2 {
+  min-width: 0;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.drawer-head .icon-btn,
+.leader-avatar {
+  flex-shrink: 0;
+}
+.leader-card-heading > div {
+  min-width: 0;
+}
+.leader-card-heading h2,
+.leader-card-heading a {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 600px) {
+  .drawer .sales-form.compact:has(input[type="file"]) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .drawer .sales-form.compact:has(input[type="file"]) > button {
+    justify-self: stretch;
+  }
+  .leader-header-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+  }
+  .leader-header-actions > button {
+    width: 100%;
+    min-width: 0;
+    min-height: 44px;
+    padding: 10px 12px;
+    white-space: normal;
+    line-height: 1.35;
+  }
+}

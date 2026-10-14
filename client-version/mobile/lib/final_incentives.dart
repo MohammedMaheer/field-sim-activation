@@ -19,6 +19,27 @@ class _FinalIncentiveState extends ConsumerState<FinalIncentiveHistory> {
   String? error;
   int generation = 0;
   bool refreshing = false;
+  String get today => DateTime.now()
+      .toUtc()
+      .add(const Duration(hours: 4))
+      .toIso8601String()
+      .substring(0, 10);
+
+  String readableDate(String value) {
+    final date = DateTime.tryParse(value);
+    return date == null
+        ? recordedValue(value)
+        : MaterialLocalizations.of(context).formatMediumDate(date);
+  }
+
+  Future<void> quickRange(bool month) async {
+    setState(() {
+      to = today;
+      from = month ? '${to.substring(0, 7)}-01' : to;
+    });
+    await load();
+  }
+
   String get query => Uri(
     queryParameters: {
       'from_date': from,
@@ -29,11 +50,7 @@ class _FinalIncentiveState extends ConsumerState<FinalIncentiveHistory> {
   @override
   void initState() {
     super.initState();
-    to = DateTime.now()
-        .toUtc()
-        .add(const Duration(hours: 4))
-        .toIso8601String()
-        .substring(0, 10);
+    to = today;
     from = '${to.substring(0, 7)}-01';
     Future.microtask(load);
   }
@@ -85,7 +102,7 @@ class _FinalIncentiveState extends ConsumerState<FinalIncentiveHistory> {
       context: context,
       initialDate: DateTime.parse(first ? from : to),
       firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.parse(today),
     );
     if (selected != null && mounted) {
       setState(() {
@@ -109,79 +126,240 @@ class _FinalIncentiveState extends ConsumerState<FinalIncentiveHistory> {
       serviceProvider.select((s) => s.syncRevision),
       (_, _) => load(background: true),
     );
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        const BranchFilter(),
-        const SizedBox(height: 12),
-        const Text('Final commission amounts', style: RelayTypography.section),
-        const SizedBox(height: 6),
-        const Text(
-          'Approved imported amounts. Calculated estimates are separate.',
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 8,
-          children: [
-            OutlinedButton(
-              onPressed: () => choose(true),
-              child: Text('From $from'),
-            ),
-            OutlinedButton(
-              onPressed: () => choose(false),
-              child: Text('To $to'),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ExportActions(
-          endpoint: '/incentives/final/export?$query',
-          filenameStem: 'qanawat-final-incentives',
-          label: 'Export final amounts',
-        ),
-        const SizedBox(height: 12),
-        if (busy)
-          const Center(child: CircularProgressIndicator())
-        else ...[
-          if (error != null) ...[
-            Text(error!, style: const TextStyle(color: Colors.red)),
-            TextButton(onPressed: load, child: const Text('Retry')),
-          ],
+    ref.listen<String?>(
+      serviceProvider.select((s) => s.user?['id'] as String?),
+      (_, _) => load(),
+    );
+    final service = ref.watch(serviceProvider);
+    final ownScope = [
+      'Field Agent',
+      'Team Leader',
+    ].contains(service.user?['role']);
+    final mayImport =
+        [
+          'Administrator',
+          'Operations Manager',
+        ].contains(service.user?['role']) &&
+        (service.user?['permissions'] as List? ?? []).contains(
+          'incentive.write',
+        );
+    final amounts = rows
+        .map((row) => double.tryParse('${row['amount']}'))
+        .toList();
+    final totalKnown = amounts.every((amount) => amount != null);
+    final total = amounts.fold<double>(0, (sum, amount) => sum + (amount ?? 0));
+    return RefreshIndicator(
+      onRefresh: load,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          const BranchFilter(),
+          const SizedBox(height: 12),
           Text(
-            'AED ${rows.fold<double>(0, (sum, row) => sum + (double.tryParse('${row['amount']}') ?? 0)).toStringAsFixed(2)}',
-            style: RelayTypography.title,
+            ownScope ? 'Your final commissions' : 'Final commission amounts',
+            style: RelayTypography.section,
           ),
-          const SizedBox(height: 10),
-          if (rows.isEmpty && error == null)
-            const Text('No final amounts recorded for these filters.'),
-          for (final row in rows)
-            Card(
-              key: ValueKey(row['id']),
-              child: Padding(
-                padding: const EdgeInsets.all(14),
+          const SizedBox(height: 6),
+          Text(
+            ownScope
+                ? 'Your final amounts recorded by the admin. Choose a date range to see the total and each record.'
+                : 'Final amounts imported by the admin. Choose a date range to see the total and each record.',
+          ),
+          if (mayImport) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Import final amounts in the web portal.',
+              style: RelayTypography.caption,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Today'),
+                selected: from == today && to == today,
+                onSelected: (_) => quickRange(false),
+              ),
+              ChoiceChip(
+                label: const Text('This month'),
+                selected: from == '${today.substring(0, 7)}-01' && to == today,
+                onSelected: (_) => quickRange(true),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          RelayPair(
+            first: OutlinedButton.icon(
+              onPressed: () => choose(true),
+              icon: const Icon(Icons.calendar_today_outlined, size: 16),
+              label: Text('From ${readableDate(from)}'),
+            ),
+            second: OutlinedButton.icon(
+              onPressed: () => choose(false),
+              icon: const Icon(Icons.calendar_today_outlined, size: 16),
+              label: Text('To ${readableDate(to)}'),
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (busy)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 28),
+              child: Column(
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 12),
+                  Text('Loading final commissions…'),
+                ],
+              ),
+            )
+          else ...[
+            if (error != null)
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4E1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      '${row['name']} · AED ${row['amount']}',
+                      rows.isEmpty
+                          ? 'Final commissions could not be loaded.'
+                          : 'Could not refresh. Showing the last loaded amounts.',
                       style: RelayTypography.bodyStrong,
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      '${row['earned_on']} · ${salesRoleLabel(row['role'])}',
+                    const SizedBox(height: 4),
+                    Text(error!),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: load,
+                        icon: const Icon(Icons.refresh, size: 18),
+                        label: const Text('Try again'),
+                      ),
                     ),
-                    Text(
-                      '${row['branch']} · Team leader: ${row['team_leader']}',
-                    ),
-                    Text('Reference: ${row['reference']}'),
-                    if ('${row['note']}'.isNotEmpty) Text('${row['note']}'),
                   ],
                 ),
               ),
-            ),
+            if (rows.isEmpty && error == null)
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F5FC),
+                  border: Border.all(color: const Color(0xFFE0D6EC)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.receipt_long_outlined, color: Color(0xFF872450)),
+                    SizedBox(height: 10),
+                    Text(
+                      'No final commissions in this date range',
+                      style: RelayTypography.bodyStrong,
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Try another date range or branch. Final amounts appear after the admin imports them.',
+                    ),
+                  ],
+                ),
+              ),
+            if (rows.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1E9F6),
+                  border: Border.all(color: const Color(0xFFDCC9E6)),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Final commission total',
+                      style: RelayTypography.bodyStrong,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      totalKnown
+                          ? 'AED ${total.toStringAsFixed(2)}'
+                          : 'Total unavailable',
+                      style: RelayTypography.title.copyWith(
+                        color: const Color(0xFF872450),
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '${rows.length} ${rows.length == 1 ? 'record' : 'records'} · ${readableDate(from)} – ${readableDate(to)}',
+                      style: RelayTypography.caption,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              ExportActions(
+                endpoint: '/incentives/final/export?$query',
+                filenameStem: 'qanawat-final-incentives',
+                label: 'Export final commissions',
+                enabled: error == null,
+              ),
+              const SizedBox(height: 12),
+              for (final row in rows)
+                Card(
+                  key: ValueKey(row['id']),
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Text(
+                          recordedValue(row['name']),
+                          style: RelayTypography.bodyStrong,
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          double.tryParse('${row['amount']}') == null
+                              ? 'Amount unavailable'
+                              : 'AED ${double.parse('${row['amount']}').toStringAsFixed(2)}',
+                          style: RelayTypography.section.copyWith(
+                            color: const Color(0xFF087D69),
+                          ),
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          '${readableDate('${row['earned_on']}')} · ${salesRoleLabel(row['role'])}',
+                          style: RelayTypography.caption,
+                        ),
+                        const Divider(height: 18),
+                        Text(recordedValue(row['branch'])),
+                        Text(
+                          'Team leader: ${recordedValue(row['team_leader'])}',
+                        ),
+                        const SizedBox(height: 5),
+                        Text('Reference: ${recordedValue(row['reference'])}'),
+                        if (row['note'] != null &&
+                            '${row['note']}'.trim().isNotEmpty) ...[
+                          const SizedBox(height: 5),
+                          Text(
+                            '${row['note']}',
+                            style: RelayTypography.caption,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ],
         ],
-      ],
+      ),
     );
   }
 }

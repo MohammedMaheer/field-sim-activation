@@ -121,7 +121,9 @@ for (const account of accounts) {
           expectHealthyView(page, health, label),
         );
         await page.screenshot({
-          path: testInfo.outputPath(`${account}-${width}-${destination.path.replace(/\W+/g, "-") || "overview"}.png`),
+          path: testInfo.outputPath(
+            `${account}-${width}-${destination.path.replace(/\W+/g, "-") || "overview"}.png`,
+          ),
           animations: "disabled",
         });
         visited.push(label);
@@ -166,7 +168,9 @@ test("administrator: sales, assets, notifications and commission subviews remain
           expectHealthyView(page, health, label),
         );
         await page.screenshot({
-          path: testInfo.outputPath(`${width}-${path.replace(/\W+/g, "-")}-${tab.trim().replace(/\W+/g, "-")}.png`),
+          path: testInfo.outputPath(
+            `${width}-${path.replace(/\W+/g, "-")}-${tab.trim().replace(/\W+/g, "-")}.png`,
+          ),
           animations: "disabled",
         });
         visited.push(label);
@@ -178,21 +182,29 @@ test("administrator: sales, assets, notifications and commission subviews remain
     health.pending.clear();
     await page.goto("/notifications");
     await expectHealthyView(page, health, `${width}px notifications`);
-    for (const filter of await page.locator(".notification-filters button").all()) {
+    for (const filter of await page
+      .locator(".notification-filters button")
+      .all()) {
       const label = (await filter.innerText()).trim();
       await filter.click();
       await expect(filter).toHaveAttribute("aria-pressed", "true");
-      await expectHealthyView(page, health, `${width}px notifications / ${label}`);
-      await page.screenshot({ path: testInfo.outputPath(`${width}-notifications-${label.replace(/\W+/g, "-")}.png`), animations: "disabled" });
+      await expectHealthyView(
+        page,
+        health,
+        `${width}px notifications / ${label}`,
+      );
+      await page.screenshot({
+        path: testInfo.outputPath(
+          `${width}-notifications-${label.replace(/\W+/g, "-")}.png`,
+        ),
+        animations: "disabled",
+      });
       visited.push(`${width}px notifications / ${label}`);
     }
     health.pending.clear();
     await page.goto("/incentives");
     await expectHealthyView(page, health, `${width}px incentives`);
-    const estimates = page.locator("details.incentive-recorded-history").filter({
-      has: page.locator("summary").filter({ hasText: "Calculated estimates and commission setup" }),
-    });
-    await estimates.locator(":scope > summary").click();
+    await page.getByRole("button", { name: "Estimates", exact: true }).click();
     const approved = page.locator(".commission-policies");
     await approved.locator(":scope > summary").click();
     const tables = approved.locator(".commission-policy");
@@ -206,7 +218,10 @@ test("administrator: sales, assets, notifications and commission subviews remain
       health,
       `${width}px all four approved incentive tables`,
     );
-    await page.screenshot({ path: testInfo.outputPath(`${width}-approved-incentive-tables.png`), animations: "disabled" });
+    await page.screenshot({
+      path: testInfo.outputPath(`${width}-approved-incentive-tables.png`),
+      animations: "disabled",
+    });
     visited.push(`${width}px all four approved incentive tables`);
   }
   await testInfo.attach("read-only-subviews", {

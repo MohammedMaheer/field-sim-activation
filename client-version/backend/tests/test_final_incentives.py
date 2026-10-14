@@ -70,6 +70,44 @@ def test_final_amount_import_is_previewable_replay_safe_and_scoped(client):
         assert response.status_code == 200 and response.content
 
 
+def test_preview_identifies_people_attribution_and_every_spreadsheet_row(client):
+    login(client)
+    today = business_date().isoformat()
+    recorded = ["agent1@relay.demo", today, "125.25", str(uuid4()), "Approved agent amount"]
+    new = ["leader@relay.demo", today, "60.50", str(uuid4()), "Approved leader amount"]
+    first = client.post("/api/incentives/final/import", json={**file([recorded]), "apply": True})
+    assert first.status_code == 200, first.text
+    saved = client.get("/api/incentives/final").json()[0]
+
+    response = client.post("/api/incentives/final/import", json=file([recorded, new]))
+    assert response.status_code == 200, response.text
+    preview = response.json()
+    assert preview["new_rows"] == 1
+    assert preview["already_recorded"] == 1
+    assert preview["total_amount"] == "60.50"  # Money to add, not the whole file total.
+    assert len(preview["rows"]) == 1
+    assert preview["rows"] == [preview["file_rows"][1]]
+    replay, addition = preview["file_rows"]
+    assert replay["row_number"] == 2 and replay["status"] == "ALREADY_RECORDED"
+    assert replay["user_email"] == recorded[0] and replay["role"] == "Field Agent"
+    assert replay["name"] == saved["name"] and replay["branch"] == saved["branch"]
+    assert replay["team_leader"] == saved["team_leader"] and replay["note"] == recorded[4]
+    assert addition["row_number"] == 3 and addition["status"] == "NEW"
+    assert addition["user_email"] == new[0] and addition["role"] == "Team Leader"
+    assert addition["team_leader"] == addition["name"]
+    assert addition["note"] == new[4] and addition["reference"] == new[3]
+    assert len(client.get("/api/incentives/final").json()) == 1  # Preview is read-only.
+
+    applied = client.post(
+        "/api/incentives/final/import", json={**file([recorded, new]), "apply": True}
+    )
+    assert applied.json() == {"applied": True, "count": 1, "already_recorded": 1}
+    replayed = client.post("/api/incentives/final/import", json=file([recorded, new])).json()
+    assert replayed["rows"] == [] and replayed["total_amount"] == "0"
+    assert replayed["already_recorded"] == 2
+    assert all(row["status"] == "ALREADY_RECORDED" for row in replayed["file_rows"])
+
+
 @pytest.mark.parametrize(
     "index,bad",
     [
@@ -150,6 +188,12 @@ def test_saved_branch_and_leader_remain_on_imported_record_after_transfer(client
             client.get("/api/incentives/final?branch_id=" + original["branch_id"]).json()[0]["id"]
             == original["id"]
         )
+        preview = client.post("/api/incentives/final/import", json=file([row])).json()
+        replay = preview["file_rows"][0]
+        assert preview["new_rows"] == 0 and preview["already_recorded"] == 1
+        assert replay["status"] == "ALREADY_RECORDED"
+        assert replay["branch"] == original["branch"]
+        assert replay["team_leader"] == original["team_leader"]
     finally:
         with DB() as db:
             agent = db.get(Agent, agent_id)

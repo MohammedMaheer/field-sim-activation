@@ -115,7 +115,22 @@ Future<void> openPolicy(
     ),
   );
   await tester.pump(const Duration(milliseconds: 300));
-  await tester.tap(find.text('Rate tables'));
+  await tester.scrollUntilVisible(
+    find.text('View commission rate tables'),
+    220,
+    scrollable: find
+        .descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        )
+        .first,
+  );
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.text('View commission rate tables'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('View commission rate tables'));
+  await tester.pumpAndSettle();
+  await tester.ensureVisible(find.text('${policy['name']}'));
   await tester.pumpAndSettle();
   await tester.tap(find.text('${policy['name']}'));
   await tester.pumpAndSettle();
@@ -124,7 +139,7 @@ Future<void> openPolicy(
 void main() {
   test('monthly incentive period uses Dubai business time', () {
     expect(commissionPeriod(DateTime.utc(2026, 9, 30, 22)), '2026-10');
-    expect(commissionAmount({'amount': null}), 'Awaiting configuration');
+    expect(commissionAmount({'amount': null}), 'Estimate unavailable');
     expect(commissionAmount({'amount': '125.5'}), 'AED 125.50');
   });
   for (final width in [300.0, 390.0]) {
@@ -196,7 +211,17 @@ void main() {
         );
         await tester.pump(const Duration(milliseconds: 100));
         await tester.pump(const Duration(milliseconds: 200));
-        expect(find.text('Awaiting configuration'), findsOneWidget);
+        await tester.scrollUntilVisible(
+          find.text('Estimate unavailable'),
+          200,
+          scrollable: find
+              .descendant(
+                of: find.byType(ListView).first,
+                matching: find.byType(Scrollable),
+              )
+              .first,
+        );
+        expect(find.text('Estimate unavailable'), findsOneWidget);
         expect(find.text('12 net sales'), findsOneWidget);
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());

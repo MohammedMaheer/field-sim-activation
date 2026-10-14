@@ -24,6 +24,7 @@ import SRVerification from "./SRVerification";
 import CallWorkspace from "./CallWorkspace";
 import FieldAssets from "./FieldAssets";
 import ExportActions from "./ExportActions";
+import "./operations-clarity.css";
 import AccountAccess from "./AccountAccess";
 import OrganizationImport from "./OrganizationImport";
 import { Incentives, Support } from "./ProposalOperations";
@@ -2179,12 +2180,17 @@ function ComplianceDrawer({
 }
 
 function Reports() {
-  const { branch, setBranch } = useBranchScope();
+  const { branch, branches } = useBranchScope();
   const { notify, user } = useContext(Context);
   const [start, setStart] = useState(businessDate);
   const [end, setEnd] = useState(businessDate);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState("");
+  const datesValid = !!start && !!end && start <= end;
+  const canExportFinal =
+    user.permissions.includes("report.read") ||
+    (user.role === "Field Agent" && user.permissions.includes("read"));
+  const selectedBranch = branches.find((item) => item.id === branch)?.name;
   const reports = [
     [
       "daily",
@@ -2226,7 +2232,7 @@ function Reports() {
       <PageHeader
         eyebrow="INSIGHTS THAT TRAVEL"
         title="Reports & exports"
-        description="Structured data. Clear reporting. Ready for your next decision."
+        description="Choose a period, then download the report you need."
       >
         {canVisitPage("location-tracking", user) && (
           <Link className="button" to="/location-tracking?export=1">
@@ -2234,7 +2240,66 @@ function Reports() {
           </Link>
         )}
       </PageHeader>
-      {canViewFinalCommissions(user) && (
+      <section className="panel report-period" aria-label="Report date range">
+        <div className="sales-section-head">
+          <div>
+            <h2>Reporting period</h2>
+            <p>
+              {selectedBranch || "All permitted branches"} · shared branch
+              selection
+            </p>
+          </div>
+          <div className="report-date-shortcuts" aria-label="Date shortcuts">
+            <button
+              type="button"
+              onClick={() => {
+                const today = businessDate();
+                setStart(today);
+                setEnd(today);
+              }}
+            >
+              Today
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const today = businessDate();
+                setStart(`${today.slice(0, 7)}-01`);
+                setEnd(today);
+              }}
+            >
+              This month
+            </button>
+          </div>
+        </div>
+        <div className="report-filters">
+          <label>
+            From date
+            <input
+              type="date"
+              required
+              value={start}
+              onChange={(event) => setStart(event.target.value)}
+            />
+          </label>
+          <label>
+            To date
+            <input
+              type="date"
+              required
+              value={end}
+              min={start}
+              onChange={(event) => setEnd(event.target.value)}
+            />
+          </label>
+        </div>
+        {!datesValid && (
+          <p className="form-error" role="alert">
+            Choose both dates, with the to date on or after the from date.
+          </p>
+        )}
+      </section>
+      {canViewFinalCommissions(user) && canExportFinal && (
         <section className="panel report-card" style={{ marginBottom: 16 }}>
           <h2>Incentive tracking</h2>
           <p>
@@ -2245,48 +2310,31 @@ function Reports() {
             path={`/incentives/final/export?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&branch_id=${encodeURIComponent(branch)}`}
             name="qanawat-incentive-tracking"
             label="Export incentive tracking"
+            disabled={!datesValid}
           />
         </section>
       )}
       <section className="panel report-card" style={{ marginBottom: 16 }}>
         <h2>Sales, targets &amp; follow-ups</h2>
-        <p>Current sales with product, sales agent, branch and call outcomes</p>
+        <p>
+          Current sales with product, sales agent, branch and call outcomes.
+          Sales reports have their own date and product filters.
+        </p>
         <Link className="primary button-link" to="/sales">
           Open sales reports &amp; exports
         </Link>
       </section>
-      <div className="report-filters">
+      <div className="report-row-search">
         <label>
-          From date
-          <input
-            type="date"
-            value={start}
-            onChange={(e) => setStart(e.target.value)}
-          />
-        </label>
-        <label>
-          To date
-          <input
-            type="date"
-            value={end}
-            min={start}
-            onChange={(e) => setEnd(e.target.value)}
-          />
-        </label>
-        <label>
-          Search / filter
+          Search detailed report rows
           <input
             placeholder="Sales agent, branch, reference…"
             value={q}
-            onChange={(e) => setQ(e.target.value)}
+            onChange={(event) => setQ(event.target.value)}
           />
         </label>
+        <small>Search applies to the detailed reports below.</small>
       </div>
-      {start && end && start > end && (
-        <p className="form-error" role="alert">
-          Choose a to date on or after the from date.
-        </p>
-      )}
       <div className="report-grid">
         {reports
           .filter(

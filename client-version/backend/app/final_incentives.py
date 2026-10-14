@@ -220,6 +220,7 @@ def import_file(body: Upload, request: Request, user=Depends(principal), db=Depe
     people = {p.email.casefold(): p for p in allowed_subjects(db, user)}
     prepared = []
     keys = set()
+    file_rows = {}
     for number, row in enumerate(read_file(body), 2):
         if len(row) != 5:
             raise HTTPException(422, f"Row {number}: expected five columns")
@@ -255,6 +256,7 @@ def import_file(body: Upload, request: Request, user=Depends(principal), db=Depe
         if key in keys:
             raise HTTPException(422, f"Row {number}: duplicate user/date/reference in this file")
         keys.add(key)
+        file_rows[key] = number
         agent = db.scalar(select(Agent).where(Agent.user_id == person.id))
         branch_id = db.get(Outlet, agent.outlet_id).branch_id if agent else person.branch_id
         prepared.append(
@@ -292,20 +294,54 @@ def import_file(body: Upload, request: Request, user=Depends(principal), db=Depe
             )
     additions = [row for row in prepared if row["import_key"] not in prior]
     if not body.apply:
+        # Show each validated spreadsheet row, including safe replays, before
+        # applying it. Existing entries retain the attribution saved at import.
+        attributed = [prior.get(row["import_key"]) or row for row in prepared]
+        branch_ids = {
+            row.branch_id if isinstance(row, FinalIncentive) else row["branch_id"]
+            for row in attributed
+        } - {None}
+        leader_ids = {
+            row.leader_id if isinstance(row, FinalIncentive) else row["leader_id"]
+            for row in attributed
+        } - {None}
+        branches = {
+            branch.id: branch.name
+            for branch in db.scalars(select(Branch).where(Branch.id.in_(branch_ids)))
+        }
+        leaders = {
+            leader.id: leader.name
+            for leader in db.scalars(select(User).where(User.id.in_(leader_ids)))
+        }
+        subjects = {person.id: person for person in people.values()}
+        preview_rows = []
+        for values in prepared:
+            previous = prior.get(values["import_key"])
+            person = subjects[values["user_id"]]
+            branch_id = previous.branch_id if previous else values["branch_id"]
+            leader_id = previous.leader_id if previous else values["leader_id"]
+            preview_rows.append(
+                {
+                    "row_number": file_rows[values["import_key"]],
+                    "status": "ALREADY_RECORDED" if previous else "NEW",
+                    "name": person.name,
+                    "user_email": person.email,
+                    "role": previous.source_role if previous else values["source_role"],
+                    "branch": branches.get(branch_id, "Not recorded"),
+                    "team_leader": leaders.get(leader_id, "Not recorded"),
+                    "earned_on": values["earned_on"],
+                    "amount": str(values["amount"]),
+                    "reference": values["reference"],
+                    "note": values["note"],
+                }
+            )
         return {
             "applied": False,
             "new_rows": len(additions),
             "already_recorded": len(prior),
             "total_amount": str(sum((row["amount"] for row in additions), Decimal("0"))),
-            "rows": [
-                {
-                    "name": db.get(User, row["user_id"]).name,
-                    "earned_on": row["earned_on"],
-                    "amount": str(row["amount"]),
-                    "reference": row["reference"],
-                }
-                for row in additions
-            ],
+            "rows": [row for row in preview_rows if row["status"] == "NEW"],
+            "file_rows": preview_rows,
         }
     for values in additions:
         row = FinalIncentive(**values)

@@ -1,0 +1,64 @@
+.report-period {
+  margin-bottom: 16px;
+  padding: 18px 20px;
+}
+.report-period h2 {
+  margin: 0 0 5px;
+}
+.report-period p {
+  margin: 0;
+  color: #4e5872;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.report-period .report-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 260px));
+  gap: 14px;
+  margin: 14px 0 0;
+}
+.report-date-shortcuts,
+.report-row-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.report-date-shortcuts button {
+  min-height: 42px;
+}
+.report-row-search {
+  margin: 20px 0 14px;
+}
+.report-row-search label {
+  display: grid;
+  gap: 6px;
+  width: min(100%, 360px);
+  font-size: 14px;
+  font-weight: 650;
+  color: #34405b;
+}
+.report-row-search small {
+  color: #4e5872;
+  font-size: 13px;
+}
+.stock-adjustment-form.sales-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 0;
+}
+.stock-adjustment-form .assignment-current dd,
+.stock-adjustment-form .assignment-current dt {
+  font-size: 14px;
+}
+@media (max-width: 600px) {
+  .report-period {
+    padding: 16px;
+  }
+  .report-period .report-filters,
+  .stock-adjustment-form.sales-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report-period .sales-section-head {
+    gap: 12px;
+  }
+}

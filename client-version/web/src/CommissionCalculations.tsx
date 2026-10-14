@@ -239,6 +239,77 @@ function Configuration({
   const [reason, setReason] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const family = policies.find((item) => item.id === policy)?.family;
+  const relevant: Record<string, string[]> = {
+    MBO_STAFF: [
+      "monthly_target",
+      "contract_share_percent",
+      "quality_percent",
+      "disconnection_percent",
+      "metric_definition",
+      "staff_bands_confirmed",
+      "disconnected_sales_confirmed",
+      "disconnected_sale_ids",
+      "gate_enabled",
+      "gate_scope_branch_ids",
+      "staff_gate_targets",
+      "gate_mode",
+      "plan_slabs",
+    ],
+    MBO_TL: [
+      "contract_share_percent",
+      "disconnection_percent",
+      "metric_definition",
+      "mbo_below185_multiplier",
+      "mbo_uplift_mode",
+      "disconnected_sales_confirmed",
+      "disconnected_sale_ids",
+      "gate_enabled",
+      "gate_scope_branch_ids",
+      "gate_mode",
+      "gate_entitlement_confirmed",
+      "gate_allocation",
+      "gate_disconnection_mode",
+      "gate_disconnected_sale_ids",
+      "payout_share_percent",
+      "payout_share_confirmed",
+    ],
+    POSTPAID_TL: [
+      "monthly_target",
+      "mnp_target",
+      "contract_share_percent",
+      "disconnection_percent",
+      "metric_definition",
+      "mrc_eligibility_floor",
+      "mrc_thresholds",
+      "disconnected_sales_confirmed",
+      "disconnected_sale_ids",
+      "elife_target",
+      "elife_attainment_basis",
+      "elife_plan_codes",
+      "plan_slabs",
+      "gate_enabled",
+      "gate_scope_branch_ids",
+      "gate_mode",
+      "gate_entitlement_confirmed",
+      "gate_allocation",
+      "payout_share_percent",
+      "payout_share_confirmed",
+    ],
+    SM_GATE: [
+      "contract_share_percent",
+      "metric_definition",
+      "gate_enabled",
+      "gate_scope_branch_ids",
+      "gate_mode",
+      "gate_entitlement_confirmed",
+      "gate_allocation",
+      "payout_share_percent",
+      "payout_share_confirmed",
+    ],
+  };
+  const show = (key: string) =>
+    !!family && (relevant[family] || []).includes(key);
   const plans = useQuery<Row[]>({
     queryKey: ["plans"],
     queryFn: () => api("/resources/plans"),
@@ -277,6 +348,11 @@ function Configuration({
       onClose={() => !busy && onClose()}
     >
       <form className="sales-form compact commission-config" onSubmit={save}>
+        <p className="wide">
+          Optional estimate setup for {period}. Enter only client-approved
+          inputs; leave unknown values blank. This does not change final
+          imported commissions.
+        </p>
         <label className="wide">
           Policy
           <select
@@ -302,174 +378,187 @@ function Configuration({
           </select>
         </label>
         <div className="wide">
-          {row.missing_inputs?.length > 0 && (
-            <p className="stock-alert">
-              {row.missing_inputs
-                .map((key: string) => names[key] || human(key))
-                .join(" · ")}
-            </p>
-          )}
+          {policy === (row.configuration?.policy_id || row.policy_id) &&
+            row.missing_inputs?.length > 0 && (
+              <p className="stock-alert">
+                {row.missing_inputs
+                  .map((key: string) => names[key] || human(key))
+                  .join(" · ")}
+              </p>
+            )}
         </div>
-        <details className="wide" open>
-          <summary>Targets and eligibility</summary>
-          <div className="sales-form compact">
-            {numeric.map((key) => (
-              <label key={key}>
-                {names[key]}
-                <input
-                  type="number"
-                  step="any"
-                  min={key.includes("target") ? "0.01" : "0"}
-                  max={key.includes("percent") ? "100" : undefined}
-                  value={inputs[key] ?? ""}
-                  onChange={(e) =>
-                    change(key, e.target.value === "" ? null : e.target.value)
-                  }
+        {family && (
+          <details className="wide" open>
+            <summary>Targets and eligibility</summary>
+            <div className="sales-form compact">
+              {numeric.filter(show).map((key) => (
+                <label key={key}>
+                  {names[key]}
+                  <input
+                    type="number"
+                    step="any"
+                    min={key.includes("target") ? "0.01" : "0"}
+                    max={key.includes("percent") ? "100" : undefined}
+                    value={inputs[key] ?? ""}
+                    onChange={(e) =>
+                      change(key, e.target.value === "" ? null : e.target.value)
+                    }
+                  />
+                </label>
+              ))}
+              <label className="wide">
+                {names.metric_definition}
+                <textarea
+                  value={inputs.metric_definition || ""}
+                  maxLength={1000}
+                  onChange={(e) => change("metric_definition", e.target.value)}
                 />
               </label>
-            ))}
-            <label className="wide">
-              {names.metric_definition}
-              <textarea
-                value={inputs.metric_definition || ""}
-                maxLength={1000}
-                onChange={(e) => change("metric_definition", e.target.value)}
-              />
-            </label>
-          </div>
-        </details>
-        <details className="wide">
-          <summary>Approved payout and gate rules</summary>
-          <div className="sales-form compact">
-            {Object.entries(enumerated).map(([key, options]) => (
-              <label key={key}>
-                {names[key]}
+            </div>
+          </details>
+        )}
+        {family && (
+          <details className="wide">
+            <summary>Approved payout and gate rules</summary>
+            <div className="sales-form compact">
+              {Object.entries(enumerated)
+                .filter(([key]) => show(key))
+                .map(([key, options]) => (
+                  <label key={key}>
+                    {names[key]}
+                    <select
+                      value={inputs[key] ?? ""}
+                      onChange={(e) => change(key, e.target.value || null)}
+                    >
+                      <option value="">Not configured</option>
+                      {options.map((value) => (
+                        <option key={value} value={value}>
+                          {human(value)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              {booleans.filter(show).map((key) => (
+                <label key={key}>
+                  {names[key]}
+                  <select
+                    value={inputs[key] == null ? "" : String(inputs[key])}
+                    onChange={(e) => {
+                      if (e.target.value === "") {
+                        const next = { ...inputs };
+                        delete next[key];
+                        setInputs(next);
+                      } else change(key, e.target.value === "true");
+                    }}
+                  >
+                    <option value="">Not confirmed</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </label>
+              ))}
+              {lists.filter(show).map((key) => (
+                <label key={key}>
+                  {names[key]}
+                  <input
+                    value={(inputs[key] || []).join(", ")}
+                    onChange={(e) =>
+                      change(
+                        key,
+                        e.target.value
+                          .split(",")
+                          .map((value) => value.trim())
+                          .filter(Boolean),
+                      )
+                    }
+                  />
+                </label>
+              ))}
+              <label className="wide">
+                {names.gate_scope_branch_ids}
                 <select
-                  value={inputs[key] ?? ""}
-                  onChange={(e) => change(key, e.target.value || null)}
-                >
-                  <option value="">Not configured</option>
-                  {options.map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-            {booleans.map((key) => (
-              <label key={key}>
-                {names[key]}
-                <select
-                  value={inputs[key] == null ? "" : String(inputs[key])}
-                  onChange={(e) => {
-                    if (e.target.value === "") {
-                      const next = { ...inputs };
-                      delete next[key];
-                      setInputs(next);
-                    } else change(key, e.target.value === "true");
-                  }}
-                >
-                  <option value="">Not confirmed</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </label>
-            ))}
-            {lists.map((key) => (
-              <label key={key}>
-                {names[key]}
-                <input
-                  value={(inputs[key] || []).join(", ")}
+                  multiple
+                  value={inputs.gate_scope_branch_ids || []}
                   onChange={(e) =>
                     change(
-                      key,
-                      e.target.value
-                        .split(",")
-                        .map((value) => value.trim())
-                        .filter(Boolean),
+                      "gate_scope_branch_ids",
+                      Array.from(
+                        e.target.selectedOptions,
+                        (option) => option.value,
+                      ),
                     )
                   }
-                />
-              </label>
-            ))}
-            <label className="wide">
-              {names.gate_scope_branch_ids}
-              <select
-                multiple
-                value={inputs.gate_scope_branch_ids || []}
-                onChange={(e) =>
-                  change(
-                    "gate_scope_branch_ids",
-                    Array.from(
-                      e.target.selectedOptions,
-                      (option) => option.value,
-                    ),
-                  )
-                }
-              >
-                {branches.data?.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        </details>
-        <details className="wide">
-          <summary>Plan slab mappings</summary>
-          <div className="sales-form compact">
-            {plans.data?.map((plan) => (
-              <label key={plan.id}>
-                {plan.name}
-                <select
-                  value={inputs.plan_slabs?.[plan.name] || ""}
-                  onChange={(e) => {
-                    const mappings = { ...inputs.plan_slabs };
-                    if (e.target.value) mappings[plan.name] = e.target.value;
-                    else delete mappings[plan.name];
-                    change("plan_slabs", mappings);
-                  }}
                 >
-                  <option value="">Not mapped</option>
-                  {["SLAB_1", "SLAB_2", "SLAB_3"].map((value) => (
-                    <option key={value}>{value}</option>
+                  {branches.data?.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.name}
+                    </option>
                   ))}
                 </select>
               </label>
-            ))}
-          </div>
-        </details>
-        <details className="wide">
-          <summary>eLife package mappings</summary>
-          <div className="sales-form compact">
-            {plans.data?.map((plan) => (
-              <label key={plan.id}>
-                {plan.name}
-                <select
-                  value={inputs.elife_plan_codes?.[plan.name] || ""}
-                  onChange={(e) => {
-                    const mappings = { ...inputs.elife_plan_codes };
-                    if (e.target.value) mappings[plan.name] = e.target.value;
-                    else delete mappings[plan.name];
-                    change("elife_plan_codes", mappings);
-                  }}
-                >
-                  <option value="">Not mapped</option>
-                  {[
-                    "2P_299",
-                    "3P_389",
-                    "3P_NEO_399",
-                    "3P_429",
-                    "3P_515",
-                    "3P_639",
-                  ].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </label>
-            ))}
-          </div>
-        </details>
+            </div>
+          </details>
+        )}
+        {show("plan_slabs") && (
+          <details className="wide">
+            <summary>Plan slab mappings</summary>
+            <div className="sales-form compact">
+              {plans.data?.map((plan) => (
+                <label key={plan.id}>
+                  {plan.name}
+                  <select
+                    value={inputs.plan_slabs?.[plan.name] || ""}
+                    onChange={(e) => {
+                      const mappings = { ...inputs.plan_slabs };
+                      if (e.target.value) mappings[plan.name] = e.target.value;
+                      else delete mappings[plan.name];
+                      change("plan_slabs", mappings);
+                    }}
+                  >
+                    <option value="">Not mapped</option>
+                    {["SLAB_1", "SLAB_2", "SLAB_3"].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </details>
+        )}
+        {show("elife_plan_codes") && (
+          <details className="wide">
+            <summary>eLife package mappings</summary>
+            <div className="sales-form compact">
+              {plans.data?.map((plan) => (
+                <label key={plan.id}>
+                  {plan.name}
+                  <select
+                    value={inputs.elife_plan_codes?.[plan.name] || ""}
+                    onChange={(e) => {
+                      const mappings = { ...inputs.elife_plan_codes };
+                      if (e.target.value) mappings[plan.name] = e.target.value;
+                      else delete mappings[plan.name];
+                      change("elife_plan_codes", mappings);
+                    }}
+                  >
+                    <option value="">Not mapped</option>
+                    {[
+                      "2P_299",
+                      "3P_389",
+                      "3P_NEO_399",
+                      "3P_429",
+                      "3P_515",
+                      "3P_639",
+                    ].map((value) => (
+                      <option key={value}>{value}</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+            </div>
+          </details>
+        )}
         <label className="wide">
           Approval note
           <input
@@ -500,11 +589,11 @@ export default function CommissionCalculations({ period }: { period: string }) {
     [selected, setSelected] = useState<Row | null>(null),
     [editing, setEditing] = useState<Row | null>(null);
   const policies = useQuery<Row[]>({
-    queryKey: ["commissions", "policies"],
+    queryKey: ["commissions", "policies", user.id],
     queryFn: () => api("/commissions/policies"),
   });
   const summary = useQuery<Row>({
-    queryKey: ["commissions", "summary", period, branch],
+    queryKey: ["commissions", "summary", user.id, period, branch],
     queryFn: () =>
       api(
         `/commissions/summary?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`,
@@ -518,7 +607,9 @@ export default function CommissionCalculations({ period }: { period: string }) {
     <section className="commission-workspace">
       <div className="sales-section-head">
         <h2>Commission calculations</h2>
-        {user.permissions.includes(user.role === "Field Agent" ? "read" : "report.read") && (
+        {user.permissions.includes(
+          user.role === "Field Agent" ? "read" : "report.read",
+        ) && (
           <ExportActions
             path={`/commissions/export?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`}
             name={`qanawat-commission-calculations-${period}`}
@@ -528,7 +619,8 @@ export default function CommissionCalculations({ period }: { period: string }) {
       </div>
       {branch && (
         <p className="muted">
-          Employees in the selected branch · account monthly commission
+          The branch filter selects people. Each estimate covers that person’s
+          full month, including sales from other branches.
         </p>
       )}
       {summary.isPending ? (
@@ -543,7 +635,7 @@ export default function CommissionCalculations({ period }: { period: string }) {
                 <th>Employee</th>
                 <th>Policy</th>
                 <th>Net sales</th>
-                <th>Commission</th>
+                <th>Estimated commission</th>
                 <th>Action</th>
               </tr>
             </thead>

@@ -1,6 +1,7 @@
 import { businessPeriod } from "./businessTime";
 import CommissionCalculations from "./CommissionCalculations";
 import FinalIncentives from "./FinalIncentives";
+import "./commissions-ux.css";
 import ExportActions from "./ExportActions";
 import { useSearchParams } from "react-router-dom";
 import { useState } from "react";
@@ -315,6 +316,67 @@ export function FieldTasks({ user, notify }: Props) {
 }
 
 export function Incentives({ user, notify }: Props) {
+  const [view, setView] = useState("final");
+  const [period, setPeriod] = useState(month());
+  const eligible = canViewFinalCommissions(user);
+  return (
+    <div className="proposal-page commission-page">
+      <div className="page-header">
+        <div>
+          <div className="eyebrow">SALES COMMISSIONS</div>
+          <h1>Incentives</h1>
+          <p>
+            Track approved amounts, check estimates and review earlier records.
+          </p>
+        </div>
+      </div>
+      {eligible && (
+        <nav className="commission-views" aria-label="Commission views">
+          {[
+            ["final", "Final commissions"],
+            ["estimates", "Estimates"],
+            ["earlier", "Earlier records"],
+          ].map(([key, label]) => (
+            <button
+              type="button"
+              key={key}
+              aria-pressed={view === key}
+              onClick={() => setView(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </nav>
+      )}
+      {eligible && view === "final" && <FinalIncentives key={user.id} />}
+      {eligible && view === "estimates" && (
+        <section className="panel sales-section">
+          <div className="proposal-toolbar">
+            <label>
+              Calculation month
+              <input
+                type="month"
+                value={period}
+                onChange={(e) => setPeriod(e.target.value)}
+              />
+            </label>
+          </div>
+          <p className="commission-help">
+            Estimates use approved rules and recorded sales. They do not change
+            imported final amounts. Missing policy inputs remain awaiting
+            configuration.
+          </p>
+          {period && <CommissionCalculations period={period} />}
+        </section>
+      )}
+      {(!eligible || view === "earlier") && (
+        <EarlierIncentiveRecords key={user.id} user={user} notify={notify} />
+      )}
+    </div>
+  );
+}
+
+function EarlierIncentiveRecords({ user, notify }: Props) {
   const { branch } = useBranchScope();
   const [selected, setSelected] = useState<Row | null>(null);
   const cache = useQueryClient();
@@ -331,14 +393,14 @@ export function Incentives({ user, notify }: Props) {
     error,
     refetch,
   } = useQuery<Row[]>({
-    queryKey: ["incentives", period, branch],
+    queryKey: ["incentives", "earlier", user.id, period, branch],
     queryFn: () =>
       api(
         `/incentives?period=${encodeURIComponent(period)}&branch_id=${encodeURIComponent(branch)}`,
       ),
   });
   const { data: agents = [] } = useQuery<Row[]>({
-    queryKey: ["agents"],
+    queryKey: ["agents", user.id],
     queryFn: () => api("/resources/agents"),
   });
   const total = data.reduce((sum, row) => sum + Number(row.amount), 0);
@@ -376,45 +438,12 @@ export function Incentives({ user, notify }: Props) {
   if (error) return <ErrorState error={error} retry={refetch} />;
   return (
     <div className="proposal-page">
-      <div className="page-header">
-        <div>
-          <div className="eyebrow">SALES PERFORMANCE</div>
-          <h1>Incentives</h1>
-        </div>
-      </div>
-      {canViewFinalCommissions(user) && <FinalIncentives />}
-      {canViewFinalCommissions(user) && (
-        <details className="incentive-recorded-history">
-          <summary>Calculated estimates and commission setup</summary>
-          <div className="proposal-toolbar">
-            <label>
-              Month
-              <input
-                type="month"
-                value={period}
-                onChange={(e) => setPeriod(e.target.value)}
-              />
-            </label>
-          </div>
-
-          <p>
-            Use this only when you need to calculate estimates from the approved
-            rules. Imported final amounts above do not need commission setup.
-          </p>
-          {[
-            "Administrator",
-            "Operations Manager",
-            "Sales Manager",
-            "Team Leader",
-            "Field Agent",
-          ].includes(user.role) && <CommissionCalculations period={period} />}
-        </details>
-      )}
-      <details
-        className="incentive-recorded-history"
-        open={canViewFinalCommissions(user) ? undefined : true}
-      >
-        <summary>Recorded incentive entries · AED {total.toFixed(2)}</summary>
+      <section className="incentive-recorded-history">
+        <h2>Earlier recorded entries</h2>
+        <p>
+          These earlier entries are kept separately and are not included in
+          final commission totals.
+        </p>
         {user.permissions.includes(
           user.role === "Field Agent" ? "read" : "report.read",
         ) && (
@@ -576,7 +605,7 @@ export function Incentives({ user, notify }: Props) {
             ]}
           />
         </Panel>
-      </details>
+      </section>
       {selected && (
         <Drawer title="Incentive details" onClose={() => setSelected(null)}>
           <DetailList

@@ -280,19 +280,35 @@ test("final commission preview is non-writing, apply is replay safe and agent se
       exact: true,
     }),
   ).toBeVisible();
+  const openImport = async () => {
+    await section
+      .getByRole("button", { name: "Import approved amounts", exact: true })
+      .click();
+    return page.getByRole("dialog", {
+      name: "Import approved commission amounts",
+    });
+  };
+  let dialog = await openImport();
   const attach = async () =>
-    section.getByLabel("Final commission file", { exact: true }).setInputFiles({
+    dialog.getByLabel("Final commission file", { exact: true }).setInputFiles({
       name: "approved-final.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(csv),
     });
   await attach();
-  await section
+  await dialog
     .getByRole("button", { name: "Preview import", exact: true })
     .click();
   await expect(
-    section.getByText(/2 new entries · AED 185.25 · 0 already recorded/),
+    dialog.getByRole("heading", { name: "3. Review before importing" }),
   ).toBeVisible();
+  await expect(dialog.locator(".commission-totals")).toContainText(
+    "AED 185.25",
+  );
+  await expect(dialog.locator(".commission-preview-list li")).toHaveCount(2);
+  await expect(dialog.locator(".commission-preview-list")).toContainText(
+    "agent1@relay.demo",
+  );
   expect(
     (
       await (
@@ -300,28 +316,35 @@ test("final commission preview is non-writing, apply is replay safe and agent se
       ).json()
     ).length,
   ).toBe(baseline.length);
-  await section
-    .getByRole("button", { name: "Import approved final amounts", exact: true })
+  await dialog
+    .getByRole("button", { name: "Import 2 new entries", exact: true })
     .click();
-  await expect(page.locator(".toast")).toContainText(
-    /2 final amounts imported.*0 already recorded/,
-  );
+  await expect(
+    dialog.getByRole("heading", { name: "Import complete" }),
+  ).toBeVisible();
+  await expect(dialog.getByRole("status")).toContainText("2 entries added");
+  await dialog
+    .getByRole("button", { name: "View this month", exact: true })
+    .click();
   await expect(
     section.locator("tbody tr").filter({ hasText: ref }),
   ).toHaveCount(2);
+  dialog = await openImport();
   await attach();
-  await section
+  await dialog
     .getByRole("button", { name: "Preview import", exact: true })
     .click();
   await expect(
-    section.getByText(/0 new entries.*AED 0.00.*2 already recorded/),
+    dialog.getByText(
+      "This file is already recorded. There is nothing new to add.",
+    ),
   ).toBeVisible();
-  await section
-    .getByRole("button", { name: "Import approved final amounts", exact: true })
+  await expect(
+    dialog.getByRole("button", { name: "Import 0 new entries", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", { name: "Close details", exact: true })
     .click();
-  await expect(page.locator(".toast")).toContainText(
-    /0 final amounts imported.*2 already recorded/,
-  );
   const records = await (
     await request.get("/api/incentives/final", { headers: auth })
   ).json();
@@ -330,7 +353,7 @@ test("final commission preview is non-writing, apply is replay safe and agent se
     (r: any) => r.reference === ref && r.user_email === "agent1@relay.demo",
   );
   await section
-    .getByRole("combobox", { name: "Sales agent / team leader", exact: true })
+    .getByRole("combobox", { name: "Person", exact: true })
     .selectOption(mine.user_id);
   await expect(
     section.locator("tbody tr").filter({ hasText: ref }),
