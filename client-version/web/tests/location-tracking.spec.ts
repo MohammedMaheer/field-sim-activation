@@ -32,6 +32,7 @@ test("administrator sets boundary by map, controls radius and assigns without ch
   expect(saved?.body.radius_m).toBe(350);
   expect(saved?.body.branch_id).toBeNull();
   expect(saved?.body.latitude).toBeGreaterThan(-85);
+  await page.getByLabel("Assign boundaries to").selectOption("individual");
   await page
     .getByRole("button", { name: "Assign boundary for Jordan Vale" })
     .click();

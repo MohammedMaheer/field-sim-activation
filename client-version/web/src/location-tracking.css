@@ -3,6 +3,50 @@
   gap: 18px;
   min-width: 0;
 }
+.boundary-target-filter {
+  display: grid;
+  grid-template-columns: minmax(220px, 360px) minmax(0, 1fr);
+  align-items: end;
+  gap: 12px 20px;
+  padding: 16px;
+}
+.boundary-target-filter label {
+  display: grid;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.boundary-target-filter select {
+  width: 100%;
+  min-width: 0;
+}
+.boundary-target-filter p {
+  margin: 0;
+  color: #526078;
+  font-size: 14px;
+  line-height: 1.5;
+  padding-bottom: 8px;
+}
+.branch-boundary-summary {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid #dbd6e8;
+  background: #f6f2fc;
+  border-radius: 10px;
+}
+.branch-boundary-summary span {
+  color: #526078;
+  font-size: 14px;
+}
+@media (max-width: 600px) {
+  .boundary-target-filter {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .boundary-target-filter p {
+    padding-bottom: 0;
+  }
+}
 .own-work-disclosure {
   border: 1px solid #d9d4e5;
   border-radius: 12px;

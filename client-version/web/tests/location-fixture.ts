@@ -178,6 +178,13 @@ export async function setup(
         enabled,
       };
     else if (target === "/api/location-tracking/fences") data = [fence];
+    else if (target === "/api/location-tracking/branch-assignments")
+      data = branches.map((branch) => ({
+        ...branch,
+        member_count: 1,
+        individual_count: 0,
+        boundary: branch.id === "marina" ? fence : null,
+      }));
     else if (target === "/api/location-tracking/settings") {
       if (request.method() === "PATCH") enabled = body.enabled;
       data = {

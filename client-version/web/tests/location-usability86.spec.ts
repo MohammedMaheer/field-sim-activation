@@ -29,6 +29,7 @@ for (const width of [390, 800, 1440]) {
     await page
       .getByRole("button", { name: "Manage boundaries", exact: true })
       .click();
+    await page.getByLabel("Assign boundaries to").selectOption("individual");
     await expect(
       page.getByRole("heading", { name: "Work location map", exact: true }),
     ).toHaveCount(0);

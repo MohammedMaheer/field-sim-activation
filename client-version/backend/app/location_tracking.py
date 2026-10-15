@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, delete, select, text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, delete, func, select, text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.exc import OperationalError
 
@@ -136,6 +136,11 @@ class FenceInput(Input):
 
 class AssignmentInput(Input):
     fence_id: str | None = None
+
+
+class BranchAssignmentInput(Input):
+    fence_id: str = Field(min_length=1, max_length=36)
+    replace_individual: bool = False
 
 
 class PolicyInput(Input):
@@ -590,6 +595,78 @@ def assign(user_id: str, body: AssignmentInput, request: Request, user=Depends(p
     audit(db, user, "Member work boundary updated", user_id, old={"fence_id": old}, new={"fence_id": body.fence_id}, request=request)
     db.commit()
     return {"user_id": user_id, "assignment_fence_id": body.fence_id, **status(db, target)}
+
+
+def branch_member_query(branch_id):
+    # Sales agents belong to their outlet's branch; a stale User.branch_id must
+    # never pull a reassigned agent back into their previous branch's boundary.
+    return (select(User.id).outerjoin(Agent, Agent.user_id == User.id)
+            .outerjoin(Outlet, Outlet.id == Agent.outlet_id)
+            .where(func.coalesce(Outlet.branch_id, User.branch_id) == branch_id))
+
+
+@router.get("/branch-assignments")
+def branch_assignments(user=Depends(principal), db=Depends(get_db)):
+    manage(db, user)
+    membership = dict(db.execute(select(User.id, func.coalesce(Outlet.branch_id, User.branch_id))
+                                .outerjoin(Agent, Agent.user_id == User.id)
+                                .outerjoin(Outlet, Outlet.id == Agent.outlet_id)).all())
+    counts, overrides = {}, {}
+    for branch_id in membership.values():
+        counts[branch_id] = counts.get(branch_id, 0) + 1
+    for member_id in db.scalars(select(FenceAssignment.user_id)):
+        branch_id = membership.get(member_id)
+        overrides[branch_id] = overrides.get(branch_id, 0) + 1
+    boundaries = {row.branch_id: row for row in db.scalars(select(WorkFence).where(WorkFence.branch_id.is_not(None)))}
+    return [{"id": row.id, "name": row.name, "member_count": counts.get(row.id, 0),
+             "individual_count": overrides.get(row.id, 0), "boundary": fence_view(boundaries.get(row.id))}
+            for row in db.scalars(select(Branch).where(Branch.lifecycle_status == "ACTIVE").order_by(Branch.name))]
+
+
+@router.put("/branch-assignments/{branch_id}")
+def assign_branch(branch_id: str, body: BranchAssignmentInput, request: Request,
+                  user=Depends(principal), db=Depends(get_db)):
+    """Apply one branch boundary atomically, including replacing personal overrides."""
+    manage(db, user)
+    lock_boundary_changes(db)
+    branch = db.scalar(select(Branch).where(Branch.id == branch_id).with_for_update())
+    if not branch or branch.lifecycle_status != "ACTIVE":
+        raise HTTPException(422, "Choose an active branch")
+    source = db.get(WorkFence, body.fence_id)
+    if not source or not source.enabled:
+        raise HTTPException(422, "Choose an active work boundary")
+    member_ids = list(db.scalars(branch_member_query(branch_id)))
+    overrides = list(db.scalars(select(FenceAssignment).where(FenceAssignment.user_id.in_(member_ids))))
+    if overrides and not body.replace_individual:
+        raise HTTPException(409, "This branch has individual boundaries. Confirm replacing them to apply one boundary to everyone.")
+    current = db.scalar(select(WorkFence).where(WorkFence.branch_id == branch_id))
+    old = fence_view(current)
+    if not current or current.id != source.id:
+        # Copy the worksite, never move it away from another branch or alter a
+        # personal assignment outside this branch that uses the old boundary.
+        shared_outside = current and db.scalar(select(FenceAssignment.id).where(
+            FenceAssignment.fence_id == current.id, FenceAssignment.user_id.not_in(member_ids)).limit(1))
+        if shared_outside:
+            current.branch_id = None
+            db.flush()
+            current = None
+        if not current:
+            current = WorkFence(branch_id=branch_id)
+            db.add(current)
+        current.name = (branch.name + " work boundary")[:120]
+        for key in ("latitude", "longitude", "radius_m", "enabled"):
+            setattr(current, key, getattr(source, key))
+        current.updated_at = now()
+        db.flush()
+    replaced = [{"user_id": row.user_id, "fence_id": row.fence_id} for row in overrides]
+    for row in overrides:
+        db.delete(row)
+    audit(db, user, "Branch work boundary assigned", branch_id,
+          old={"boundary": old, "individual_assignments": replaced},
+          new={"boundary": fence_view(current), "member_count": len(member_ids)}, request=request)
+    db.commit()
+    return {"branch_id": branch_id, "member_count": len(member_ids),
+            "replaced_individual_count": len(replaced), "boundary": fence_view(current)}
 
 
 @router.put("/assignments/{user_id}/boundary")

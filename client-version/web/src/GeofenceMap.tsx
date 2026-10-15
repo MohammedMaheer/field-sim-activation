@@ -529,7 +529,9 @@ export default function GeofenceMap({
           ? pinMode
             ? "Click the map to drop the boundary pin, or drag it to move the center. Coordinates remain editable below."
             : "Turn on Drop pin to position the boundary, or search for a public place."
-          : "Markers show the latest reported location; dimmed markers need a fresh update."}
+          : members.length
+            ? "Markers show the latest reported location; dimmed markers need a fresh update."
+            : "The shaded circle shows the allowed work area."}
       </div>
     </div>
   );

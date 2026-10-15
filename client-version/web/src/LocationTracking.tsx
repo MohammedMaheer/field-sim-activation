@@ -93,6 +93,22 @@ export default function LocationTracking() {
     enabled: canManage,
   });
   const [view, setView] = useState<"locations" | "boundaries">("locations");
+  const [assignmentTarget, setAssignmentTarget] = useState("branch");
+  const branchAssignments = useQuery<Row[]>({
+    queryKey: ["work-location", "branch-assignments", user.id],
+    queryFn: () => api("/location-tracking/branch-assignments"),
+    enabled: canManage && view === "boundaries",
+    refetchInterval: 15000,
+  });
+  const [assignBranchId, setAssignBranchId] = useState("");
+  const [branchFenceId, setBranchFenceId] = useState("");
+  const [replaceIndividual, setReplaceIndividual] = useState(false);
+  const assigningBranch = branchAssignments.data?.find(
+    (item) => item.id === assignBranchId,
+  );
+  const applyingFence = fences.data?.find(
+    (item) => item.id === branchFenceId && item.enabled,
+  );
   const [assignmentMode, setAssignmentMode] = useState<
     "branch" | "saved" | "individual"
   >("branch");
@@ -839,162 +855,439 @@ export default function LocationTracking() {
           </Panel>
         )}
       </div>
-      {canRead && (
+      {canManage && view === "boundaries" && (
         <Panel
-          title={
-            view === "boundaries"
-              ? "Assign member boundaries"
-              : "Member work locations"
-          }
-          subtitle={
-            view === "boundaries"
-              ? "Most members can use their branch boundary. Change only the members who work somewhere else."
-              : "Select a member to see their boundary on the map. Only authorized members appear here."
-          }
+          title="Assign work boundaries"
+          subtitle="Choose a whole branch or an individual member."
         >
-          <div className="location-table-filters">
+          <div className="boundary-target-filter">
             <label>
-              <span className="sr-only">Search members</span>
-              <input
-                placeholder="Search member or branch"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
+              Assign boundaries to
+              <select
+                value={assignmentTarget}
+                onChange={(event) => {
+                  setAssignmentTarget(event.target.value);
+                  setSearch("");
+                }}
+              >
+                <option value="branch">
+                  Branches · everyone in the branch
+                </option>
+                <option value="individual">
+                  Individuals · one member at a time
+                </option>
+              </select>
             </label>
-            {view === "locations" && (
-              <>
-                <label>
-                  <span className="sr-only">Location status</span>
-                  <select
-                    aria-label="Location status"
-                    value={stateFilter}
-                    onChange={(event) => setStateFilter(event.target.value)}
-                  >
-                    <option value="">All location statuses</option>
-                    {Object.entries(stateNames).map(([key, name]) => (
-                      <option key={key} value={key}>
-                        {name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            )}
+            <p>
+              {assignmentTarget === "branch"
+                ? "Apply one worksite and radius to every member of a branch. New members inherit it too."
+                : "Set a separate work boundary for one member, or return them to their branch boundary."}
+            </p>
           </div>
-          {members.error ? (
-            <ErrorState
-              error={members.error}
-              retry={() => void members.refetch()}
-            />
-          ) : members.isPending ? (
-            <Loading />
-          ) : !rows.length ? (
-            <Empty
-              text="No members match these filters"
-              detail="Change the branch, status or member search."
-            />
-          ) : (
-            <div className="location-table-scroll">
-              <table className="location-table">
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Work boundary</th>
-                    {view === "locations" && (
-                      <>
-                        <th>Location status</th>
-                        <th>Latest update</th>
-                      </>
-                    )}
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((member) => (
-                    <tr key={member.user_id}>
-                      <td data-label="Member">
-                        <strong>{member.name}</strong>
-                        <small>
-                          {salesAgentRole(member.role)} ·{" "}
-                          {member.branch || "No branch"}
-                        </small>
-                      </td>
-                      <td data-label="Work boundary">
-                        {member.boundary?.name || "Not assigned"}
-                        <small>
-                          {member.assignment_fence_id
-                            ? "Explicit worksite"
-                            : "Inherited from branch"}
-                          {member.boundary
-                            ? ` · ${member.boundary.radius_m} m`
-                            : ""}
-                        </small>
-                      </td>
+          {assignmentTarget === "branch" &&
+            (branchAssignments.error ? (
+              <ErrorState
+                error={branchAssignments.error}
+                retry={() => void branchAssignments.refetch()}
+              />
+            ) : branchAssignments.isPending ? (
+              <Loading />
+            ) : (
+              <div className="location-table-scroll">
+                <table className="location-table">
+                  <thead>
+                    <tr>
+                      <th>Branch</th>
+                      <th>Work boundary</th>
+                      <th>Members</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {branchAssignments.data
+                      ?.filter((item) => !branch || item.id === branch)
+                      .map((item) => (
+                        <tr key={item.id}>
+                          <td data-label="Branch">
+                            <strong>{item.name}</strong>
+                          </td>
+                          <td data-label="Work boundary">
+                            {item.boundary?.name || "Not assigned"}
+                            <small>
+                              {item.boundary
+                                ? `${item.boundary.radius_m} m · ${item.boundary.enabled ? "Active" : "Disabled"}`
+                                : "Add or choose a worksite"}
+                            </small>
+                          </td>
+                          <td data-label="Members">
+                            {item.member_count}{" "}
+                            {item.member_count === 1 ? "member" : "members"}
+                            <small>
+                              {item.individual_count
+                                ? `${item.individual_count} individual ${item.individual_count === 1 ? "override" : "overrides"}`
+                                : item.boundary
+                                  ? "All use the branch boundary"
+                                  : "No individual overrides"}
+                            </small>
+                          </td>
+                          <td data-label="Actions">
+                            <button
+                              type="button"
+                              aria-label={`Assign branch boundary for ${item.name}`}
+                              onClick={() => {
+                                setError("");
+                                setAssignBranchId(item.id);
+                                setBranchFenceId(
+                                  item.boundary?.enabled
+                                    ? item.boundary.id
+                                    : "",
+                                );
+                                setReplaceIndividual(false);
+                              }}
+                            >
+                              Assign branch boundary
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+                {!branchAssignments.data?.some(
+                  (item) => !branch || item.id === branch,
+                ) && (
+                  <Empty
+                    text="No active branches in this selection"
+                    detail="Choose another branch using the branch filter."
+                  />
+                )}
+              </div>
+            ))}
+        </Panel>
+      )}
+      {canRead &&
+        (view === "locations" ||
+          !canManage ||
+          assignmentTarget === "individual") && (
+          <Panel
+            title={
+              view === "boundaries"
+                ? "Assign member boundaries"
+                : "Member work locations"
+            }
+            subtitle={
+              view === "boundaries"
+                ? "Choose a member to set an individual boundary or use their branch boundary."
+                : "Select a member to see their boundary on the map. Only authorized members appear here."
+            }
+          >
+            <div className="location-table-filters">
+              <label>
+                <span className="sr-only">Search members</span>
+                <input
+                  placeholder="Search member or branch"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+              {view === "locations" && (
+                <>
+                  <label>
+                    <span className="sr-only">Location status</span>
+                    <select
+                      aria-label="Location status"
+                      value={stateFilter}
+                      onChange={(event) => setStateFilter(event.target.value)}
+                    >
+                      <option value="">All location statuses</option>
+                      {Object.entries(stateNames).map(([key, name]) => (
+                        <option key={key} value={key}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+              )}
+            </div>
+            {members.error ? (
+              <ErrorState
+                error={members.error}
+                retry={() => void members.refetch()}
+              />
+            ) : members.isPending ? (
+              <Loading />
+            ) : !rows.length ? (
+              <Empty
+                text="No members match these filters"
+                detail="Change the branch, status or member search."
+              />
+            ) : (
+              <div className="location-table-scroll">
+                <table className="location-table">
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th>Work boundary</th>
                       {view === "locations" && (
                         <>
-                          <td data-label="Location status">
-                            <span
-                              className={`location-state ${status(member).toLowerCase()}`}
-                            >
-                              {stateNames[status(member)] || status(member)}
-                            </span>
-                            <small>
-                              {member.work_session &&
-                              !member.work_session.ended_at
-                                ? "Work tracking on"
-                                : "No active work tracking"}
-                            </small>
-                          </td>
-                          <td data-label="Latest update">
-                            {recordedAt(member.latest_location)}
-                            <small>
-                              {member.latest_location
-                                ? `${coordinate(member.latest_location.latitude)}, ${coordinate(member.latest_location.longitude)} · ±${Math.round(member.latest_location.accuracy_m)} m`
-                                : "Location not recorded"}
-                            </small>
-                          </td>
+                          <th>Location status</th>
+                          <th>Latest update</th>
                         </>
                       )}
-                      <td data-label="Actions">
-                        <div className="location-row-actions">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelected(member);
-                              setPreviewFence(null);
-                              setView("locations");
-                            }}
-                            aria-label={`Show ${member.name} on map`}
-                          >
-                            View radius
-                          </button>
-                          {canManage && (
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((member) => (
+                      <tr key={member.user_id}>
+                        <td data-label="Member">
+                          <strong>{member.name}</strong>
+                          <small>
+                            {salesAgentRole(member.role)} ·{" "}
+                            {member.branch || "No branch"}
+                          </small>
+                        </td>
+                        <td data-label="Work boundary">
+                          {member.boundary?.name || "Not assigned"}
+                          <small>
+                            {member.assignment_fence_id
+                              ? "Explicit worksite"
+                              : "Inherited from branch"}
+                            {member.boundary
+                              ? ` · ${member.boundary.radius_m} m`
+                              : ""}
+                          </small>
+                        </td>
+                        {view === "locations" && (
+                          <>
+                            <td data-label="Location status">
+                              <span
+                                className={`location-state ${status(member).toLowerCase()}`}
+                              >
+                                {stateNames[status(member)] || status(member)}
+                              </span>
+                              <small>
+                                {member.work_session &&
+                                !member.work_session.ended_at
+                                  ? "Work tracking on"
+                                  : "No active work tracking"}
+                              </small>
+                            </td>
+                            <td data-label="Latest update">
+                              {recordedAt(member.latest_location)}
+                              <small>
+                                {member.latest_location
+                                  ? `${coordinate(member.latest_location.latitude)}, ${coordinate(member.latest_location.longitude)} · ±${Math.round(member.latest_location.accuracy_m)} m`
+                                  : "Location not recorded"}
+                              </small>
+                            </td>
+                          </>
+                        )}
+                        <td data-label="Actions">
+                          <div className="location-row-actions">
                             <button
                               type="button"
                               onClick={() => {
-                                setError("");
-                                setAssignment(member);
-                                setAssignmentMode(
-                                  member.assignment_fence_id
-                                    ? "saved"
-                                    : "branch",
-                                );
-                                setFenceId(member.assignment_fence_id || "");
+                                setSelected(member);
+                                setPreviewFence(null);
+                                setView("locations");
                               }}
-                              aria-label={`Assign boundary for ${member.name}`}
+                              aria-label={`Show ${member.name} on map`}
                             >
-                              Assign boundary
+                              View radius
                             </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Panel>
+                            {canManage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setError("");
+                                  setAssignment(member);
+                                  setAssignmentMode(
+                                    member.assignment_fence_id
+                                      ? "saved"
+                                      : "branch",
+                                  );
+                                  setFenceId(member.assignment_fence_id || "");
+                                }}
+                                aria-label={`Assign boundary for ${member.name}`}
+                              >
+                                Assign boundary
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </Panel>
+        )}
+      {assignBranchId && (
+        <Drawer
+          title={`Branch boundary · ${assigningBranch?.name || "Selected branch"}`}
+          onClose={() => {
+            if (!busy) setAssignBranchId("");
+          }}
+        >
+          <div className="location-editor">
+            <p>
+              Everyone assigned to this branch will use the same worksite and
+              radius, including team leaders and sales agents. Members added
+              later will inherit it.
+            </p>
+            {branchAssignments.error ? (
+              <ErrorState
+                error={branchAssignments.error}
+                retry={() => void branchAssignments.refetch()}
+              />
+            ) : !assigningBranch ? (
+              <p role="alert">
+                This branch is no longer available. Close this window and choose
+                an active branch.
+              </p>
+            ) : (
+              <>
+                <div className="branch-boundary-summary">
+                  <strong>{assigningBranch.member_count} members</strong>
+                  <span>
+                    {assigningBranch.individual_count} individual boundary
+                    assignments will be replaced.
+                  </span>
+                </div>
+                <label>
+                  Boundary for this branch
+                  <select
+                    value={branchFenceId}
+                    onChange={(event) => {
+                      setBranchFenceId(event.target.value);
+                      setReplaceIndividual(false);
+                    }}
+                  >
+                    <option value="">Choose an active work boundary</option>
+                    {fences.data
+                      ?.filter((item) => item.enabled)
+                      .map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.radius_m} m
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                {applyingFence && (
+                  <>
+                    <div className="map-boundary-summary">
+                      <MapPin size={20} />
+                      <div>
+                        <strong>{applyingFence.name}</strong>
+                        <span>
+                          {applyingFence.radius_m} m radius ·{" "}
+                          {coordinate(applyingFence.latitude)},{" "}
+                          {coordinate(applyingFence.longitude)}
+                        </span>
+                      </div>
+                    </div>
+                    <GeofenceMap
+                      boundary={applyingFence as Center}
+                      focus={{
+                        ...(applyingFence as Center),
+                        key: `branch-assignment:${applyingFence.id}:${applyingFence.radius_m}`,
+                      }}
+                    />
+                  </>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => {
+                    const targetBranch = assigningBranch;
+                    setAssignBranchId("");
+                    editFence(targetBranch.boundary || undefined);
+                    if (!targetBranch.boundary)
+                      setForm({
+                        ...defaultFence(),
+                        branch_id: targetBranch.id,
+                        name: `${targetBranch.name} work boundary`.slice(
+                          0,
+                          120,
+                        ),
+                      });
+                  }}
+                >
+                  {assigningBranch.boundary
+                    ? "Edit branch worksite and radius"
+                    : "Create branch worksite"}
+                </button>
+                {assigningBranch.individual_count > 0 && (
+                  <label className="location-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={replaceIndividual}
+                      onChange={(event) =>
+                        setReplaceIndividual(event.target.checked)
+                      }
+                    />
+                    Replace individual boundaries so everyone uses this branch
+                    boundary
+                  </label>
+                )}
+                <p className="location-help">
+                  This changes work boundaries only. Branch membership, team
+                  leader assignments and recorded location history stay the
+                  same. Boundary enforcement is controlled separately.
+                </p>
+                {error && (
+                  <p role="alert" className="location-alert">
+                    {error}
+                  </p>
+                )}
+                <div className="location-dialog-actions">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => setAssignBranchId("")}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={
+                      busy ||
+                      !applyingFence ||
+                      (!!assigningBranch.individual_count && !replaceIndividual)
+                    }
+                    onClick={() =>
+                      void (async () => {
+                        if (
+                          await write(
+                            () =>
+                              api(
+                                `/location-tracking/branch-assignments/${assignBranchId}`,
+                                {
+                                  method: "PUT",
+                                  body: JSON.stringify({
+                                    fence_id: branchFenceId,
+                                    replace_individual: replaceIndividual,
+                                  }),
+                                },
+                              ),
+                            "Boundary applied to all branch members",
+                          )
+                        )
+                          setAssignBranchId("");
+                        else await branchAssignments.refetch();
+                      })()
+                    }
+                  >
+                    {busy ? "Applying…" : "Apply to all branch members"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </Drawer>
       )}
       {editing && (
         <Drawer
