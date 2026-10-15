@@ -28,3 +28,5 @@ Review the customer/product summary, add an optional note, then confirm. The cus
 - The connected browser geofencing test covers a saved boundary, inside shift start, outside capture blocking before OCR, notification, CSV/Excel exports and ending work. Its temporary enforcement setting was restored off in the disposable QA system.
 
 These checks cover the changed flows and related regressions. They are not an exhaustive certification of every possible device, third-party map outage or concurrent workload.
+
+The client deployment uses a bounded pool of five persistent database connections, up to three temporary overflow connections, and a 15-second checkout wait. This remains below PostgreSQL's 30-connection ceiling and accommodates overlapping page/navigation loads without the former five-second capacity cutoff. Environment variables can further tune these validated bounds. This is a measured operating configuration, not a load-capacity certification.

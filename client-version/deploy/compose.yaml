@@ -30,6 +30,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg://relay:${POSTGRES_PASSWORD}@db:5432/relay
+      # One API process stays below the database's 30-connection ceiling while
+      # navigation bursts wait for a bounded slot instead of failing after 5s.
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
+      DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-3}
+      DB_POOL_TIMEOUT: ${DB_POOL_TIMEOUT:-15}
     ports: ["127.0.0.1:8119:8000"]
     depends_on:
       db: {condition: service_healthy}
