@@ -583,28 +583,28 @@ export default function LocationTracking() {
           <div>
             <Users size={19} />
             <strong>
-              {members.isPending || members.error ? "�" : totals.tracking}
+              {members.isPending || members.error ? "—" : totals.tracking}
             </strong>
             <span>Tracking work</span>
           </div>
           <div>
             <ShieldCheck size={19} />
             <strong>
-              {members.isPending || members.error ? "�" : totals.inside}
+              {members.isPending || members.error ? "—" : totals.inside}
             </strong>
             <span>Inside boundary</span>
           </div>
           <div>
             <MapPin size={19} />
             <strong>
-              {members.isPending || members.error ? "�" : totals.attention}
+              {members.isPending || members.error ? "—" : totals.attention}
             </strong>
             <span>Need attention</span>
           </div>
           <div>
             <LocateFixed size={19} />
             <strong>
-              {members.isPending || members.error ? "�" : totals.unrecorded}
+              {members.isPending || members.error ? "—" : totals.unrecorded}
             </strong>
             <span>Update or setup needed</span>
           </div>
@@ -771,7 +771,7 @@ export default function LocationTracking() {
                 />
                 <span>
                   {settings.isPending
-                    ? "Loading�"
+                    ? "Loading..."
                     : settings.error
                       ? "Unavailable"
                       : settings.data?.enabled
