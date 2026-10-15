@@ -1,0 +1,56 @@
+.customer-backed-out-trigger {
+  color: #793052;
+  background: transparent;
+  box-shadow: none;
+}
+.intake-withdrawal {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.intake-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 16px 0;
+}
+.intake-step-head h2 {
+  margin: 0;
+}
+.customer-backed-out-form {
+  display: grid;
+  gap: 18px;
+  padding: 20px;
+}
+.customer-backed-out-form > p {
+  margin: 0;
+  line-height: 1.55;
+}
+.customer-backed-out-form label {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+.customer-backed-out-form label > * {
+  margin: 0;
+  width: 100%;
+}
+.customer-backed-out-form .detail-list {
+  margin: 0;
+}
+.customer-backed-out-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+@media (max-width: 480px) {
+  .customer-backed-out-actions > button {
+    flex: 1 1 130px;
+  }
+  .intake-withdrawal {
+    justify-content: center;
+  }
+}

@@ -66,7 +66,11 @@ final router = GoRouter(
       path: '/sales-management',
       builder: (c, s) => SalesManagementScreen(
         selectedId: s.uri.queryParameters['selected'],
-        initialTab: s.uri.queryParameters['tab'] == 'targets' ? 2 : 0,
+        initialTab: switch (s.uri.queryParameters['tab']) {
+          'feedback' => 1,
+          'targets' => 2,
+          _ => 0,
+        },
       ),
     ),
     GoRoute(path: '/assets', builder: (c, s) => const FieldAssetsScreen()),

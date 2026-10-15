@@ -381,10 +381,10 @@ def database():
 def review_regression_cleanup(database):
     """Keep deliberately malformed review fixtures out of unrelated workflow tests."""
     from sqlalchemy import delete
-    from app.db import (KycCapture, CaptureIdentityClaim, SimProgress, SalesRecord, SalesCallTask, CallAttempt,
+    from app.db import (KycCapture, CaptureIdentityClaim, CaptureTransactionOutcome, SimProgress, SalesRecord, SalesCallTask, CallAttempt,
                         Notification, Movement, Customer, Sim)
 
-    models = (CaptureIdentityClaim, CallAttempt, SalesCallTask, SimProgress, SalesRecord, Movement,
+    models = (CaptureTransactionOutcome, CaptureIdentityClaim, CallAttempt, SalesCallTask, SimProgress, SalesRecord, Movement,
               KycCapture, Sim, Customer, Notification, Audit)
     with DB() as db:
         existing = {model: set(db.scalars(select(model.id))) for model in models}

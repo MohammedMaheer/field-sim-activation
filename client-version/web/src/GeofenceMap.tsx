@@ -6,7 +6,7 @@ import { MapPin, Maximize2, Search } from "lucide-react";
 import { api, Row } from "./api";
 
 export type Center = { latitude: number; longitude: number; radius_m: number };
-type MapView = "street" | "3d" | "satellite";
+type MapView = "street" | "3d";
 const initialCenter = [55.2708, 25.2048] as [number, number];
 function circle(boundary?: Center | null): GeoJSON.FeatureCollection {
   if (!boundary) return { type: "FeatureCollection", features: [] };
@@ -46,7 +46,6 @@ export default function GeofenceMap({
   editable = false,
   onCenter,
   focus,
-  imagery,
   onMemberSelect,
 }: {
   boundary?: Center | null;
@@ -59,7 +58,6 @@ export default function GeofenceMap({
     key: string;
     radius_m?: number;
   } | null;
-  imagery?: Row;
   onMemberSelect?: (userId: string) => void;
 }) {
   const container = useRef<HTMLDivElement>(null),
@@ -75,14 +73,6 @@ export default function GeofenceMap({
     [notice, setNotice] = useState(""),
     [view, setView] = useState<MapView>("street"),
     [ready, setReady] = useState(false);
-  const imageryRef = useRef(imagery);
-  imageryRef.current = imagery;
-  const streetCamera = useRef<{
-    center: [number, number];
-    zoom: number;
-    pitch: number;
-    bearing: number;
-  } | null>(null);
   const [placeQuery, setPlaceQuery] = useState(""),
     [searching, setSearching] = useState(false);
   const [placeResults, setPlaceResults] = useState<Row[]>([]),
@@ -135,8 +125,7 @@ export default function GeofenceMap({
     }
     map.current?.easeTo({
       center: [place.longitude, place.latitude],
-      zoom:
-        view === "satellite" ? Number(imageryRef.current?.max_zoom) || 9 : 15,
+      zoom: 15,
       duration: 450,
     });
   };
@@ -153,8 +142,7 @@ export default function GeofenceMap({
       ],
       {
         padding: 48,
-        maxZoom:
-          view === "satellite" ? Number(imageryRef.current?.max_zoom) || 9 : 18,
+        maxZoom: 18,
         duration,
       },
     );
@@ -190,12 +178,7 @@ export default function GeofenceMap({
             });
         });
         active.on("error", (event) => {
-          if ((event as unknown as Row).sourceId === "work-satellite") {
-            setNotice(
-              "Satellite imagery could not load. Street map restored; coordinates and radius remain available.",
-            );
-            setView("street");
-          } else if (!event.error?.message?.includes("WebGL")) {
+          if (!event.error?.message?.includes("WebGL")) {
             setNotice(
               "Some map tiles could not load. Coordinates and radius controls remain available.",
             );
@@ -368,10 +351,7 @@ export default function GeofenceMap({
       else
         map.current.easeTo({
           center: [focus.longitude, focus.latitude],
-          zoom:
-            view === "satellite"
-              ? Number(imageryRef.current?.max_zoom) || 9
-              : 16,
+          zoom: 16,
           duration: 450,
         });
     }
@@ -379,57 +359,7 @@ export default function GeofenceMap({
   useEffect(() => {
     const active = map.current;
     if (!active || !ready) return;
-    if (view === "satellite" && imageryRef.current?.tile_url) {
-      if (!streetCamera.current) {
-        const center = active.getCenter();
-        streetCamera.current = {
-          center: [center.lng, center.lat],
-          zoom: active.getZoom(),
-          pitch: active.getPitch(),
-          bearing: active.getBearing(),
-        };
-      }
-      // Preserve the provider's native detail and restore the street camera.
-      active.setMaxZoom(Number(imageryRef.current.max_zoom) || 9);
-      if (active.getLayer("work-buildings"))
-        active.setLayoutProperty("work-buildings", "visibility", "none");
-      if (!active.getSource("work-satellite"))
-        active.addSource("work-satellite", {
-          type: "raster",
-          tiles: [imageryRef.current.tile_url],
-          tileSize: 256,
-          maxzoom: Number(imageryRef.current.max_zoom) || 9,
-          attribution:
-            imageryRef.current.attribution || "Satellite imagery provider",
-        });
-      if (!active.getLayer("work-satellite"))
-        active.addLayer(
-          { id: "work-satellite", type: "raster", source: "work-satellite" },
-          "work-boundary-contrast",
-        );
-      active.setLayoutProperty("work-satellite", "visibility", "visible");
-      active.easeTo({
-        pitch: 0,
-        zoom: Math.min(
-          active.getZoom(),
-          Number(imageryRef.current.max_zoom) || 9,
-        ),
-        duration: 350,
-      });
-      return;
-    }
     active.setMaxZoom(22);
-    const restoring = !!streetCamera.current;
-    if (streetCamera.current) {
-      active.easeTo({
-        ...streetCamera.current,
-        pitch: view === "3d" ? 45 : 0,
-        duration: 350,
-      });
-      streetCamera.current = null;
-    }
-    if (active.getLayer("work-satellite"))
-      active.setLayoutProperty("work-satellite", "visibility", "none");
     if (view === "3d") {
       if (!active.getSource("work-buildings"))
         active.addSource("work-buildings", {
@@ -459,137 +389,120 @@ export default function GeofenceMap({
     } else if (active.getLayer("work-buildings"))
       active.setLayoutProperty("work-buildings", "visibility", "none");
     const pitch = view === "3d" ? 45 : 0;
-    if (!restoring && Math.abs(active.getPitch() - pitch) > 0.1)
+    if (Math.abs(active.getPitch() - pitch) > 0.1)
       active.easeTo({ pitch, duration: 350 });
   }, [view, ready]);
   return (
     <div className="work-map-shell">
-      <div
-        className="map-place-search"
-        role="search"
-        aria-label="Find a worksite"
-      >
-        <label>
-          <span className="sr-only">Search place or address</span>
-          <input
-            value={placeQuery}
-            placeholder="City, street or public place"
-            maxLength={160}
-            onChange={(event) => setPlaceQuery(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void findPlace();
-              }
-            }}
-          />
-        </label>
-        <button
-          type="button"
-          disabled={searching}
-          onClick={() => void findPlace()}
+      <details className="map-optional-tools" open={editable || undefined}>
+        <summary>Search map & view options</summary>
+        <div
+          className="map-place-search"
+          role="search"
+          aria-label="Find a worksite"
         >
-          <Search size={16} />
-          {searching ? "Searching…" : "Search place"}
-        </button>
-      </div>
-      {(searchError || (searched && !placeResults.length)) && (
-        <p
-          className="map-search-feedback"
-          role={searchError ? "alert" : "status"}
-        >
-          {searchError ||
-            "No matching place found. Try the city name, drop a pin or enter coordinates."}
-        </p>
-      )}
-      {!!placeResults.length && (
-        <div className="map-search-results" aria-label="Place search results">
-          {placeResults.map((place) => (
+          <label>
+            <span className="sr-only">Search place or address</span>
+            <input
+              value={placeQuery}
+              placeholder="City, street or public place"
+              maxLength={160}
+              onChange={(event) => setPlaceQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void findPlace();
+                }
+              }}
+            />
+          </label>
+          <button
+            type="button"
+            disabled={searching}
+            onClick={() => void findPlace()}
+          >
+            <Search size={16} />
+            {searching ? "Searching…" : "Search place"}
+          </button>
+        </div>
+        {(searchError || (searched && !placeResults.length)) && (
+          <p
+            className="map-search-feedback"
+            role={searchError ? "alert" : "status"}
+          >
+            {searchError ||
+              "No matching place found. Try the city name, drop a pin or enter coordinates."}
+          </p>
+        )}
+        {!!placeResults.length && (
+          <div className="map-search-results" aria-label="Place search results">
+            {placeResults.map((place) => (
+              <button
+                type="button"
+                key={place.id}
+                onClick={() => choosePlace(place)}
+              >
+                <MapPin size={17} />
+                <span>{place.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        <small className="map-search-attribution">
+          Search public places only ·{" "}
+          <a
+            href="https://operations.osmfoundation.org/policies/nominatim/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            © OpenStreetMap contributors
+          </a>
+        </small>
+        <div className="work-map-tools" aria-label="Map view">
+          {editable && (
             <button
               type="button"
-              key={place.id}
-              onClick={() => choosePlace(place)}
+              aria-pressed={pinMode}
+              onClick={() => setPinMode((value) => !value)}
             >
-              <MapPin size={17} />
-              <span>{place.name}</span>
+              <MapPin size={16} /> Drop pin
             </button>
-          ))}
+          )}
+          <button
+            type="button"
+            aria-pressed={view === "street"}
+            onClick={() => setView("street")}
+          >
+            Street
+          </button>
+          <button
+            type="button"
+            aria-pressed={view === "3d"}
+            onClick={() => setView("3d")}
+          >
+            3D buildings
+          </button>
+          {boundary && (
+            <button
+              type="button"
+              onClick={() => fitBoundary(boundary)}
+              aria-label="Center map on boundary"
+            >
+              <Maximize2 size={16} /> Fit radius
+            </button>
+          )}
         </div>
-      )}
-      <small className="map-search-attribution">
-        Search public places only ·{" "}
-        <a
-          href="https://operations.osmfoundation.org/policies/nominatim/"
-          target="_blank"
-          rel="noreferrer"
-        >
-          © OpenStreetMap contributors
-        </a>
-      </small>
-      <div className="work-map-tools" aria-label="Map view">
-        {editable && (
-          <button
-            type="button"
-            aria-pressed={pinMode}
-            onClick={() => setPinMode((value) => !value)}
-          >
-            <MapPin size={16} /> Drop pin
-          </button>
-        )}
-        <button
-          type="button"
-          aria-pressed={view === "street"}
-          onClick={() => setView("street")}
-        >
-          Street
-        </button>
-        <button
-          type="button"
-          aria-pressed={view === "3d"}
-          onClick={() => setView("3d")}
-        >
-          3D buildings
-        </button>
-        {imagery?.tile_url && (
-          <button
-            type="button"
-            aria-pressed={view === "satellite"}
-            onClick={() => setView("satellite")}
-          >
-            Satellite
-          </button>
-        )}
         {boundary && (
-          <button
-            type="button"
-            onClick={() => fitBoundary(boundary)}
-            aria-label="Center map on boundary"
-          >
-            <Maximize2 size={16} /> Fit radius
-          </button>
-        )}
-      </div>
-      {boundary && (
-        <div className="map-external-views" aria-label="More detailed imagery">
           <a
-            href={`https://www.google.com/maps/@?api=1&map_action=map&center=${encodeURIComponent(`${boundary.latitude},${boundary.longitude}`)}&zoom=18&basemap=satellite`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Google satellite ↗
-          </a>
-          <a
+            className="map-street-view-link"
             href={`https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${encodeURIComponent(`${boundary.latitude},${boundary.longitude}`)}`}
             target="_blank"
             rel="noopener noreferrer"
           >
-            Street View ↗
+            Open Street View where available
           </a>
-          <span>
-            Opens Google Maps at this worksite. Coverage and image dates vary.
-          </span>
-        </div>
-      )}
+        )}
+      </details>
       <div
         ref={container}
         className="work-map"
@@ -612,33 +525,12 @@ export default function GeofenceMap({
       )}
       <div className="work-map-caption">
         {notice && <span role="status">{notice} </span>}
-        {view === "satellite"
-          ? `${imagery?.label || "Satellite overview"} · ${imagery?.provider || "NASA GIBS"} · ${imagery?.available_date || "Date unavailable"} · ${imagery?.resolution_m || 250} m imagery. ${imagery?.note || "Zoom is limited to native detail. Choose Street for precise worksite boundaries."}`
-          : editable
-            ? pinMode
-              ? "Click the map to drop the boundary pin, or drag it to move the center. Coordinates remain editable below."
-              : "Turn on Drop pin to position the boundary, or search for a public place."
-            : "Markers show the latest reported location; dimmed markers need a fresh update."}
+        {editable
+          ? pinMode
+            ? "Click the map to drop the boundary pin, or drag it to move the center. Coordinates remain editable below."
+            : "Turn on Drop pin to position the boundary, or search for a public place."
+          : "Markers show the latest reported location; dimmed markers need a fresh update."}
       </div>
-      {view === "satellite" && imagery?.license_url && (
-        <p className="map-imagery-license">
-          <a
-            href={imagery.source_url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Sentinel-2 cloudless by EOX IT Services GmbH
-          </a>{" "}
-          · Contains modified Copernicus Sentinel data 2016 ·{" "}
-          <a
-            href={imagery.license_url}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            CC BY 4.0
-          </a>
-        </p>
-      )}
     </div>
   );
 }

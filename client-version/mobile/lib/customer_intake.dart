@@ -18,6 +18,8 @@ import 'package:image_picker/image_picker.dart';
 import 'services.dart';
 import 'ocr_jobs.dart';
 import 'receipt_sr.dart';
+import 'customer_backed_out.dart';
+import 'role_access.dart';
 
 class DocumentScanResult {
   final Uint8List image;
@@ -499,11 +501,15 @@ class CustomerIntakeScreen extends ConsumerStatefulWidget {
   final Json initial;
   final void Function(Json) onReady;
   final VoidCallback onHistory;
+  final ValueChanged<int>? onVersionChanged;
+  final VoidCallback? onBackedOut;
   const CustomerIntakeScreen({
     super.key,
     required this.initial,
     required this.onReady,
     required this.onHistory,
+    this.onVersionChanged,
+    this.onBackedOut,
   });
   @override
   ConsumerState<CustomerIntakeScreen> createState() => _CustomerIntakeState();
@@ -584,6 +590,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
       step = 0;
     }
     if (mounted) {
+      widget.onVersionChanged?.call(version);
       setState(() {
         busy = false;
         revision++;
@@ -882,6 +889,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
   }
 
   Future<void> save(bool next) async {
+    if (busy) return;
     setState(() {
       busy = true;
       error = null;
@@ -967,6 +975,7 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
           data: {'version': version, 'data': data},
         );
         version = r.data['version'];
+        widget.onVersionChanged?.call(version);
         await cache();
       }
       if (!mounted) return;
@@ -1000,6 +1009,37 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         });
       }
     }
+  }
+
+  Future<void> customerBackedOut() async {
+    if (busy) return;
+    setState(() {
+      busy = true;
+      scannerPaused = true;
+    });
+    final recorded = await showCustomerBackedOutSheet(
+      context,
+      service: capturedService,
+      intake: data,
+      version: version,
+    );
+    if (!mounted) return;
+    if (recorded) {
+      widget.onBackedOut?.call();
+      data.clear();
+      ref.invalidate(dashboardProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer backed out recorded in No-sale feedback'),
+        ),
+      );
+      context.go('/sales-management?tab=feedback');
+      return;
+    }
+    setState(() {
+      busy = false;
+      scannerPaused = false;
+    });
   }
 
   Widget field(
@@ -1066,9 +1106,24 @@ class _CustomerIntakeState extends ConsumerState<CustomerIntakeScreen> {
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: busy ? null : widget.onHistory,
-          child: const Text('History'),
+        PopupMenuButton<String>(
+          tooltip: 'Transaction options',
+          enabled: !busy,
+          onSelected: (action) {
+            if (action == 'backed-out') {
+              customerBackedOut();
+            } else {
+              widget.onHistory();
+            }
+          },
+          itemBuilder: (_) => [
+            const PopupMenuItem(value: 'history', child: Text('History')),
+            if (canVisitMobilePage('/screenshot-capture', capturedService.user))
+              const PopupMenuItem(
+                value: 'backed-out',
+                child: Text('Customer backed out'),
+              ),
+          ],
         ),
       ],
     ),

@@ -1,6 +1,12 @@
+# Capture outcomes and work-location usability — 15 October 2026
+
+Unfinished customer, order and review screens offer **Customer backed out**. This records the partial customer/product details in No-sale feedback and closes only that transaction's drafts after server confirmation. It does not create a sale, reference bill, payment confirmation or stock deduction, and cannot cancel an already submitted sale. Retries are idempotent and historical sales remain intact.
+
+Work locations separates **Live locations** from **Manage boundaries**. Boundary setup guides the user through a worksite, allowed radius and assignment. Branch defaults, saved worksites and individual member overrides remain supported. Satellite view is removed at the owner's request; attributed street maps and available 3D buildings remain. Existing tracking consent, permissions, scope and enforcement rules are unchanged.
+
 # Work location addition — 13 October 2026
 
-The owner has added work-session location recording and configurable geofencing for every member role. Administrators set a branch or member's center and radius, optionally by map selection. Enabled enforcement blocks shift starts and sale capture outside the boundary, and fails closed for missing, stale, mocked or uncertain GPS. Work tracking is visible and permission-based; clients stop collection when a work session ends or the user signs out. Current role/branch assignments govern location visibility and exports. Enforcement starts disabled until real boundaries are configured. Street/3D maps and dated satellite overviews are optional external map sources; they do not determine GPS authorization or sale status. This supersedes the earlier location exclusion.
+The owner has added work-session location recording and configurable geofencing for every member role. Administrators set a branch or member's center and radius, optionally by map selection. Enabled enforcement blocks shift starts and sale capture outside the boundary, and fails closed for missing, stale, mocked or uncertain GPS. Work tracking is visible and permission-based; clients stop collection when a work session ends or the user signs out. Current role/branch assignments govern location visibility and exports. Enforcement starts disabled until real boundaries are configured. Maps do not determine GPS authorization or sale status. This supersedes the earlier location exclusion.
 
 # October client clarification - 9 October 2026
 

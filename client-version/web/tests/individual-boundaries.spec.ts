@@ -61,6 +61,9 @@ test("place search is explicit, positions the pin and updates coordinates", asyn
     });
   });
   await page.goto("/location-tracking");
+  await page
+    .getByRole("button", { name: "Manage boundaries", exact: true })
+    .click();
   await page.getByRole("button", { name: "Add boundary", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog
@@ -177,43 +180,18 @@ test("a selected member disappears when the scoped refresh removes access", asyn
   ).toHaveCount(0);
 });
 
-test("clear satellite mosaic shows its real age and free detailed-view links", async ({
+test("removed satellite mode never exposes a provider or an external satellite link", async ({
   page,
 }) => {
-  await setup(page);
-  await page.route("**/api/location-tracking/map-imagery", (route) =>
-    route.fulfill({
-      json: {
-        available: true,
-        available_date: "2016",
-        tile_url:
-          "https://tiles.maps.eox.at/wmts/1.0.0/s2cloudless_3857/default/GoogleMapsCompatible/{z}/{y}/{x}.jpg",
-        max_zoom: 14,
-        resolution_m: 10,
-        label: "Cloudless satellite mosaic",
-        provider: "EOX / Copernicus",
-        note: "Composite from 2016, not live imagery",
-        attribution: "EOX",
-        source_url: "https://s2maps.eu/",
-        license_url: "https://creativecommons.org/licenses/by/4.0/",
-      },
-    }),
-  );
+  const fixture = await setup(page);
   await page.goto("/location-tracking");
-  await page.getByRole("button", { name: "Satellite", exact: true }).click();
+  await page.getByText("Search map & view options", { exact: true }).click();
   await expect(
-    page.getByText(/Cloudless satellite mosaic.*EOX.*2016.*10 m imagery/),
+    page.getByRole("button", { name: "Satellite", exact: true }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /satellite/i })).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Street", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: /^Google satellite/ }),
-  ).toHaveAttribute(
-    "href",
-    /api=1&map_action=map&center=25.2%2C55.27&zoom=18&basemap=satellite/,
-  );
-  await expect(
-    page.getByRole("link", { name: /^Street View/ }),
-  ).toHaveAttribute("href", /map_action=pano&viewpoint=25.2%2C55.27/);
-  await expect(
-    page.getByRole("link", { name: "CC BY 4.0", exact: true }),
-  ).toBeVisible();
+  expect(fixture.requests).not.toContain("/api/location-tracking/map-imagery");
 });

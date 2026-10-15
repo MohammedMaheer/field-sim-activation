@@ -34,6 +34,7 @@ from .db import (
     Notification,
     Movement,
     SalesRecord,
+    NoSaleFeedback,
     get_db,
     now,
 )
@@ -42,6 +43,7 @@ from .services import audit
 from .invoices import invoice
 from .capture_ocr import extractor, inspect_image, OcrBusy
 from .location_tracking import enforce_capture
+from .capture_outcomes import creator_lock, ensure_open, transaction_outcome, mark_submitted
 
 router = APIRouter(prefix="/api/kyc-captures", tags=["KYC transaction captures"])
 SAMPLE_REFERENCE_PREFIXES = (
@@ -422,6 +424,8 @@ def read_draft(user=Depends(principal), db=Depends(get_db)):
 @router.put("/draft")
 def save_draft(body: IntakeDraftBody, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
+    creator_lock(db, user)
+    ensure_open(db, user, body.data.transaction_id)
     if body.data.step > 0:
         check_document_evidence(body.data, user)
     if body.data.step > 1:
@@ -462,7 +466,8 @@ def saved_drafts(user=Depends(principal), db=Depends(get_db)):
 @router.post("/saved-drafts", status_code=201)
 def save_named_draft(body: SavedDraftBody, user=Depends(principal), db=Depends(get_db)):
     access(db, user, True)
-    db.scalar(select(User).where(User.id == user.id).with_for_update())
+    creator_lock(db, user)
+    ensure_open(db, user, body.data.transaction_id)
     if body.data.step > 0:
         check_document_evidence(body.data, user)
     if body.data.step > 1:
@@ -505,6 +510,92 @@ def discard_named_draft(draft_id: str, user=Depends(principal), db=Depends(get_d
     db.delete(row)
     db.commit()
     return {"discarded": True}
+
+
+class CustomerBackedOut(BaseModel):
+    agent_id: str = Field(min_length=1, max_length=36)
+    transaction_id: str = Field(min_length=16, max_length=80)
+    version: int = Field(ge=0)
+    data: Intake
+    note: str = Field(default="", max_length=1000)
+
+    @model_validator(mode="after")
+    def same_transaction(self):
+        if self.transaction_id != self.transaction_id.strip() or self.data.transaction_id != self.transaction_id:
+            raise ValueError("Use the current transaction identifier")
+        return self
+
+
+@router.post("/customer-backed-out")
+def customer_backed_out(body: CustomerBackedOut, request: Request, user=Depends(principal), db=Depends(get_db)):
+    """Record a no-sale outcome and close only this creator's matching intake.
+
+    Ending an unfinished customer interaction requires neither OCR evidence nor
+    an active shift/location. No sale, receipt, stock deduction or approval is
+    created. Lost responses are safe to retry, even after starting a new draft.
+    """
+    from .sales_management import can_record, assignment
+    can_record(db, user)
+    require(db, user, "read")
+    assert_agent(db, user, body.agent_id)
+    creator_lock(db, user)
+    draft = db.scalar(select(CaptureDraft).where(CaptureDraft.creator_id == user.id).with_for_update())
+    current_version = draft.version if draft else 0
+    outcome = transaction_outcome(db, user, body.transaction_id)
+    if outcome and outcome.creator_id != user.id:
+        raise HTTPException(404, "Transaction not found")
+    if outcome and outcome.status != "ACTIVE":
+        if outcome.status != "CUSTOMER_BACKED_OUT" or outcome.agent_id != body.agent_id:
+            raise HTTPException(409, "This transaction was already submitted. Open its recorded sale instead.")
+        return {"recorded": True, "already_recorded": True, "feedback_id": outcome.feedback_id,
+                "transaction_id": body.transaction_id, "version": current_version, "status": outcome.status}
+    outcome = ensure_open(db, user, body.transaction_id, body.agent_id)
+
+    matches_active = bool(draft and payload(draft).get("transaction_id") == body.transaction_id)
+    if matches_active and current_version != body.version:
+        raise HTTPException(409, "Your draft changed on another device. Reload before closing it.")
+    if body.data.saved_draft_id:
+        saved = db.get(SavedCaptureDraft, body.data.saved_draft_id)
+        if saved is None or saved.creator_id != user.id:
+            raise HTTPException(404, "Draft not found")
+        if payload(saved).get("transaction_id") != body.transaction_id:
+            raise HTTPException(409, "This saved draft belongs to another transaction. Reload before continuing.")
+
+    progress_rows = list(db.scalars(select(SimProgress).where(
+        SimProgress.transaction_id == body.transaction_id,
+    ).with_for_update()))
+    if any(progress.agent_id != body.agent_id for progress in progress_rows):
+        raise HTTPException(409, "This transaction belongs to another sales agent. Reload before closing it.")
+    if any(progress.capture_id for progress in progress_rows):
+        raise HTTPException(409, "This transaction was already submitted. Open its recorded sale instead.")
+
+    agent, outlet = assignment(db, body.agent_id)
+    stage = ("customer capture", "order capture", "review")[body.data.step]
+    row = NoSaleFeedback(agent_id=agent.id, leader_id=agent.leader_id, branch_id=outlet.branch_id,
+        customer_name=body.data.name.strip(),
+        contact_encrypted=cipher.encrypt(body.data.msisdn.strip().encode()).decode() if body.data.msisdn.strip() else "",
+        product_suggested=(body.data.package_name or body.data.plan_name or body.data.product_name).strip() or "Not recorded",
+        rejection_reason="Customer backed out",
+        feedback=body.note.strip() or f"Customer backed out during {stage}.")
+    db.add(row)
+    db.flush()
+    outcome.status, outcome.feedback_id = "CUSTOMER_BACKED_OUT", row.id
+    # Every saved copy of this interaction closes, while all other drafts stay.
+    for saved in db.scalars(select(SavedCaptureDraft).where(SavedCaptureDraft.creator_id == user.id).with_for_update()):
+        if payload(saved).get("transaction_id") == body.transaction_id:
+            db.delete(saved)
+    for progress in progress_rows:
+        db.delete(progress)
+    if matches_active:
+        store(draft, {})
+        draft.version += 1
+        current_version = draft.version
+    audit(db, user, "Customer Backed Out", row.id, row.agent_id,
+          new={"status": "CUSTOMER_BACKED_OUT", "transaction_id": body.transaction_id, "stage": body.data.step},
+          request=request)
+    db.commit()
+    return {"recorded": True, "already_recorded": False, "feedback_id": row.id,
+            "transaction_id": body.transaction_id, "version": current_version, "status": "CUSTOMER_BACKED_OUT"}
 
 
 class IdentityImage(BaseModel):
@@ -1016,6 +1107,15 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
         if existing.creator_id != user.id or existing.agent_id != body.agent_id or payload(existing).get("submission_hash") != fingerprint:
             raise HTTPException(409, "This submission identifier was already used for another sale")
         return view(existing)
+    creator_lock(db, user)
+    # A submission racing a customer withdrawal must lose before any sale or
+    # inventory change, and a delayed request cannot revive a closed intake.
+    existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
+    if existing:
+        if existing.creator_id != user.id or existing.agent_id != body.agent_id or payload(existing).get("submission_hash") != fingerprint:
+            raise HTTPException(409, "This submission identifier was already used for another sale")
+        return view(existing)
+    ensure_open(db, user, body.intake.transaction_id or body.operation_id, body.agent_id)
     enforce_capture(db, user)
     if body.intake.capture_mode != "SCREENSHOT_SALE":
         raise HTTPException(422, "Use the current sale capture workflow")
@@ -1060,6 +1160,7 @@ def submit_sale(body: SaleSubmission, request: Request, user=Depends(principal),
                          encoded_images=[body.intake.order_image, body.intake.payment_image]), capture_id=row.id)
         from .sales_management import register_capture_sale
         register_capture_sale(db, row)
+        mark_submitted(db, user, body.agent_id, body.intake.transaction_id or body.operation_id, row.id)
         saved_id = body.intake.saved_draft_id
         if saved_id:
             saved = db.get(SavedCaptureDraft, saved_id)
@@ -1130,6 +1231,11 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
 
     if existing:
         return replay(existing)
+    creator_lock(db, user)
+    existing = db.scalar(select(KycCapture).where(KycCapture.operation_id == body.operation_id))
+    if existing:
+        return replay(existing)
+    ensure_open(db, user, body.intake.transaction_id if body.intake else "", body.agent_id)
     from .organization import capture_assignment
     agent, outlet = capture_assignment(db, body.agent_id)
     if not source:
@@ -1209,6 +1315,7 @@ def create(body: CaptureBody, request: Request, user=Depends(principal), db=Depe
             )
             if saved and saved.creator_id == user.id:
                 db.delete(saved)
+        mark_submitted(db, user, body.agent_id, body.intake.transaction_id if body.intake else "", row.id)
         record(db, row, user, "Receipt uploaded", request, content)
         db.commit()
     except IntegrityError:

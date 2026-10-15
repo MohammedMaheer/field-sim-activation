@@ -1,3 +1,7 @@
+# Unfinished customer withdrawal — 15 October 2026
+
+During customer capture, order capture or final review, use **Customer backed out** (under **Transaction options** in the app/demo). Confirm the optional note to record No-sale feedback. Server confirmation closes only this interaction's active/saved drafts; a failed request keeps the draft for retry. Partial fields are allowed without OCR evidence. The endpoint serializes withdrawal with submission and returns the original outcome for duplicate retries. It rejects submitted transactions and cannot undo external activation or deduct stock. Submitted sale cancellation remains a separate authorized management operation.
+
 # Latest operations clarification - 13 October 2026
 
 Backend staff call the customer and record an active-plan confirmation before verifying screenshot-sale evidence. The optional payment receipt has no separate approval gate. SR reconciliation accepts daily and monthly reports independently; missing OCR SR has a recorded manual fallback, while recognized SR stays bound to its evidence. See [Operations update 83](../client-version/docs/OPERATIONS-UPDATE-83.md) for current role, stock, commission-import and location controls. Earlier workflow sections are historical and are superseded where they conflict.

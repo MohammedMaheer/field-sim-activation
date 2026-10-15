@@ -1,4 +1,5 @@
 import IntakeCamera from "./IntakeCamera";
+import CustomerBackedOut from "./CustomerBackedOut";
 import { useEffect, useRef, useState } from "react";
 import { api, post, Row } from "./api";
 import { useResource } from "./App";
@@ -17,11 +18,17 @@ export default function CustomerIntake({
   onChange,
   onReady,
   onSaved,
+  onVersionChange,
+  onWithdrawn,
+  agentId,
 }: {
   value: Row;
   onChange: (v: Row) => void;
   onReady: () => void;
   onSaved: () => void;
+  onVersionChange: (version: number) => void;
+  onWithdrawn: () => void;
+  agentId?: string;
 }) {
   const [camera, setCamera] = useState("");
   const [reading, setReading] = useState(false),
@@ -69,7 +76,8 @@ export default function CustomerIntake({
     [version, setVersion] = useState(0),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [loaded, setLoaded] = useState(false);
+    [loaded, setLoaded] = useState(false),
+    [loadAttempt, setLoadAttempt] = useState(0);
   useEffect(() => {
     let live = true;
     api("/kyc-captures/draft")
@@ -86,6 +94,7 @@ export default function CustomerIntake({
           }
           onChange(restored);
           setVersion(r.version);
+          onVersionChange(r.version);
           setStep(Math.min(restored.step || 0, 1));
           setLoaded(true);
         }
@@ -96,7 +105,7 @@ export default function CustomerIntake({
     return () => {
       live = false;
     };
-  }, []);
+  }, [loadAttempt]);
   const set = (key: string, v: any) => {
     const remaining = missing.filter((item) => item !== key);
     setMissing(remaining);
@@ -349,6 +358,7 @@ export default function CustomerIntake({
         body: JSON.stringify({ version, data }),
       });
       setVersion(r.version);
+      onVersionChange(r.version);
       onChange(data);
       if (!next) {
         await post("/kyc-captures/saved-drafts", { data });
@@ -383,6 +393,29 @@ export default function CustomerIntake({
       </label>
     );
   }
+  if (!loaded)
+    return (
+      <section className="customer-intake" aria-busy={!error}>
+        {error ? (
+          <>
+            <p role="alert" className="capture-error">
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                setError("");
+                setLoadAttempt((n) => n + 1);
+              }}
+            >
+              Retry draft
+            </button>
+          </>
+        ) : (
+          <p role="status">Preparing your transaction…</p>
+        )}
+      </section>
+    );
   return (
     <section className="customer-intake">
       <ol className="transaction-stages">
@@ -396,6 +429,16 @@ export default function CustomerIntake({
           </li>
         ))}
       </ol>
+      <div className="intake-step-head">
+        <h2>{step === 0 ? "Customer details" : "Order & plan"}</h2>
+        <CustomerBackedOut
+          data={value}
+          version={version}
+          agentId={agentId}
+          disabled={busy || reading || !loaded || !!camera}
+          onRecorded={onWithdrawn}
+        />
+      </div>
       {error && (
         <p role="alert" className="capture-error">
           {error}
@@ -408,7 +451,6 @@ export default function CustomerIntake({
       )}
       {step === 0 ? (
         <>
-          <h2>Customer details</h2>
           <div className="identity-capture-actions">
             <div
               className="intake-choice"
@@ -527,7 +569,6 @@ export default function CustomerIntake({
         </>
       ) : (
         <>
-          <h2>Order & plan</h2>
           {loaded && !value.order_image && !reading && (
             <IntakeCamera
               embedded

@@ -1,4 +1,7 @@
-import { expect, test } from '@playwright/test';
+import { expect as baseExpect, test } from '@playwright/test';
+// The real disposable API is reached through an SSH tunnel; wait for confirmed
+// completion rather than assuming it responds as quickly as a mocked handler.
+const expect = baseExpect.configure({ timeout: 30000 });
 import path from 'node:path';
 
 test.beforeEach(() => {
@@ -7,6 +10,7 @@ test.beforeEach(() => {
 });
 
 test('configured boundary connects management, member shift, outside capture, notification and exports', async ({ browser, request }) => {
+  test.setTimeout(300000);
   const auth = await request.post('/api/auth/login', { data: { email: 'admin@relay.demo', password: process.env.DEMO_PASSWORD!, native: true } });
   expect(auth.ok()).toBeTruthy();
   const headers = { Authorization: `Bearer ${(await auth.json()).access_token}` };
@@ -25,12 +29,14 @@ test('configured boundary connects management, member shift, outside capture, no
     await page.getByRole('button', { name: 'Sign in to workspace' }).click();
     await page.getByRole('link', { name: 'Work locations', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Locations & work boundaries' })).toBeVisible();
+    await page.getByRole('button', { name: 'Manage boundaries', exact: true }).click();
     const existingFences = await request.get('/api/location-tracking/fences', { headers });
     const existing = (await existingFences.json()).find((row: any) => row.branch_id === agent.branch_id);
     await page.getByRole('button', { name: existing ? `Edit ${existing.name}` : 'Add boundary', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByLabel('Boundary name').fill('Explicit isolated connected worksite');
     await dialog.getByLabel('Applies to branch').selectOption(agent.branch_id);
+    await dialog.getByText('Enter coordinates manually', { exact: true }).click();
     await dialog.getByLabel('Latitude', { exact: true }).fill('25.08');
     await dialog.getByLabel('Longitude', { exact: true }).fill('55.141');
     await dialog.getByLabel('Boundary radius slider').fill('500');
@@ -50,19 +56,20 @@ test('configured boundary connects management, member shift, outside capture, no
     await expect(page.getByRole('button', { name: 'End work tracking', exact: true })).toBeVisible();
     await expect(page.getByText('Inside boundary', { exact: true }).first()).toBeVisible();
     await page.evaluate(() => window.scrollTo(0, 0));
-    await page.screenshot({ path: path.resolve('../output/qa/geofence80-connected-inside.png') });
+    await page.screenshot({ path: path.resolve('../output/qa/geofence86-connected-inside.png') });
     await context.setGeolocation({ latitude: 25.1, longitude: 55.141, accuracy: 5 });
     // Refresh shares the real API session; wait through its deliberate short point-rate bound.
     await expect.poll(async () => {
       await page.getByRole('button', { name: 'Update my location', exact: true }).click();
       return await page.getByText('Outside boundary', { exact: true }).count();
-    }, { intervals: [1600, 1600, 2000], timeout: 12000 }).toBeGreaterThan(0);
+    }, { intervals: [1600, 1600, 2000], timeout: 45000 }).toBeGreaterThan(0);
     await page.getByRole('link', { name: 'New transaction', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeEnabled();
     await expect(page.getByText(/outside your assigned work boundary/i).first()).toBeVisible();
     let queued = 0;
     page.on('request', req => { if (new URL(req.url()).pathname === '/api/kyc-captures/ocr-jobs' && req.method() === 'POST') queued++; });
     await page.getByLabel('Customer details screen', { exact: true }).setInputFiles(path.resolve('tests/fixtures/transaction-sample.png'));
-    await expect(page.getByRole('alert').first()).toContainText(/outside/i);
+    await expect(page.getByRole('alert').filter({ hasText: /outside/i })).toBeVisible();
     expect(queued).toBe(0);
     const memberResponse = await request.get('/api/location-tracking/members', { headers });
     const member = (await memberResponse.json()).items.find((row: any) => row.user_id === agent.id);

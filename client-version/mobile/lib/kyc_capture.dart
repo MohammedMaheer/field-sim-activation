@@ -22,6 +22,7 @@ import 'ocr_jobs.dart';
 import 'branding.dart';
 import 'exports.dart';
 import 'sales_presentation.dart';
+import 'customer_backed_out.dart';
 
 class KycCaptureScreen extends ConsumerStatefulWidget {
   final Json initial;
@@ -51,6 +52,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
   Json? capture;
   Json intake = {};
   bool intakeReady = false;
+  int intakeVersion = 0;
   String? error;
   bool busy = false, pending = false, dirty = false, loading = true;
   Timer? timer;
@@ -113,6 +115,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
         source.text = saved['reference'] ?? '';
         intake = Map<String, dynamic>.from(saved['intake'] ?? {});
         intakeReady = saved['intakeReady'] == true;
+        intakeVersion = saved['intakeVersion'] as int? ?? 0;
         bytes = saved['image'] == null ? null : base64Decode(saved['image']);
         operation = saved['operation'];
         pending = saved['pending'] == true;
@@ -134,6 +137,7 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
       'reference': source.text,
       'intake': intake,
       'intakeReady': intakeReady,
+      'intakeVersion': intakeVersion,
       'image': bytes == null ? null : base64Encode(bytes!),
       'operation': operation,
       'pending': pending,
@@ -569,6 +573,32 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     context.push('/screenshot-capture');
   }
 
+  Future<void> customerBackedOut() async {
+    // A timed-out upload may already have created a sale. It must be resolved
+    // before any outcome can close this draft.
+    if (busy || pending || capture != null || widget.captureId != null) return;
+    setState(() => busy = true);
+    final recorded = await showCustomerBackedOutSheet(
+      context,
+      service: capturedService,
+      intake: intake,
+      version: intakeVersion,
+    );
+    if (!mounted) return;
+    if (recorded) {
+      intake.clear();
+      ref.invalidate(dashboardProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Customer backed out recorded in No-sale feedback'),
+        ),
+      );
+      context.go('/sales-management?tab=feedback');
+      return;
+    }
+    setState(() => busy = false);
+  }
+
   String receiptDate(dynamic value) {
     final date = DateTime.tryParse(value?.toString() ?? '')?.toLocal();
     if (date == null) return '—';
@@ -719,6 +749,8 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
     if (!loading && capture == null && !intakeReady) {
       return CustomerIntakeScreen(
         initial: intake,
+        onVersionChanged: (version) => intakeVersion = version,
+        onBackedOut: () => intake.clear(),
         onReady: (value) {
           setState(() {
             if (intake['order_image'] != value['order_image']) {
@@ -836,6 +868,18 @@ class _KycCaptureState extends ConsumerState<KycCaptureScreen> {
           style: const TextStyle(fontSize: 18, height: 1.05),
         ),
         actions: [
+          if (capture == null && canWrite && saleFlow && !pending)
+            PopupMenuButton<String>(
+              tooltip: 'Transaction options',
+              enabled: !busy,
+              onSelected: (_) => customerBackedOut(),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'backed-out',
+                  child: Text('Customer backed out'),
+                ),
+              ],
+            ),
           if (capture != null)
             IconButton(
               tooltip: 'Home',

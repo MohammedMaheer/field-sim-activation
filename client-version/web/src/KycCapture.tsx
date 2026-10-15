@@ -1,12 +1,14 @@
 import { useBranchScope } from "./BranchScope";
 import ActivationReceipt from "./ActivationReceipt";
 import CustomerIntake from "./CustomerIntake";
+import CustomerBackedOut from "./CustomerBackedOut";
 import ReceiptReview from "./ReceiptReview";
 import KycJourney from "./KycJourney";
 import RecordOverview from "./RecordOverview";
 import { CaptureBoundaryNotice } from "./WorkLocation";
 import { useContext, useEffect, useState, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 import {
   Camera,
   Upload,
@@ -28,7 +30,8 @@ import {
 import { Badge, Panel, ErrorState, Loading, Drawer } from "./components";
 
 export default function KycCapture() {
-  const { user } = useContext(Context),
+  const navigate = useNavigate();
+  const { user, notify } = useContext(Context),
     agents = useResource("agents"),
     client = useQueryClient();
   const { branch } = useBranchScope();
@@ -49,6 +52,8 @@ export default function KycCapture() {
     refetchInterval: 8000,
   });
   const [intake, setIntake] = useState<Row>({});
+  const [intakeSession, setIntakeSession] = useState(0);
+  const [captureDraftVersion, setCaptureDraftVersion] = useState(0);
   const capturedOrderSR = useRef("");
   const originalManualSR = useRef("");
   const [intakeReady, setIntakeReady] = useState(false);
@@ -155,6 +160,27 @@ export default function KycCapture() {
     });
     setOperation(crypto.randomUUID());
   }
+  function customerWithdrew() {
+    replaceReceipt(null);
+    setIntake({});
+    capturedOrderSR.current = "";
+    originalManualSR.current = "";
+    setAgent("");
+    setSource("");
+    setIntakeReady(false);
+    setSelected("");
+    setDirty(false);
+    setShowUpload(false);
+    setError("");
+    for (const queryKey of [
+      ["sales-management"],
+      ["saved-capture-drafts"],
+      ["dashboard"],
+    ])
+      void client.invalidateQueries({ queryKey });
+    notify("Customer backed out recorded in No-sale feedback. Draft closed.");
+    navigate("/sales?tab=feedback");
+  }
   useEffect(() => {
     let current = true;
     setReceiptMessage("");
@@ -246,6 +272,7 @@ export default function KycCapture() {
     }
   }
   async function upload(e: React.FormEvent) {
+    if (e.defaultPrevented) return;
     e.preventDefault();
     await run(async () => {
       if (file && file.size > 4000000)
@@ -353,6 +380,7 @@ export default function KycCapture() {
                     body: JSON.stringify({ version: draft.version, data: {} }),
                   });
                   setIntake({});
+                  setIntakeSession((n) => n + 1);
                   capturedOrderSR.current = "";
                   originalManualSR.current = "";
                   setFile(null);
@@ -385,6 +413,7 @@ export default function KycCapture() {
                 <button
                   onClick={() => {
                     setIntake(d.data);
+                    setIntakeSession((n) => n + 1);
                     capturedOrderSR.current = d.data.sr_manual
                       ? ""
                       : d.data.sr_number || "";
@@ -558,7 +587,11 @@ export default function KycCapture() {
           <div>
             {canWrite && showUpload && !intakeReady && (
               <CustomerIntake
+                key={intakeSession}
                 value={intake}
+                agentId={agent || intake.agent_id || user.agent_id}
+                onVersionChange={setCaptureDraftVersion}
+                onWithdrawn={customerWithdrew}
                 onChange={(v) => {
                   if ((intake.order_image || "") !== (v.order_image || ""))
                     replaceReceipt(null);
@@ -591,6 +624,20 @@ export default function KycCapture() {
             {canWrite && intakeReady && (
               <div hidden={!showUpload}>
                 <Panel title="Review & submit sale">
+                  <div className="intake-withdrawal">
+                    <CustomerBackedOut
+                      data={intake}
+                      version={captureDraftVersion}
+                      agentId={
+                        agent ||
+                        intake.agent_id ||
+                        user.agent_id ||
+                        agents.data?.[0]?.id
+                      }
+                      disabled={busy || receiptReading}
+                      onRecorded={customerWithdrew}
+                    />
+                  </div>
                   <form
                     id="capture-form"
                     className="capture-upload"

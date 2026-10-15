@@ -534,15 +534,39 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
         grants.contains('read') &&
         grants.contains('task.write');
     final textScale = MediaQuery.textScalerOf(context).scale(14) / 14;
-    final compact = MediaQuery.sizeOf(context).width < 360 || textScale > 1.2;
+    final width = MediaQuery.sizeOf(context).width;
+    final compact = width < 360 || textScale > 1.2;
+    final compactActions = width < 480 || textScale > 1.2;
+    final separateHeading = width < 340 || textScale > 1.2;
+    final headingStyle = RelayTypography.section.copyWith(fontSize: 18);
+    final heading = Text('Sales management', style: headingStyle, maxLines: 2);
+    final headingLayout = separateHeading
+        ? (TextPainter(
+            text: TextSpan(text: 'Sales management', style: headingStyle),
+            textDirection: Directionality.of(context),
+            textScaler: MediaQuery.textScalerOf(context),
+            maxLines: 2,
+          )..layout(maxWidth: width - 32))
+        : null;
+    final headingHeight = headingLayout?.height ?? 0;
+    headingLayout?.dispose();
     return Scaffold(
       appBar: AppBar(
-        toolbarHeight: textScale > 1.2 ? 52 * textScale : 64,
-        title: const Text('Sales management'),
+        toolbarHeight: separateHeading ? 48 : 64,
+        title: separateHeading ? null : heading,
+        bottom: separateHeading
+            ? PreferredSize(
+                preferredSize: Size.fromHeight(headingHeight + 12),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  child: Align(alignment: Alignment.centerLeft, child: heading),
+                ),
+              )
+            : null,
         actions: [
           const NotificationBell(),
           const WorkspaceMenu(),
-          if (compact)
+          if (compactActions)
             PopupMenuButton<String>(
               tooltip: 'Sales actions',
               onSelected: (action) {
@@ -688,17 +712,42 @@ class _SalesManagementScreenState extends ConsumerState<SalesManagementScreen> {
                                 label: Text(
                                   ['Sales', 'Feedback', 'Targets'][i],
                                   style: RelayTypography.label,
+                                  maxLines: 1,
+                                  softWrap: false,
                                 ),
+                                showCheckmark: false,
                                 selected: tab == i,
                                 onSelected: (_) => setState(() => tab = i),
                               ),
                           ],
                         )
                       : SegmentedButton<int>(
+                          showSelectedIcon: false,
                           segments: const [
-                            ButtonSegment(value: 0, label: Text('Sales')),
-                            ButtonSegment(value: 1, label: Text('Feedback')),
-                            ButtonSegment(value: 2, label: Text('Targets')),
+                            ButtonSegment(
+                              value: 0,
+                              label: Text(
+                                'Sales',
+                                maxLines: 1,
+                                softWrap: false,
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: 1,
+                              label: Text(
+                                'Feedback',
+                                maxLines: 1,
+                                softWrap: false,
+                              ),
+                            ),
+                            ButtonSegment(
+                              value: 2,
+                              label: Text(
+                                'Targets',
+                                maxLines: 1,
+                                softWrap: false,
+                              ),
+                            ),
                           ],
                           selected: {tab},
                           onSelectionChanged: (value) =>

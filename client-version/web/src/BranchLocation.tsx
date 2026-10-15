@@ -55,7 +55,6 @@ export function BranchLocationFields({
   busy?: boolean;
   optional?: boolean;
 }) {
-  const { user } = useContext(Context);
   const [gpsBusy, setGPSBusy] = useState(false),
     [gpsError, setGPSError] = useState("");
   const generation = useRef(0);
@@ -65,13 +64,6 @@ export function BranchLocationFields({
     },
     [],
   );
-  const imagery = useQuery<Row>({
-    queryKey: ["work-location", "imagery", user.id],
-    queryFn: () => api("/location-tracking/map-imagery"),
-    enabled: !!value,
-    retry: false,
-    staleTime: 60000,
-  });
   let center = null;
   try {
     center = branchLocationPayload(value) || null;
@@ -115,7 +107,6 @@ export function BranchLocationFields({
           <GeofenceMap
             boundary={center}
             editable
-            imagery={imagery.data?.available ? imagery.data : undefined}
             onCenter={(point) =>
               onChange({
                 ...value,
@@ -132,19 +123,6 @@ export function BranchLocationFields({
                 : null
             }
           />
-          {(imagery.data?.available === false || imagery.error) && (
-            <p className="location-help" role="status">
-              Satellite overview is unavailable. Street and 3D views remain
-              available.{" "}
-              <button
-                type="button"
-                disabled={imagery.isFetching}
-                onClick={() => imagery.refetch()}
-              >
-                Check satellite availability
-              </button>
-            </p>
-          )}
           <div className="location-form-grid">
             <label>
               Latitude

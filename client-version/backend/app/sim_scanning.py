@@ -70,6 +70,9 @@ class Scan(Pack):
 
 def claim(db, user, identifier, transaction_id, agent_id, request=None):
     assert_agent(db, user, agent_id)
+    from .capture_outcomes import creator_lock, ensure_open
+    creator_lock(db, user)
+    ensure_open(db, user, transaction_id, agent_id)
     from .db import Outlet
     from .branch_lifecycle import active_branch
     active_branch(db, db.get(Outlet, db.get(Agent, agent_id).outlet_id).branch_id)

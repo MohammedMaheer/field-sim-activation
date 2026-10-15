@@ -8,6 +8,38 @@ import 'experience.dart';
 
 String savedDraftsKey(RelayService service) =>
     'saved-capture-drafts-${service.user?['id']}';
+
+/// Called only after the server has recorded an outcome for this transaction.
+/// A different active draft must survive a delayed response or an idempotent retry.
+Future<void> removeClosedCaptureDrafts(
+  RelayService service,
+  Json intake,
+) async {
+  final transaction = intake['transaction_id'];
+  if (transaction == null || transaction.toString().isEmpty) return;
+  final account = service.user?['id'];
+  for (final key in ['intake-$account', 'kyc-draft-$account']) {
+    final cached = await service.store.get(key);
+    final cachedIntake = cached?['data'] ?? cached?['intake'];
+    if (cachedIntake is Map && cachedIntake['transaction_id'] == transaction) {
+      await service.store.remove(key);
+    }
+  }
+  final key = 'saved-capture-drafts-$account';
+  final saved = await service.store.get(key);
+  if (saved == null) return;
+  final rows = List<dynamic>.from(saved['rows'] ?? []);
+  rows.removeWhere((row) {
+    if (row is! Map || row['data'] is! Map) return false;
+    final details = row['data'] as Map;
+    return details['transaction_id'] == transaction ||
+        ((details['transaction_id'] ?? '').toString().isEmpty &&
+            (intake['saved_draft_id'] ?? '').toString().isNotEmpty &&
+            row['id'] == intake['saved_draft_id']);
+  });
+  await service.store.put(key, {'rows': rows});
+}
+
 Future<Json> saveSavedDraft(RelayService service, Json data) async {
   final local =
       await service.store.get(savedDraftsKey(service)) ?? {'rows': <dynamic>[]};

@@ -412,6 +412,21 @@ class NoSaleFeedback(Entity):
     rejection_reason: Mapped[str] = mapped_column(String(300))
 
 
+class CaptureTransactionOutcome(Entity):
+    """The intake owner and terminal state survive deletion of its draft."""
+    __tablename__ = "capture_transaction_outcomes"
+    __table_args__ = (
+        UniqueConstraint("transaction_id", name="uq_capture_transaction_outcome"),
+        CheckConstraint("status IN ('ACTIVE', 'SUBMITTED', 'CUSTOMER_BACKED_OUT')", name="ck_capture_transaction_outcome_status"),
+    )
+    creator_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    transaction_id: Mapped[str] = mapped_column(String(80))
+    agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.id"), nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(32))
+    feedback_id: Mapped[str | None] = mapped_column(ForeignKey("no_sale_feedback.id"), nullable=True)
+    capture_id: Mapped[str | None] = mapped_column(ForeignKey("kyc_captures.id"), nullable=True)
+
+
 class SalesTarget(Entity):
     __tablename__ = "sales_targets"
     __table_args__ = (UniqueConstraint("agent_id", "period", "order_type", name="uq_sales_target_period"),)

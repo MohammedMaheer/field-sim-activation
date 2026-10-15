@@ -10,6 +10,9 @@ test("administrator sets boundary by map, controls radius and assigns without ch
   await expect(
     page.getByRole("heading", { name: "Locations & work boundaries" }),
   ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Manage boundaries", exact: true })
+    .click();
   await page.getByRole("button", { name: "Add boundary", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("Boundary name").fill("Garden worksite");
@@ -32,6 +35,7 @@ test("administrator sets boundary by map, controls radius and assigns without ch
   await page
     .getByRole("button", { name: "Assign boundary for Jordan Vale" })
     .click();
+  await page.getByRole("radio", { name: /Use another saved worksite/ }).check();
   await page
     .getByRole("dialog")
     .getByLabel("Boundary assignment")
@@ -187,7 +191,12 @@ test("scoped view has no management writes, shared branch filter and map stay st
     }),
   ).toHaveCount(0);
   expect(fixture.requests).toContain("/api/location-tracking/fences");
-  expect(fixture.writes.filter(write => write.path.includes('/fences') || write.path.includes('/assignments'))).toHaveLength(0);
+  expect(
+    fixture.writes.filter(
+      (write) =>
+        write.path.includes("/fences") || write.path.includes("/assignments"),
+    ),
+  ).toHaveLength(0);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect
     .poll(() =>
@@ -239,21 +248,22 @@ test("export accepts a map or typed radius and includes the role and branch scop
   expect(downloaded.suggestedFilename()).toBe("qanawat-work-locations.csv");
 });
 
-test("satellite view is dated and describes its coarse resolution", async ({
+test("street and 3D maps remain available without the removed satellite provider", async ({
   page,
 }) => {
-  await setup(page);
+  const fixture = await setup(page);
   await page.goto("/location-tracking");
-  await page.getByRole("button", { name: "Satellite", exact: true }).click();
   await expect(
-    page.getByText(/NASA GIBS · 2026-10-13 · 250 m imagery/),
-  ).toBeVisible();
+    page.getByRole("button", { name: "Satellite", exact: true }),
+  ).toHaveCount(0);
+  await page.getByText("Search map & view options", { exact: true }).click();
   await page.getByRole("button", { name: "3D buildings", exact: true }).click();
   await expect(
     page.getByRole("button", { name: "3D buildings", exact: true }),
   ).toHaveAttribute("aria-pressed", "true");
+  expect(fixture.requests).not.toContain("/api/location-tracking/map-imagery");
   await page.screenshot({
-    path: path.resolve("../output/qa/geofence-web-admin-desktop.png"),
+    path: path.resolve("../output/qa/geofence86-live-desktop.png"),
     fullPage: true,
   });
 });
