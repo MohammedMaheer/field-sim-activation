@@ -1,5 +1,5 @@
 import { useBranchScope } from "./BranchScope";
-import { useContext } from "react";
+import { useContext, useRef } from "react";
 import { Link } from "react-router-dom";
 import { Context } from "./App";
 import { useState } from "react";
@@ -260,6 +260,7 @@ export default function SRVerification() {
       : `business_date=${encodeURIComponent(date)}`;
   const [busy, setBusy] = useState(false),
     [error, setError] = useState("");
+  const processing = useRef(false);
   const [selectedBatch, setSelectedBatch] = useState("");
   const current = useQuery<Row>({
     queryKey: ["sales-management", "sr-results", user.id, reportQuery, branch],
@@ -293,11 +294,22 @@ export default function SRVerification() {
     queryFn: () => api("/sales-management/sr/batches"),
   });
   async function process(apply: boolean) {
-    if (!file || !date || (apply && !preview?.preview_token)) return;
+    if (
+      !file ||
+      processing.current ||
+      !(reportMode === "monthly" ? month : date) ||
+      (apply && !preview?.preview_token)
+    )
+      return;
+    processing.current = true;
     setBusy(true);
     setError("");
     try {
-      if (!/\.(xlsx|csv)$/i.test(file.name) || file.size > 2_000_000)
+      if (
+        !/\.(xlsx|csv)$/i.test(file.name) ||
+        file.size > 2_000_000 ||
+        !file.size
+      )
         throw Error("Choose an Excel or CSV file under 2 MB.");
       const bytes = new Uint8Array(await file.arrayBuffer());
       let binary = "";
@@ -323,6 +335,7 @@ export default function SRVerification() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not verify this file.");
     } finally {
+      processing.current = false;
       setBusy(false);
     }
   }

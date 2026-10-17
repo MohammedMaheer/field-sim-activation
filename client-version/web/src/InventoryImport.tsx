@@ -1,5 +1,5 @@
 import { useBranchScope } from "./BranchScope";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, Upload } from "lucide-react";
 import { api, download, Row } from "./api";
@@ -23,15 +23,29 @@ export default function InventoryImport({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
+  const processing = useRef(false),
+    fileInput = useRef<HTMLInputElement>(null);
+
+  function resetFile() {
+    setFile(null);
+    setError("");
+    setResult("");
+    if (fileInput.current) fileInput.current.value = "";
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!file) return;
+    if (!file || processing.current) return;
+    processing.current = true;
     setBusy(true);
     setError("");
     setResult("");
     try {
-      if (!file.name.toLowerCase().endsWith(".xlsx") || file.size > 1_000_000)
+      if (
+        !file.name.toLowerCase().endsWith(".xlsx") ||
+        file.size > 1_000_000 ||
+        !file.size
+      )
         throw new Error("Choose an Excel .xlsx file up to 1 MB.");
       const encoded = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader();
@@ -51,15 +65,20 @@ export default function InventoryImport({
       await onImported();
       setResult(`${saved.imported} SIMs added to ${saved.branch}.`);
       setFile(null);
+      if (fileInput.current) fileInput.current.value = "";
     } catch (failure: any) {
       setError(failure.message);
     } finally {
+      processing.current = false;
       setBusy(false);
     }
   }
 
   return (
-    <Drawer title="Import SIM stock" onClose={() => !busy && onClose()}>
+    <Drawer
+      title="Import SIM stock"
+      onClose={() => !processing.current && onClose()}
+    >
       {branches.isPending ? (
         <Loading />
       ) : branches.error ? (
@@ -69,6 +88,7 @@ export default function InventoryImport({
           <button
             type="button"
             className="secondary"
+            disabled={busy}
             onClick={() =>
               download(
                 "/inventory/bulk-template",
@@ -84,7 +104,11 @@ export default function InventoryImport({
               <select
                 required
                 value={branch}
-                onChange={(event) => setBranch(event.target.value)}
+                disabled={busy}
+                onChange={(event) => {
+                  setBranch(event.target.value);
+                  resetFile();
+                }}
               >
                 <option value="">Select branch</option>
                 {branches.data.map((item) => (
@@ -97,10 +121,16 @@ export default function InventoryImport({
             <label className="wide">
               Excel file
               <input
+                ref={fileInput}
                 type="file"
                 accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 required
-                onChange={(event) => setFile(event.target.files?.[0] || null)}
+                disabled={busy}
+                onChange={(event) => {
+                  setFile(event.target.files?.[0] || null);
+                  setError("");
+                  setResult("");
+                }}
               />
             </label>
             <label className="wide">
@@ -110,6 +140,7 @@ export default function InventoryImport({
                 maxLength={300}
                 required
                 value={reason}
+                disabled={busy}
                 onChange={(event) => setReason(event.target.value)}
               />
             </label>

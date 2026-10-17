@@ -69,7 +69,12 @@ def test_inflated_workbook_is_rejected_without_materializing_or_writing(
     with DB() as db:
         before = [db.scalar(select(func.count()).select_from(model)) for model in models]
         if endpoint == "/api/field-assets/import":
-            body["branch_id"] = db.scalar(select(Branch.id).limit(1))
+            # Lifecycle tests can leave closed synthetic branches in this
+            # shared fixture. Reach workbook validation using eligible stock.
+            body["branch_id"] = db.scalar(
+                select(Branch.id).where(Branch.lifecycle_status == "ACTIVE").limit(1)
+            )
+            assert body["branch_id"]
     iterations = []
     original = ReadOnlyWorksheet.iter_rows
 
@@ -90,7 +95,7 @@ def test_ordinary_excel_template_remains_previewable(client, kind):
     login(client)
     unique = str(uuid4())[:8]
     with DB() as db:
-        branch = db.scalar(select(Branch).limit(1))
+        branch = db.scalar(select(Branch).where(Branch.lifecycle_status == "ACTIVE").limit(1))
         if kind == "final":
             endpoint, headers = "/api/incentives/final/import", FINAL_HEADERS
             row = ["agent1@relay.demo", business_date().isoformat(), 12.5, unique, "Approved"]
