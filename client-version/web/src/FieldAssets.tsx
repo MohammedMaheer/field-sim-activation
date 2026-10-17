@@ -201,7 +201,11 @@ export default function FieldAssets() {
     : "stock";
   const setTab = (value: AssetTab) => setSearchParams({ tab: value });
   const [add, setAdd] = useState(false);
+  const [assetCategory, setAssetCategory] = useState("GRABBA_DEVICE");
   const [move, setMove] = useState<Row | null>(null);
+  const [moveBranch, setMoveBranch] = useState("");
+  const [moveAgent, setMoveAgent] = useState("");
+  const [moveStatus, setMoveStatus] = useState("AVAILABLE");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState<Row | null>(null);
@@ -621,64 +625,67 @@ export default function FieldAssets() {
             history stays recorded.
           </p>
           {canManage && (
-            <div className="sales-form compact">
-              <button
-                disabled={busy}
-                onClick={() =>
-                  download(
-                    "/field-assets/import-template",
-                    "qanawat-branch-stock-template.xlsx",
-                  ).catch((e) => setError(e.message))
-                }
-              >
-                Excel stock template
-              </button>
-              <label>
-                Branch stock Excel / CSV
-                <input
-                  aria-label="Branch stock file"
-                  type="file"
-                  accept=".csv,.xlsx"
-                  disabled={busy || !branch}
-                  onChange={(event) => {
-                    setImportFile(event.target.files?.[0] || null);
-                    importRevision.current++;
-                    setImportPreview(null);
-                  }}
-                />
-              </label>
-              <button
-                className="primary"
-                disabled={busy || !branch || !importFile}
-                onClick={() => importStock(false)}
-              >
-                Preview branch stock import
-              </button>
-              {!branch && <small>Select a receiving branch first.</small>}
-            </div>
-          )}
-          {importPreview && (
-            <div className="sales-preview">
-              <p>
-                {importPreview.branch} · {importPreview.count} rows ·{" "}
-                {importPreview.quantity} items
-              </p>
-              <ul>
-                {importPreview.rows.map((row: Row, i: number) => (
-                  <li key={i}>
-                    {row.label} · {row.serial || "No serial"} · quantity{" "}
-                    {row.quantity}
-                  </li>
-                ))}
-              </ul>
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() => importStock(true)}
-              >
-                Receive stock in this branch
-              </button>
-            </div>
+            <details className="usability-details asset-import-tools">
+              <summary>Import branch stock from Excel or CSV</summary>
+              <div className="sales-form compact">
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    download(
+                      "/field-assets/import-template",
+                      "qanawat-branch-stock-template.xlsx",
+                    ).catch((e) => setError(e.message))
+                  }
+                >
+                  Excel stock template
+                </button>
+                <label>
+                  Branch stock Excel / CSV
+                  <input
+                    aria-label="Branch stock file"
+                    type="file"
+                    accept=".csv,.xlsx"
+                    disabled={busy || !branch}
+                    onChange={(event) => {
+                      setImportFile(event.target.files?.[0] || null);
+                      importRevision.current++;
+                      setImportPreview(null);
+                    }}
+                  />
+                </label>
+                <button
+                  className="primary"
+                  disabled={busy || !branch || !importFile}
+                  onClick={() => importStock(false)}
+                >
+                  Preview branch stock import
+                </button>
+                {!branch && <small>Select a receiving branch first.</small>}
+              </div>
+              {importPreview && (
+                <div className="sales-preview">
+                  <p>
+                    {importPreview.branch} · {importPreview.count} rows ·{" "}
+                    {importPreview.quantity} items
+                  </p>
+                  <ul>
+                    {importPreview.rows.map((row: Row, i: number) => (
+                      <li key={i}>
+                        {row.label} · {row.serial || "No serial"} · quantity{" "}
+                        {row.quantity}
+                      </li>
+                    ))}
+                  </ul>
+                  <button
+                    className="primary"
+                    disabled={busy}
+                    onClick={() => importStock(true)}
+                  >
+                    Receive stock in this branch
+                  </button>
+                </div>
+              )}
+            </details>
           )}
         </section>
       )}
@@ -693,203 +700,301 @@ export default function FieldAssets() {
             <h2>Asset register</h2>
             {exportReport("stock")}
             {canManage && (
-              <button className="primary" onClick={() => setAdd(!add)}>
+              <button
+                className="primary"
+                onClick={() => {
+                  setAssetCategory("GRABBA_DEVICE");
+                  setAdd(true);
+                }}
+              >
                 <Plus size={15} /> Add asset
               </button>
             )}
           </div>
           {add && canManage && (
-            <form
-              className="sales-form compact"
-              onSubmit={(e) =>
-                save(e, "/field-assets", "POST", () => setAdd(false))
-              }
+            <Drawer
+              title="Add asset"
+              onClose={() => {
+                if (!busy) setAdd(false);
+              }}
             >
-              <label>
-                Category
-                <input
-                  name="category"
-                  list="asset-categories"
-                  defaultValue="GRABBA_DEVICE"
-                  pattern="[A-Z][A-Z0-9_]*"
-                  required
-                  maxLength={40}
-                />
-                <datalist id="asset-categories">
-                  {Object.entries(categoryOptions).map(([k, v]) => (
-                    <option value={k} key={k}>
-                      {v}
-                    </option>
-                  ))}
-                </datalist>
-              </label>
-              <label>
-                Name
-                <input name="label" required minLength={2} />
-              </label>
-              <label>
-                Serial (if applicable)
-                <input name="serial" />
-              </label>
-              <label>
-                Quantity
-                <input
-                  name="quantity"
-                  type="number"
-                  min="1"
-                  defaultValue="1"
-                  required
-                />
-              </label>
-              <label>
-                Branch
-                <select name="branch_id" required>
-                  <option value="">Select branch</option>
-                  {branches.data?.map((b) => (
-                    <option value={b.id} key={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {["warehouse", "batch", "size", "condition"].map((name) => (
-                <label key={name}>
-                  {name.charAt(0).toUpperCase() + name.slice(1)}
-                  <input name={name} maxLength={name === "size" ? 40 : 100} />
-                </label>
-              ))}
-              <label className="wide">
-                Note
-                <input name="note" />
-              </label>
-              <button className="primary" disabled={busy}>
-                Save asset
-              </button>
-            </form>
-          )}
-          {move && (
-            <form
-              className="sales-form compact"
-              onSubmit={(e) =>
-                save(e, `/field-assets/${move.id}`, "PATCH", () =>
-                  setMove(null),
-                )
-              }
-            >
-              <h3 className="wide">Move {move.label}</h3>
-              <label>
-                Branch
-                <select name="branch_id" required defaultValue={move.branch_id}>
-                  {branches.data?.map((b) => (
-                    <option value={b.id} key={b.id}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                Assigned sales agent
-                <select name="agent_id" defaultValue={move.agent_id || ""}>
-                  <option value="">Unassigned</option>
-                  {agents.data
-                    ?.filter((a) => a.employment_status !== "EXITED")
-                    .map((a) => (
-                      <option value={a.id} key={a.id}>
-                        {a.name}
+              <form
+                className="sales-form compact"
+                onSubmit={(e) =>
+                  save(e, "/field-assets", "POST", () => setAdd(false))
+                }
+              >
+                <label>
+                  Category
+                  <select
+                    name={
+                      assetCategory === "__custom__" ? undefined : "category"
+                    }
+                    value={assetCategory}
+                    onChange={(event) => setAssetCategory(event.target.value)}
+                  >
+                    {Object.entries(categoryOptions).map(([k, v]) => (
+                      <option value={k} key={k}>
+                        {v}
                       </option>
                     ))}
-                </select>
-              </label>
-              <label>
-                Status
-                <select name="status" defaultValue={move.status}>
-                  {[
-                    "AVAILABLE",
-                    "ASSIGNED",
-                    "RETURNED",
-                    "DAMAGED",
-                    "LOST",
-                    "CONSUMED",
-                    "RETIRED",
-                  ].map((s) => (
-                    <option key={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
-              {["warehouse", "batch", "size", "condition"].map((name) => (
-                <label key={name}>
-                  {name.charAt(0).toUpperCase() + name.slice(1)}
+                    <option value="__custom__">Add a custom category…</option>
+                  </select>
+                </label>
+                {assetCategory === "__custom__" && (
+                  <label>
+                    Custom category code
+                    <input
+                      name="category"
+                      pattern="[A-Z][A-Z0-9_]*"
+                      placeholder="For example, ACCESSORY"
+                      required
+                      maxLength={40}
+                    />
+                  </label>
+                )}
+                <label>
+                  Name
+                  <input name="label" required minLength={2} />
+                </label>
+                <label>
+                  Serial (if applicable)
+                  <input name="serial" />
+                </label>
+                <label>
+                  Quantity
                   <input
-                    name={name}
-                    defaultValue={move[name] || ""}
-                    maxLength={name === "size" ? 40 : 100}
+                    name="quantity"
+                    type="number"
+                    min="1"
+                    defaultValue="1"
+                    required
                   />
                 </label>
-              ))}
-              <label className="wide">
-                Reason
-                <input name="reason" minLength={5} required />
-              </label>
-              <button className="primary" disabled={busy}>
-                Save movement
-              </button>
-              <button type="button" onClick={() => setMove(null)}>
-                Cancel
-              </button>
-            </form>
-          )}
-          {issue && canManage && (
-            <form
-              className="sales-form compact"
-              onSubmit={(e) =>
-                save(e, `/field-assets/${issue.id}/issue`, "POST", () =>
-                  setIssue(null),
-                )
-              }
-            >
-              <h3 className="wide">
-                Issue {issue.label} · {issue.quantity} available
-              </h3>
-              <label>
-                Sales agent
-                <select name="agent_id" required>
-                  <option value="">Choose sales agent</option>
-                  {agents.data
-                    ?.filter(
-                      (a) =>
-                        a.employment_status !== "EXITED" &&
-                        (a.branch_id === issue.branch_id ||
-                          a.branch === issue.branch),
-                    )
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>
-                        {a.name}
+                <label>
+                  Branch
+                  <select name="branch_id" required defaultValue={branch}>
+                    <option value="">Select branch</option>
+                    {branches.data?.map((b) => (
+                      <option value={b.id} key={b.id}>
+                        {b.name}
                       </option>
                     ))}
-                </select>
-              </label>
-              <label>
-                Quantity
-                <input
-                  name="quantity"
-                  type="number"
-                  min="1"
-                  max={issue.quantity}
-                  defaultValue="1"
-                  required
-                />
-              </label>
-              <label>
-                Reason
-                <input name="reason" minLength={5} required />
-              </label>
-              <button className="primary" disabled={busy}>
-                Issue stock
-              </button>
-              <button type="button" onClick={() => setIssue(null)}>
-                Cancel
-              </button>
-            </form>
+                  </select>
+                </label>
+                <details className="usability-details wide">
+                  <summary>Optional asset details</summary>
+                  <div className="sales-form compact">
+                    {["warehouse", "batch", "size", "condition"].map((name) => (
+                      <label key={name}>
+                        {name.charAt(0).toUpperCase() + name.slice(1)}
+                        <input
+                          name={name}
+                          maxLength={name === "size" ? 40 : 100}
+                        />
+                      </label>
+                    ))}
+                    <label className="wide">
+                      Note
+                      <input name="note" />
+                    </label>
+                  </div>
+                </details>
+                {error && (
+                  <p role="alert" className="sales-error wide">
+                    {error}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setAdd(false)}
+                >
+                  Cancel
+                </button>
+                <button className="primary" disabled={busy}>
+                  Save asset
+                </button>
+              </form>
+            </Drawer>
+          )}
+          {move && canManage && (
+            <Drawer
+              title={`Move or update · ${move.label}`}
+              onClose={() => {
+                if (!busy) setMove(null);
+              }}
+            >
+              <form
+                className="sales-form compact"
+                onSubmit={(e) =>
+                  save(e, `/field-assets/${move.id}`, "PATCH", () =>
+                    setMove(null),
+                  )
+                }
+              >
+                <h3 className="wide">Move {move.label}</h3>
+                <label>
+                  Branch
+                  <select
+                    name="branch_id"
+                    required
+                    value={moveBranch}
+                    onChange={(event) => {
+                      setMoveBranch(event.target.value);
+                      setMoveAgent("");
+                    }}
+                  >
+                    {branches.data?.map((b) => (
+                      <option value={b.id} key={b.id}>
+                        {b.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Assigned sales agent
+                  <select
+                    name="agent_id"
+                    required={moveStatus === "ASSIGNED"}
+                    value={moveAgent}
+                    onChange={(event) => setMoveAgent(event.target.value)}
+                  >
+                    <option value="">Unassigned</option>
+                    {agents.data
+                      ?.filter(
+                        (a) =>
+                          a.employment_status !== "EXITED" &&
+                          a.branch_id === moveBranch,
+                      )
+                      .map((a) => (
+                        <option value={a.id} key={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Status
+                  <select
+                    name="status"
+                    value={moveStatus}
+                    onChange={(event) => setMoveStatus(event.target.value)}
+                  >
+                    {[
+                      "AVAILABLE",
+                      "ASSIGNED",
+                      "RETURNED",
+                      "DAMAGED",
+                      "LOST",
+                      "CONSUMED",
+                      "RETIRED",
+                    ].map((s) => (
+                      <option key={s}>{s}</option>
+                    ))}
+                  </select>
+                </label>
+                <p className="wide assignment-help">
+                  Choose a sales agent from the destination branch, or leave the
+                  item unassigned with an available/returned status.
+                </p>
+                <details className="usability-details wide">
+                  <summary>Optional asset details</summary>
+                  <div className="sales-form compact">
+                    {["warehouse", "batch", "size", "condition"].map((name) => (
+                      <label key={name}>
+                        {name.charAt(0).toUpperCase() + name.slice(1)}
+                        <input
+                          name={name}
+                          defaultValue={move[name] || ""}
+                          maxLength={name === "size" ? 40 : 100}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </details>
+                <label className="wide">
+                  Reason
+                  <input name="reason" minLength={5} required />
+                </label>
+                <button className="primary" disabled={busy}>
+                  Save movement
+                </button>
+                {error && (
+                  <p role="alert" className="sales-error wide">
+                    {error}
+                  </p>
+                )}
+                <button type="button" onClick={() => setMove(null)}>
+                  Cancel
+                </button>
+              </form>
+            </Drawer>
+          )}
+          {issue && canManage && (
+            <Drawer
+              title={`Issue stock · ${issue.label}`}
+              onClose={() => {
+                if (!busy) setIssue(null);
+              }}
+            >
+              <form
+                className="sales-form compact"
+                onSubmit={(e) =>
+                  save(e, `/field-assets/${issue.id}/issue`, "POST", () =>
+                    setIssue(null),
+                  )
+                }
+              >
+                <h3 className="wide">
+                  Issue {issue.label} · {issue.quantity} available
+                </h3>
+                <label>
+                  Sales agent
+                  <select name="agent_id" required>
+                    <option value="">Choose sales agent</option>
+                    {agents.data
+                      ?.filter(
+                        (a) =>
+                          a.employment_status !== "EXITED" &&
+                          (a.branch_id === issue.branch_id ||
+                            a.branch === issue.branch),
+                      )
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <label>
+                  Quantity
+                  <input
+                    name="quantity"
+                    type="number"
+                    min="1"
+                    max={issue.quantity}
+                    defaultValue="1"
+                    required
+                  />
+                </label>
+                <label>
+                  Reason
+                  <input name="reason" minLength={5} required />
+                </label>
+                <button className="primary" disabled={busy}>
+                  Issue stock
+                </button>
+                {error && (
+                  <p role="alert" className="sales-error wide">
+                    {error}
+                  </p>
+                )}
+                <button type="button" onClick={() => setIssue(null)}>
+                  Cancel
+                </button>
+              </form>
+            </Drawer>
           )}
           {stock.isPending ? (
             <Loading />
@@ -937,7 +1042,15 @@ export default function FieldAssets() {
                       <td>
                         {canManage && (
                           <span className="asset-actions">
-                            <button onClick={() => setMove(a)}>
+                            <button
+                              onClick={() => {
+                                setMove(a);
+                                setMoveBranch(a.branch_id || "");
+                                setMoveAgent(a.agent_id || "");
+                                setMoveStatus(a.status);
+                                setError("");
+                              }}
+                            >
                               Move / update
                             </button>
                             {!a.agent_id &&

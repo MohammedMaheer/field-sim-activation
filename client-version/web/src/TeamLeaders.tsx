@@ -2,7 +2,7 @@ import { useContext, useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { CheckCheck, Plus, RefreshCw, Users, Store } from "lucide-react";
-import { Context, useResource } from "./App";
+import { Context, useResource, canVisitPage } from "./App";
 import { api, Row, canManageOrganization } from "./api";
 import { Loading, ErrorState, Badge } from "./components";
 import OrganizationSetup, { TeamLeaderEditor } from "./OrganizationSetup";
@@ -58,6 +58,7 @@ export default function TeamLeaders() {
         <div>
           <span className="eyebrow">BRANCH LEADERSHIP</span>
           <h1>Team leaders</h1>
+          <p>Manage team leaders and see their assigned sales agents.</p>
         </div>
         <div className="leader-header-actions">
           <button
@@ -90,6 +91,13 @@ export default function TeamLeaders() {
           )}
         </div>
       </header>
+      {canVisitPage("kyc-capture", user) && (
+        <div className="leader-verification-shortcut">
+          <Link className="button" to="/kyc-capture">
+            <CheckCheck size={16} /> Open backend verification
+          </Link>
+        </div>
+      )}
       {importing && user.role === "Administrator" && canManage && (
         <OrganizationImport kind="teams" onClose={() => setImporting(false)} />
       )}
@@ -190,9 +198,6 @@ export default function TeamLeaders() {
                     </button>
                   </div>
                 )}
-                <Link className="button" to="/kyc-capture">
-                  <CheckCheck size={16} /> Backend verification
-                </Link>
               </article>
             ))}
           </section>

@@ -28,6 +28,8 @@ async function workspace(page: Page) {
   await expect(
     page.getByRole("heading", { name: "Reports & exports" }),
   ).toBeVisible();
+  await page.getByLabel("Report type", { exact: true }).selectOption("daily");
+  await page.getByLabel("Download report format").selectOption("csv");
 }
 
 test("Qanawat reports download all formats with the shared branch and date filters", async ({
@@ -43,9 +45,7 @@ test("Qanawat reports download all formats with the shared branch and date filte
   await page.getByLabel("From date", { exact: true }).fill("2026-10-01");
   await page.getByLabel("To date", { exact: true }).fill("2026-10-11");
   await page.getByPlaceholder("Sales agent, branch, reference…").fill("Zayn");
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
+  const report = page.locator(".report-download");
   for (const format of ["xlsx", "csv", "pdf"]) {
     let query: URLSearchParams | undefined;
     const content =
@@ -70,8 +70,9 @@ test("Qanawat reports download all formats with the shared branch and date filte
       });
     });
     const downloaded = page.waitForEvent("download");
+    await report.getByLabel("Download report format").selectOption(format);
     await report
-      .getByRole("button", { name: format.toUpperCase(), exact: true })
+      .getByRole("button", { name: "Download report", exact: true })
       .click();
     const file = await downloaded;
     expect(file.suggestedFilename()).toBe(
@@ -90,23 +91,23 @@ test("failed export is explained and can be retried without a stuck loading stat
   page,
 }) => {
   await workspace(page);
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
+  const report = page.locator(".report-download");
   await page.route("**/api/reports/daily?**", (route) =>
     route.fulfill({
       status: 403,
       json: { detail: "Your export access was removed. Refresh your role." },
     }),
   );
-  await report.getByRole("button", { name: "XLSX", exact: true }).click();
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect(
     page
       .getByRole("status")
       .filter({ hasText: "Your export access was removed" }),
   ).toBeVisible();
   await expect(
-    report.getByRole("button", { name: "XLSX", exact: true }),
+    report.getByRole("button", { name: "Download report", exact: true }),
   ).toBeEnabled();
   await expect(page.locator(".export-progress")).toHaveCount(0);
   await page.unroute("**/api/reports/daily?**");
@@ -117,7 +118,10 @@ test("failed export is explained and can be retried without a stuck loading stat
     }),
   );
   const downloaded = page.waitForEvent("download");
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  await report.getByLabel("Download report format").selectOption("csv");
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   expect((await downloaded).suggestedFilename()).toMatch(
     /^qanawat-daily-.*\.csv$/,
   );
@@ -127,9 +131,7 @@ test("exports recover an expired token once and reject an empty file", async ({
   page,
 }) => {
   await workspace(page);
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
+  const report = page.locator(".report-download");
   let requests = 0;
   await page.route("**/api/reports/daily?**", async (route) => {
     requests += 1;
@@ -139,13 +141,16 @@ test("exports recover an expired token once and reject an empty file", async ({
         : { contentType: "application/pdf", body: "" },
     );
   });
-  await report.getByRole("button", { name: "PDF", exact: true }).click();
+  await report.getByLabel("Download report format").selectOption("pdf");
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect(
     page.getByRole("status").filter({ hasText: "This export is empty" }),
   ).toBeVisible();
   expect(requests).toBe(2);
   await expect(
-    report.getByRole("button", { name: "PDF", exact: true }),
+    report.getByRole("button", { name: "Download report", exact: true }),
   ).toBeEnabled();
 });
 
@@ -158,24 +163,22 @@ test("reports reject missing and inverted dates before any download request", as
     requests++;
     return route.fulfill({ contentType: "text/csv", body: "SR,Status\n" });
   });
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
+  const report = page.locator(".report-download");
   await page.getByLabel("From date", { exact: true }).fill("2026-10-13");
   await page.getByLabel("To date", { exact: true }).fill("2026-10-12");
   await expect(page.getByRole("alert")).toContainText("on or after");
-  for (const name of ["CSV", "XLSX", "PDF"])
-    await expect(
-      report.getByRole("button", { name, exact: true }),
-    ).toBeDisabled();
+  await expect(report.getByLabel("Download report format")).toBeDisabled();
+  await expect(
+    report.getByRole("button", { name: "Download report", exact: true }),
+  ).toBeDisabled();
   await page.getByLabel("To date", { exact: true }).fill("");
   await expect(
-    report.getByRole("button", { name: "CSV", exact: true }),
+    report.getByRole("button", { name: "Download report", exact: true }),
   ).toBeDisabled();
   expect(requests).toBe(0);
   await page.getByLabel("To date", { exact: true }).fill("2026-10-13");
   await expect(
-    report.getByRole("button", { name: "CSV", exact: true }),
+    report.getByRole("button", { name: "Download report", exact: true }),
   ).toBeEnabled();
 });
 
@@ -188,10 +191,10 @@ test("an export rejected after token refresh returns to sign-in instead of retai
     requests++;
     return route.fulfill({ status: 401, json: { detail: "Session revoked" } });
   });
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  const report = page.locator(".report-download");
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect(
     page.getByRole("button", { name: "Sign in to workspace", exact: true }),
   ).toBeVisible();
@@ -206,31 +209,33 @@ test("an HTML response and a disconnected export never download bogus files and 
   page,
 }) => {
   await workspace(page);
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
+  const report = page.locator(".report-download");
   const files: string[] = [];
   page.on("download", (file) => files.push(file.suggestedFilename()));
   await page.route("**/api/reports/daily?**", (route) =>
     route.fulfill({ contentType: "text/html", body: "<html>Sign in</html>" }),
   );
-  await report.getByRole("button", { name: "PDF", exact: true }).click();
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect(
     page.getByRole("status").filter({ hasText: "did not return an export" }),
   ).toBeVisible();
   await expect(
-    report.getByRole("button", { name: "PDF", exact: true }),
+    report.getByRole("button", { name: "Download report", exact: true }),
   ).toBeEnabled();
   await page.unroute("**/api/reports/daily?**");
   await page.route("**/api/reports/daily?**", (route) =>
     route.abort("internetdisconnected"),
   );
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect(
     page.getByRole("status").filter({ hasText: "Failed to fetch" }),
   ).toBeVisible();
   await expect(
-    report.getByRole("button", { name: "CSV", exact: true }),
+    report.getByRole("button", { name: "Download report", exact: true }),
   ).toBeEnabled();
   expect(files).toEqual([]);
   await page.unroute("**/api/reports/daily?**");
@@ -241,7 +246,9 @@ test("an HTML response and a disconnected export never download bogus files and 
     }),
   );
   const downloaded = page.waitForEvent("download");
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   expect((await downloaded).suggestedFilename()).toMatch(
     /^qanawat-daily-.*\.csv$/,
   );
@@ -264,20 +271,20 @@ test("a slow export blocks repeated clicks and restores every report control aft
       body: "SR,Status\nSR-001,Closed\n",
     });
   });
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
-  await report.getByRole("button", { name: "CSV", exact: true }).dblclick();
+  const report = page.locator(".report-download");
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .dblclick();
   await expect(
-    report.getByRole("button", { name: "Generating…", exact: true }),
+    report.getByRole("button", { name: "Preparing…", exact: true }),
   ).toBeDisabled();
-  for (const button of await page.locator(".report-grid button").all())
+  for (const button of await report.locator("button").all())
     await expect(button).toBeDisabled();
   await expect.poll(() => requests).toBe(1);
   const downloaded = page.waitForEvent("download");
   release();
   await downloaded;
-  for (const button of await page.locator(".report-grid button").all())
+  for (const button of await report.locator("button").all())
     await expect(button).toBeEnabled();
   expect(requests).toBe(1);
 });
@@ -326,10 +333,10 @@ test("temporary session renewal failure keeps the signed-in workspace and export
   await page.route("**/api/auth/refresh", (route) =>
     route.fulfill({ status: 503, json: { detail: "Temporary outage" } }),
   );
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  const report = page.locator(".report-download");
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect(
     page.getByRole("navigation", { name: "Main navigation" }),
   ).toBeVisible();
@@ -340,7 +347,9 @@ test("temporary session renewal failure keeps the signed-in workspace and export
   ).toBeVisible();
   ready = true;
   const downloaded = page.waitForEvent("download");
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   expect((await downloaded).suggestedFilename()).toBe("qanawat-retry.csv");
   expect(requests).toBe(2);
 });
@@ -384,10 +393,10 @@ test("a late renewal cannot restore the previous account after sign-out and a ne
         })
       : route.fulfill({ status: 401, json: { detail: "Expired" } });
   });
-  const report = page.locator(".report-card").filter({
-    has: page.getByRole("heading", { name: "Historical daily activation" }),
-  });
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  const report = page.locator(".report-download");
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await expect.poll(() => renewalStarted).toBe(true);
   await page.getByRole("button", { name: /Export reviewer/ }).click();
   await expect(
@@ -416,8 +425,12 @@ test("a late renewal cannot restore the previous account after sign-out and a ne
   ).toBeVisible();
   release();
   await page.getByRole("link", { name: "Reports", exact: true }).click();
+  await page.getByLabel("Report type", { exact: true }).selectOption("daily");
+  await page.getByLabel("Download report format").selectOption("csv");
   const downloaded = page.waitForEvent("download");
-  await report.getByRole("button", { name: "CSV", exact: true }).click();
+  await report
+    .getByRole("button", { name: "Download report", exact: true })
+    .click();
   await downloaded;
   expect(tokens).toEqual([
     "Bearer synthetic-export-token",

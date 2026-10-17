@@ -182,6 +182,7 @@ def scoped(db, user, model):
 
 
 def sale_view(db, row):
+    retain_sale_references(db, [row])
     from .sr_verification import sale_state
     from .activation_status import activation_presentation
     sr_state = sale_state(db, row)
@@ -219,6 +220,22 @@ def sale_view(db, row):
         "router_fulfilment": (row.details.get("router_fulfilment") or "ON_SPOT") if row.order_type == "HW" else "",
         "stock_recording_status": "SERIAL_NOT_RECORDED" if not row.details.get("sim_serial") else "CONSUMED" if row.details.get("stock_deducted_sim_id") else "AWAITING_BACKEND_CONFIRMATION",
     }
+
+
+def retain_sale_references(db, rows):
+    from .services import retain_references, retain_agent_references
+    from sqlalchemy.orm import load_only
+    agents = retain_references(db, Agent, {row.agent_id for row in rows})
+    retain_agent_references(db, [agents[agent_id] for agent_id in {row.agent_id for row in rows} if agent_id in agents])
+    retain_references(db, User, {value for row in rows for value in (row.leader_id, row.manager_id)})
+    retain_references(db, Branch, {row.branch_id for row in rows})
+    retain_references(db, Outlet, {row.outlet_id for row in rows})
+    captures = db.info.setdefault("workspace_read_references", {}).setdefault(KycCapture, {})
+    missing = {row.capture_id for row in rows if row.capture_id} - captures.keys()
+    if missing:
+        # Status and parsed metadata are enough for list views. Defer encrypted
+        # image blobs until an authorized evidence/image request needs them.
+        captures.update((capture.id, capture) for capture in db.scalars(select(KycCapture).where(KycCapture.id.in_(missing)).options(load_only(KycCapture.id, KycCapture.status, KycCapture.payload_encrypted))))
 
 
 def register_capture_sale(db, capture):
@@ -388,6 +405,7 @@ def filtered_sales_query(db, user, period="", order_type="", status="", branch_i
 def sales(user=Depends(principal), db=Depends(get_db), period: str = "", order_type: str = "", status: str = "", branch_id: str = "", agent_id: str = "", leader_id: str = "", from_date: str = "", to_date: str = ""):
     query = filtered_sales_query(db, user, period, order_type, status, branch_id, agent_id, leader_id, from_date, to_date)
     rows = db.scalars(query.order_by(SalesRecord.created_at.desc()).limit(1000)).all()
+    retain_sale_references(db, rows)
     return [sale_view(db, row) for row in rows]
 
 
@@ -749,6 +767,7 @@ def call_tasks(user=Depends(principal), db=Depends(get_db), branch_id: str = "")
     sale_ids = [row.id for row in rows]
     if not sale_ids:
         return []
+    retain_sale_references(db, rows)
     tasks = db.scalars(select(SalesCallTask).where(SalesCallTask.sale_id.in_(sale_ids))).all()
     tele_by_sale = {task.sale_id: task for task in tasks if task.stage == "TELE_VERIFICATION"}
     sales_by_id = {row.id: row for row in rows}
@@ -772,6 +791,7 @@ def call_task_summary(user=Depends(principal), db=Depends(get_db), branch_id: st
 @router.get("/calls")
 def call_queue(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
     rows = visible_call_rows(db, user, branch_id)
+    retain_sale_references(db, rows)
     attempts = db.scalars(select(CallAttempt).where(CallAttempt.sale_id.in_([r.id for r in rows])).order_by(CallAttempt.created_at)).all()
     restricted = task_stage_filter(db, user)
     by_sale = {}

@@ -533,7 +533,9 @@ def records(resource, db, user, branch_id=""):
             for b in db.scalars(select(Branch).where(Branch.id.in_(branches)).order_by(Branch.name))
         ]
     if resource == "agents":
-        return [agent_view(db, a) for a in agents]
+        return agent_views(db, agents)
+    if resource == "customers":
+        retain_agent_references(db, agents)
     if resource in {"orders", "activations"}:
         historical = order_views(
             db,
@@ -604,7 +606,7 @@ def records(resource, db, user, branch_id=""):
             for t in db.scalars(select(Territory).where(Territory.outlet_id.in_(outlet_ids)))
         ]
     if resource == "team-leaders":
-        views = [agent_view(db, a) for a in agents]
+        views = agent_views(db, agents)
         team_checks = list(db.scalars(select(Ekyc).where(Ekyc.agent_id.in_(ids))))
         team_completed = [
             o
@@ -708,11 +710,11 @@ def records(resource, db, user, branch_id=""):
         for u in db.scalars(select(User).where(User.id.in_({a.user_id for a in agents})))
     }
     agent_by_id = {a.id: a for a in agents}
-    outlet_names = (
-        {o.id: o.name for o in db.scalars(select(Outlet).where(Outlet.id.in_(outlet_ids)))}
-        if resource == "inventory"
-        else {}
-    )
+    outlet_names = {}
+    if resource == "inventory":
+        stock_outlets = retain_references(db, Outlet, outlet_ids)
+        retain_references(db, Branch, {outlet.branch_id for outlet in stock_outlets.values()})
+        outlet_names = {key: outlet.name for key, outlet in stock_outlets.items()}
     customer_names = (
         {c.id: c.name for c in db.scalars(select(Customer).where(Customer.agent_id.in_(ids)))}
         if resource == "ekyc"

@@ -97,7 +97,9 @@ for (const account of accounts) {
   test(`${account}: every visible navigation destination loads without rendering or server errors`, async ({
     page,
   }, testInfo) => {
-    test.setTimeout(account === "admin" ? 240000 : 180000);
+    // The administrator checks every route at both desktop and phone widths.
+    // Keep per-view readiness limits below; allow the complete tour to finish.
+    test.setTimeout(account === "admin" ? 600000 : 300000);
     const health = watchHealth(page);
     await signIn(page, account);
     const destinations = await page

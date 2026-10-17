@@ -1,0 +1,121 @@
+/* Keep routine tasks visible; secondary tools remain one clear action away. */
+.report-download {
+  margin: 0 0 18px;
+}
+.report-download-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 20px;
+  padding: 18px 22px;
+}
+.report-download-body > label {
+  display: grid;
+  gap: 7px;
+  font-weight: 650;
+  font-size: 14px;
+  min-width: 0;
+}
+.report-download-body :is(input, select) {
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+}
+.report-download-description {
+  align-self: center;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #43516a;
+}
+.report-download-body > .export-actions {
+  justify-self: end;
+}
+.report-download-body .export-controls {
+  align-items: center;
+  flex-wrap: nowrap;
+}
+.report-download-body .export-controls select {
+  width: 110px;
+  flex: 0 0 110px;
+}
+.report-quick-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+.report-quick-links .report-card {
+  min-height: 0;
+  margin-bottom: 0 !important;
+  padding: 18px 22px;
+}
+.report-quick-links .report-card p {
+  min-height: 0;
+  margin: 9px 0 14px;
+}
+.report-quick-links .button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: auto;
+  min-height: 44px;
+  padding: 10px 14px;
+}
+.usability-details {
+  border: 1px solid #d8d6e5;
+  border-radius: 10px;
+  background: #fbfaff;
+  min-width: 0;
+}
+.usability-details > summary {
+  cursor: pointer;
+  color: #713259;
+  font-weight: 650;
+  line-height: 1.5;
+  padding: 12px 14px;
+}
+.usability-details > :not(summary) {
+  margin: 0;
+  padding: 14px;
+  border-top: 1px solid #e5dfed;
+}
+.usability-details .sales-form {
+  width: 100%;
+  min-width: 0;
+}
+.asset-import-tools {
+  margin-top: 14px;
+}
+.leader-card-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 310px), 1fr));
+}
+.leader-verification-shortcut {
+  display: flex;
+  justify-content: flex-end;
+  margin: -2px 0 16px;
+}
+input[type="file"]::file-selector-button {
+  border: 0;
+  border-radius: 6px;
+  background: #f0e8f6;
+  color: #713259;
+  padding: 5px 9px;
+  margin-right: 9px;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+@media (max-width: 700px) {
+  .report-download-body,
+  .report-quick-links {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .report-download-body {
+    padding: 15px;
+  }
+  .report-download-body > .export-actions {
+    justify-self: stretch;
+  }
+  .report-download-body .export-controls {
+    flex-wrap: wrap;
+  }
+}

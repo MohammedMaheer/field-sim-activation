@@ -24,6 +24,7 @@ import SRVerification from "./SRVerification";
 import CallWorkspace from "./CallWorkspace";
 import FieldAssets from "./FieldAssets";
 import ExportActions from "./ExportActions";
+import { workspaceRefresh } from "./liveRefresh";
 import "./operations-clarity.css";
 import AccountAccess from "./AccountAccess";
 import OrganizationImport from "./OrganizationImport";
@@ -511,6 +512,7 @@ export default function App() {
       return;
     }
     const controller = new AbortController();
+    const refresh = workspaceRefresh(client, controller.signal);
     let update: ReturnType<typeof setTimeout>;
     stream(
       controller.signal,
@@ -529,12 +531,7 @@ export default function App() {
           return;
         }
         clearTimeout(update);
-        update = setTimeout(async () => {
-          // An event can arrive during a first fetch whose snapshot predates the change.
-          // Cancel that snapshot before refetching, including queries with no cached data.
-          await client.cancelQueries();
-          if (!controller.signal.aborted) await client.invalidateQueries();
-        }, 100);
+        update = setTimeout(() => void refresh(), 100);
       },
       setLive,
     );
@@ -1694,6 +1691,11 @@ function ResourcePage({ resource }: { resource: string }) {
         <DataTable
           rows={visibleData}
           columns={config.columns}
+          keyColumns={
+            resource === "agents"
+              ? ["name", "branch", "leader", "activations", "target", "stock"]
+              : undefined
+          }
           onRow={selectDetails}
         />
       </Panel>
@@ -2181,11 +2183,11 @@ function ComplianceDrawer({
 
 function Reports() {
   const { branch, branches } = useBranchScope();
-  const { notify, user } = useContext(Context);
+  const { user } = useContext(Context);
   const [start, setStart] = useState(businessDate);
   const [end, setEnd] = useState(businessDate);
   const [q, setQ] = useState("");
-  const [busy, setBusy] = useState("");
+  const [reportId, setReportId] = useState("agent");
   const datesValid = !!start && !!end && start <= end;
   const canExportFinal =
     user.permissions.includes("report.read") ||
@@ -2227,6 +2229,11 @@ function Reports() {
     ],
     ["audit", "Audit report", "Critical actions and responsible users."],
   ];
+  const availableReports = reports.filter(
+    ([id]) => id !== "audit" || user.permissions.includes("audit.read"),
+  );
+  const chosenReport =
+    availableReports.find(([id]) => id === reportId) || availableReports[0];
   return (
     <>
       <PageHeader
@@ -2299,89 +2306,74 @@ function Reports() {
           </p>
         )}
       </section>
-      {canViewFinalCommissions(user) && canExportFinal && (
-        <section className="panel report-card" style={{ marginBottom: 16 }}>
-          <h2>Incentive tracking</h2>
-          <p>
-            Approved imported final amounts · separate from calculated
-            estimates.
-          </p>
+      <section
+        className="panel report-download"
+        aria-label="Detailed report download"
+      >
+        <div className="panel-head">
+          <div>
+            <h2>Download a detailed report</h2>
+            <p>The dates and branch selected above apply to this download.</p>
+          </div>
+        </div>
+        <div className="report-download-body">
+          <label>
+            Report type
+            <select
+              aria-label="Report type"
+              value={chosenReport[0]}
+              onChange={(event) => setReportId(event.target.value)}
+            >
+              {availableReports.map(([id, title]) => (
+                <option key={id} value={id}>
+                  {title}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Search within this report (optional)
+            <input
+              placeholder="Sales agent, branch, reference…"
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+            />
+          </label>
+          <p className="report-download-description">{chosenReport[2]}</p>
           <ExportActions
-            path={`/incentives/final/export?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&branch_id=${encodeURIComponent(branch)}`}
-            name="qanawat-incentive-tracking"
-            label="Export incentive tracking"
-            disabled={!datesValid}
+            path={`/reports/${chosenReport[0]}?${new URLSearchParams({ start, end, q, branch_id: branch })}`}
+            name={`qanawat-${chosenReport[0]}-${start}-${end}`}
+            label="Download report"
+            disabled={!datesValid || !user.permissions.includes("report.read")}
           />
-        </section>
-      )}
-      <section className="panel report-card" style={{ marginBottom: 16 }}>
-        <h2>Sales, targets &amp; follow-ups</h2>
-        <p>
-          Current sales with product, sales agent, branch and call outcomes.
-          Sales reports have their own date and product filters.
-        </p>
-        <Link className="primary button-link" to="/sales">
-          Open sales reports &amp; exports
-        </Link>
+        </div>
       </section>
-      <div className="report-row-search">
-        <label>
-          Search detailed report rows
-          <input
-            placeholder="Sales agent, branch, reference…"
-            value={q}
-            onChange={(event) => setQ(event.target.value)}
-          />
-        </label>
-        <small>Search applies to the detailed reports below.</small>
-      </div>
-      <div className="report-grid">
-        {reports
-          .filter(
-            ([id]) => id !== "audit" || user.permissions.includes("audit.read"),
-          )
-          .map(([id, title, description]) => (
-            <section className="panel report-card" key={id}>
-              <span className="report-icon">
-                <ChartNoAxesCombined size={22} />
-              </span>
-              <h2>{title}</h2>
-              <p>{description}</p>
-              <div>
-                {(["xlsx", "csv", "pdf"] as const).map((format) => (
-                  <button
-                    key={format}
-                    disabled={
-                      !!busy ||
-                      !start ||
-                      !end ||
-                      start > end ||
-                      !user.permissions.includes("report.read")
-                    }
-                    onClick={async () => {
-                      setBusy(id + format);
-                      try {
-                        await download(
-                          `/reports/${id}?${new URLSearchParams({ format, start, end, q, branch_id: branch })}`,
-                          `qanawat-${id}-${start}-${end}.${format}`,
-                        );
-                        notify(`${title} report downloaded`);
-                      } catch (e: any) {
-                        notify(e.message);
-                      } finally {
-                        setBusy("");
-                      }
-                    }}
-                  >
-                    <Download size={14} />
-                    {busy === id + format
-                      ? "Generating…"
-                      : format.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-            </section>
-          ))}
+      <div className="report-quick-links">
+        {canViewFinalCommissions(user) && canExportFinal && (
+          <section className="panel report-card" style={{ marginBottom: 16 }}>
+            <h2>Incentive tracking</h2>
+            <p>
+              Approved imported final amounts · separate from calculated
+              estimates.
+            </p>
+            <ExportActions
+              path={`/incentives/final/export?from_date=${encodeURIComponent(start)}&to_date=${encodeURIComponent(end)}&branch_id=${encodeURIComponent(branch)}`}
+              name="qanawat-incentive-tracking"
+              label="Export incentive tracking"
+              disabled={!datesValid}
+            />
+          </section>
+        )}
+        <section className="panel report-card" style={{ marginBottom: 16 }}>
+          <h2>Sales, targets &amp; follow-ups</h2>
+          <p>
+            Current sales with product, sales agent, branch and call outcomes.
+            Sales reports have their own date and product filters.
+          </p>
+          <Link className="primary button-link" to="/sales">
+            Open sales reports &amp; exports
+          </Link>
+        </section>
       </div>
     </>
   );

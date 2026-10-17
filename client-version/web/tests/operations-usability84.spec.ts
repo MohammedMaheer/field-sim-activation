@@ -222,7 +222,7 @@ test("revoked stock and report export grants hide mutation controls", async ({
     }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("button", { name: "XLSX", exact: true }).first(),
+    page.getByRole("button", { name: "Download report", exact: true }),
   ).toBeDisabled();
   expect(audit.failures).toEqual([]);
 });

@@ -215,17 +215,24 @@ export function DataTable({
   columns,
   onRow,
   searchPlaceholder = "Search records…",
+  keyColumns,
 }: {
   rows: Row[];
   columns: Column[];
   onRow?: (row: Row) => void;
   searchPlaceholder?: string;
+  keyColumns?: string[];
 }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState("");
   const [asc, setAsc] = useState(true);
   const [page, setPage] = useState(0);
+  const [showAllColumns, setShowAllColumns] = useState(false);
+  const visibleColumns =
+    keyColumns && !showAllColumns
+      ? columns.filter((column) => keyColumns.includes(column.key))
+      : columns;
   const statuses = [...new Set(rows.map((r) => r.status).filter(Boolean))];
   const filtered = rows
     .filter(
@@ -271,10 +278,36 @@ export function DataTable({
             >
               <option value="">All statuses</option>
               {statuses.map((s) => (
-                <option key={s}>{s}</option>
+                <option key={s} value={s}>
+                  {String(s)
+                    .replaceAll("_", " ")
+                    .toLowerCase()
+                    .replace(/^./, (first) => first.toUpperCase())}
+                </option>
               ))}
             </select>
           </label>
+        )}
+        {(q || status) && (
+          <button
+            type="button"
+            onClick={() => {
+              setQ("");
+              setStatus("");
+              setPage(0);
+            }}
+          >
+            Clear filters
+          </button>
+        )}
+        {keyColumns && (
+          <button
+            type="button"
+            aria-expanded={showAllColumns}
+            onClick={() => setShowAllColumns((value) => !value)}
+          >
+            {showAllColumns ? "Show key columns" : "Show all columns"}
+          </button>
         )}
         <span className="muted record-count">{filtered.length} records</span>
       </div>
@@ -318,7 +351,7 @@ export function DataTable({
           <table>
             <thead>
               <tr>
-                {columns.map((c) => (
+                {visibleColumns.map((c) => (
                   <th key={c.key}>
                     <button
                       onClick={() => {
@@ -337,7 +370,7 @@ export function DataTable({
             <tbody>
               {filtered.slice(safePage * 8, safePage * 8 + 8).map((r) => (
                 <tr key={r.id}>
-                  {columns.map((c, index) => (
+                  {visibleColumns.map((c, index) => (
                     <td key={c.key} data-label={c.label}>
                       {onRow && index === 0 ? (
                         <button

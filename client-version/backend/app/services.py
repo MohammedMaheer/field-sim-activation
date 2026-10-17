@@ -1,7 +1,8 @@
 import math
+from collections import defaultdict
 from datetime import timedelta
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from .db import *
 from .security import assert_agent, require
 from . import providers
@@ -257,13 +258,47 @@ def order_view(db, row):
     }
 
 
-def agent_view(db, agent):
-    orders = db.scalars(select(Order).where(Order.agent_id == agent.id)).all()
+def retain_references(db, model, ids):
+    """Keep small related rows in this request's identity map, never in a global cache."""
+    stored = db.info.setdefault("workspace_read_references", {}).setdefault(model, {})
+    missing = set(ids) - {None, ""} - stored.keys()
+    if missing:
+        stored.update((row.id, row) for row in db.scalars(select(model).where(model.id.in_(missing))))
+    return stored
+
+
+def retain_agent_references(db, agents):
+    retained = db.info.setdefault("workspace_read_references", {}).setdefault(Agent, {})
+    retained.update((agent.id, agent) for agent in agents)
+    outlets = retain_references(db, Outlet, {agent.outlet_id for agent in agents})
+    retain_references(db, Branch, {outlets[agent.outlet_id].branch_id for agent in agents})
+    retain_references(db, User, {value for agent in agents for value in (agent.user_id, agent.leader_id)})
+
+
+def agent_views(db, agents):
+    """Serialize an authorized agent list with a bounded set of related queries."""
+    if not agents:
+        return []
+    retain_agent_references(db, agents)
+    ids = {agent.id for agent in agents}
+    orders, checks = defaultdict(list), defaultdict(list)
+    for row in db.scalars(select(Order).where(Order.agent_id.in_(ids))):
+        orders[row.agent_id].append(row)
+    for row in db.scalars(select(Ekyc).where(Ekyc.agent_id.in_(ids))):
+        checks[row.agent_id].append(row)
+    stock = dict(db.execute(select(Sim.agent_id, func.count()).where(Sim.agent_id.in_(ids), Sim.status == "AVAILABLE").group_by(Sim.agent_id)).all())
+    shifts = set(db.scalars(select(Shift.agent_id).where(Shift.agent_id.in_(ids), Shift.ended_at.is_(None))))
+    context = {"orders": orders, "checks": checks, "stock": stock, "shifts": shifts}
+    return [agent_view(db, agent, context) for agent in agents]
+
+
+def agent_view(db, agent, context=None):
+    orders = context["orders"][agent.id] if context is not None else db.scalars(select(Order).where(Order.agent_id == agent.id)).all()
     today = [o for o in orders if business_date(o.created_at) == business_date()]
     completed = [o for o in today if o.status == "ACTIVATED"]
-    checks = db.scalars(select(Ekyc).where(Ekyc.agent_id == agent.id)).all()
-    stock = db.scalars(select(Sim).where(Sim.agent_id == agent.id, Sim.status == "AVAILABLE")).all()
-    shift = db.scalar(select(Shift).where(Shift.agent_id == agent.id, Shift.ended_at.is_(None)))
+    checks = context["checks"][agent.id] if context is not None else db.scalars(select(Ekyc).where(Ekyc.agent_id == agent.id)).all()
+    stock_count = context["stock"].get(agent.id, 0) if context is not None else db.scalar(select(func.count()).select_from(Sim).where(Sim.agent_id == agent.id, Sim.status == "AVAILABLE"))
+    shift = agent.id in context["shifts"] if context is not None else db.scalar(select(Shift).where(Shift.agent_id == agent.id, Shift.ended_at.is_(None)))
     outlet = db.get(Outlet, agent.outlet_id)
     return {
         **{k: v for k, v in raw(agent).items() if k not in {"lat", "lng", "accuracy", "geofence"}},
@@ -279,6 +314,6 @@ def agent_view(db, agent):
             sum(e.status == "VERIFIED" for e in checks) / max(1, len(checks)) * 100, 1
         ),
         "ocr": round(sum(e.confidence for e in checks) / max(1, len(checks)), 1),
-        "stock": len(stock),
+        "stock": stock_count,
         "on_shift": bool(shift),
     }

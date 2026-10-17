@@ -211,11 +211,11 @@ for (const role of [
       }),
     ).toHaveCount(0);
     await expect(
-      page.getByRole("heading", {
-        name: "Historical daily activation",
-        exact: true,
-      }),
-    ).toBeVisible();
+      page.getByRole("combobox", { name: "Report type", exact: true })
+        .locator('option[value="daily"]'),
+    ).toHaveText("Historical daily activation");
+    await page.getByRole("combobox", { name: "Report type", exact: true }).selectOption("daily");
+    await expect(page.getByRole("button", { name: "Download report", exact: true })).toBeVisible();
     await expect(page.locator(".error-state")).toHaveCount(0);
     expect(requests.some((p) => p.startsWith("/api/incentives/final"))).toBe(
       false,

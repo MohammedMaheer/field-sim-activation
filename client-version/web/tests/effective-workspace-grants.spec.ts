@@ -208,7 +208,9 @@ test("embedded administration requires read plus its exact resource grant", () =
       );
       expect(
         canManageMasterData({ role, permissions: ["read", required] }, kind),
-      ).toBe(true);
+      // Sales-agent account management belongs to Super admin. Daily
+      // operations access does not grant control of staff accounts.
+      ).toBe(!(role === "Operations Manager" && kind === "agents"));
     }
   }
   for (const role of [

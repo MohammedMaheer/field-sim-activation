@@ -6,7 +6,7 @@ test('report shortcut remains a usable control at desktop and phone widths',asyn
   for(const width of [1440,390]) {
     await page.setViewportSize({width,height:960});
     await page.goto('/reports');
-    const link=page.getByRole('link',{name:'Open sales reports & Excel export'});
+    const link=page.getByRole('link',{name:'Open sales reports & exports'});
     await expect(link).toBeVisible();
     expect((await link.boundingBox())!.height).toBeGreaterThanOrEqual(36);
     await page.screenshot({path:`../output/qa/reports-control-${width}.png`,fullPage:true});

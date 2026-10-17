@@ -20,6 +20,7 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
   Timer? poll;
   bool fetching = false;
   bool reloadPending = false;
+  String section = 'stock';
   @override
   void initState() {
     super.initState();
@@ -198,6 +199,7 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
           );
       await load();
       if (mounted) {
+        setState(() => section = 'requests');
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(const SnackBar(content: Text('Stock request sent')));
@@ -249,8 +251,28 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                 children: [
                   const BranchFilter(),
                   const SizedBox(height: 16),
+                  SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment(
+                        value: 'stock',
+                        label: Text('Assets'),
+                        icon: Icon(Icons.inventory_2_outlined),
+                      ),
+                      ButtonSegment(
+                        value: 'requests',
+                        label: Text('Requests'),
+                        icon: Icon(Icons.assignment_outlined),
+                      ),
+                    ],
+                    selected: {section},
+                    onSelectionChanged: (value) =>
+                        setState(() => section = value.first),
+                  ),
+                  const SizedBox(height: 16),
                   if (lowStock.isNotEmpty)
                     Card(
+                      margin: const EdgeInsets.only(bottom: 8),
                       color: const Color(0xFFFFEBE9),
                       child: Padding(
                         padding: const EdgeInsets.all(12),
@@ -263,65 +285,70 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                         ),
                       ),
                     ),
-                  Text(
-                    'Branch assets',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  const ExportActions(
-                    endpoint: '/field-assets/report/export',
-                    filenameStem: 'qanawat-branch-assets',
-                    label: 'Export branch assets',
-                    query: {'kind': 'stock'},
-                  ),
-                  const SizedBox(height: 8),
-                  if (stock.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No assets assigned'),
+                  if (section == 'stock') ...[
+                    Text(
+                      'Branch assets',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                  ...stock.map(
-                    (a) => Card(
-                      child: ListTile(
-                        leading: const Icon(
-                          Icons.inventory_2_outlined,
-                          color: Color(0xFF8136B3),
+                    const SizedBox(height: 8),
+                    const ExportActions(
+                      endpoint: '/field-assets/report/export',
+                      filenameStem: 'qanawat-branch-assets',
+                      label: 'Export branch assets',
+                      query: {'kind': 'stock'},
+                    ),
+                    const SizedBox(height: 8),
+                    if (stock.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('No assets assigned'),
+                      ),
+                    ...stock.map(
+                      (a) => Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          leading: const Icon(
+                            Icons.inventory_2_outlined,
+                            color: Color(0xFF8136B3),
+                          ),
+                          title: Text('${a['label']}'),
+                          subtitle: Text('${a['branch']} · ${a['serial']}'),
+                          trailing: Text('${a['status']}'),
                         ),
-                        title: Text('${a['label']}'),
-                        subtitle: Text('${a['branch']} · ${a['serial']}'),
-                        trailing: Text('${a['status']}'),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 18),
-                  Text(
-                    'Requests',
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                  const SizedBox(height: 8),
-                  const ExportActions(
-                    endpoint: '/field-assets/report/export',
-                    filenameStem: 'qanawat-stock-requests',
-                    label: 'Export stock requests',
-                    query: {'kind': 'requests'},
-                  ),
-                  const SizedBox(height: 8),
-                  if (requests.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16),
-                      child: Text('No requests yet'),
+                  ],
+                  if (section == 'requests') ...[
+                    Text(
+                      'Requests',
+                      style: Theme.of(context).textTheme.titleLarge,
                     ),
-                  ...requests.map(
-                    (r) => Card(
-                      child: ListTile(
-                        title: Text('${r['category']} · ${r['quantity']}'),
-                        subtitle: Text(
-                          '${r['reason']} · ${r['urgency']}${r['response'] == null ? '' : '\n${r['response']} · ${r['responded_by']}'}',
+                    const SizedBox(height: 8),
+                    const ExportActions(
+                      endpoint: '/field-assets/report/export',
+                      filenameStem: 'qanawat-stock-requests',
+                      label: 'Export stock requests',
+                      query: {'kind': 'requests'},
+                    ),
+                    const SizedBox(height: 8),
+                    if (requests.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('No requests yet'),
+                      ),
+                    ...requests.map(
+                      (r) => Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          title: Text('${r['category']} · ${r['quantity']}'),
+                          subtitle: Text(
+                            '${r['reason']} · ${r['urgency']}${r['response'] == null ? '' : '\n${r['response']} · ${r['responded_by']}'}',
+                          ),
+                          trailing: Text('${r['status']}'),
                         ),
-                        trailing: Text('${r['status']}'),
                       ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 60),
                 ],
               ),

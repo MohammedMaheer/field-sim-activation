@@ -349,6 +349,7 @@ export async function stream(
   onState: (live: boolean) => void,
 ) {
   const epoch = sessionEpoch;
+  let connected = false;
   while (!signal.aborted && epoch === sessionEpoch) {
     try {
       const r = await fetch("/api/events/stream", {
@@ -362,7 +363,8 @@ export async function stream(
       }
       if (!r.ok || !r.body) throw new Error("Stream unavailable");
       onState(true);
-      onEvent();
+      if (connected) onEvent("Reconnected");
+      connected = true;
       const reader = r.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -373,7 +375,10 @@ export async function stream(
         const blocks = buffer.split("\n\n");
         buffer = blocks.pop() || "";
         for (const b of blocks)
-          if (b.startsWith("data:")) onEvent(JSON.parse(b.slice(5)).kind);
+          if (b.startsWith("data:")) {
+            const kind = JSON.parse(b.slice(5)).kind;
+            if (kind) onEvent(kind);
+          }
       }
     } catch (failure) {
       if (epoch !== sessionEpoch) return;

@@ -113,6 +113,15 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
     await load();
   }
 
+  Future<void> chooseRange(bool month) async {
+    final today = reportToday();
+    setState(() {
+      to = today;
+      from = month ? DateTime(today.year, today.month, 1) : today;
+    });
+    await load();
+  }
+
   Future<void> export(String format) async {
     if (exporting) return;
     final exportRevision = request;
@@ -171,7 +180,30 @@ class _ReportsState extends ConsumerState<ReportsScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           const BranchFilter(),
-          const SizedBox(height: 18),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Today'),
+                selected:
+                    reportDate(from) == reportDate(reportToday()) &&
+                    reportDate(to) == reportDate(reportToday()),
+                onSelected: exporting ? null : (_) => chooseRange(false),
+              ),
+              ChoiceChip(
+                label: const Text('This month'),
+                selected:
+                    from.day == 1 &&
+                    from.month == reportToday().month &&
+                    from.year == reportToday().year &&
+                    reportDate(to) == reportDate(reportToday()),
+                onSelected: exporting ? null : (_) => chooseRange(true),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
