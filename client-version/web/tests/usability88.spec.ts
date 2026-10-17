@@ -305,3 +305,163 @@ test("read-only roles do not gain stock actions or an audit report choice", asyn
       .locator('option[value="audit"]'),
   ).toHaveCount(0);
 });
+
+test("stock89: a successful import and a branch change clear the actual file picker", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.route("**/api/field-assets/import", async (route) => {
+    const body = route.request().postDataJSON();
+    await route.fulfill({
+      json: {
+        applied: !!body.apply,
+        branch: "Marina Branch",
+        count: 1,
+        quantity: 3,
+        rows: [{ label: "Uniform", quantity: 3 }],
+      },
+    });
+  });
+  await page.goto("/equipment");
+  await page
+    .getByText("Import branch stock from Excel or CSV", { exact: true })
+    .click();
+  const branch = page
+    .locator(".stock-filters")
+    .getByRole("combobox", { name: "Branch", exact: true });
+  await branch.selectOption("marina");
+  const file = page.getByLabel("Branch stock file");
+  const sample = {
+    name: "stock.csv",
+    mimeType: "text/csv",
+    buffer: Buffer.from("Category,Name,Quantity\nUNIFORM,Uniform,3\n"),
+  };
+  await file.setInputFiles(sample);
+  await page
+    .getByRole("button", { name: "Preview branch stock import", exact: true })
+    .click();
+  await page
+    .getByRole("button", { name: "Receive stock in this branch", exact: true })
+    .click();
+  await expect(file).toHaveValue("");
+  await expect(
+    page.getByRole("button", {
+      name: "Preview branch stock import",
+      exact: true,
+    }),
+  ).toBeDisabled();
+  await file.setInputFiles(sample);
+  await expect(file).not.toHaveValue("");
+  await branch.selectOption("downtown");
+  await expect(file).toHaveValue("");
+});
+
+for (const action of ["add", "issue"]) {
+  test(`stock89: reopening ${action} starts without a previous save error`, async ({
+    page,
+  }) => {
+    await setup(page);
+    const endpoint =
+      action === "add"
+        ? "**/api/field-assets"
+        : "**/api/field-assets/stock-one/issue";
+    await page.route(endpoint, (route) =>
+      route.request().method() === "POST"
+        ? route.fulfill({
+            status: 422,
+            json: { detail: "Previous stock save failed" },
+          })
+        : route.fallback(),
+    );
+    await page.goto("/equipment");
+    const launch = page.getByRole("button", {
+      name: action === "add" ? "Add asset" : "Issue stock",
+      exact: true,
+    });
+    await launch.click();
+    const dialog = page.getByRole("dialog");
+    if (action === "add") {
+      await dialog.getByLabel("Name", { exact: true }).fill("Uniform batch");
+      await dialog
+        .getByRole("combobox", { name: "Branch", exact: true })
+        .selectOption("marina");
+    } else {
+      await dialog
+        .getByRole("combobox", { name: "Sales agent", exact: true })
+        .selectOption("agent-0");
+      await dialog
+        .getByLabel("Reason", { exact: true })
+        .fill("Issue uniform for work");
+    }
+    await dialog
+      .getByRole("button", {
+        name: action === "add" ? "Save asset" : "Issue stock",
+        exact: true,
+      })
+      .click();
+    await expect(dialog.getByRole("alert")).toContainText(
+      "Previous stock save failed",
+    );
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    await launch.click();
+    await expect(dialog.getByRole("alert")).toHaveCount(0);
+  });
+}
+
+for (const action of ["move", "issue"]) {
+  test(`stock89: ${action} stays open and submits only once while saving`, async ({
+    page,
+  }) => {
+    await setup(page);
+    let release!: () => void;
+    const waiting = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let writes = 0;
+    await page.route(
+      `**/api/field-assets/stock-one${action === "issue" ? "/issue" : ""}`,
+      async (route) => {
+        if (!["POST", "PATCH"].includes(route.request().method()))
+          return route.fallback();
+        writes++;
+        await waiting;
+        await route.fulfill({ json: { id: "saved" } });
+      },
+    );
+    try {
+      await page.goto("/equipment");
+      await page
+        .getByRole("button", {
+          name: action === "move" ? "Move / update" : "Issue stock",
+          exact: true,
+        })
+        .click();
+      const dialog = page.getByRole("dialog");
+      if (action === "issue")
+        await dialog
+          .getByRole("combobox", { name: "Sales agent", exact: true })
+          .selectOption("agent-0");
+      await dialog
+        .getByLabel("Reason", { exact: true })
+        .fill("Recorded branch stock change");
+      await dialog.locator("form").evaluate((form: HTMLFormElement) => {
+        form.requestSubmit();
+        form.requestSubmit();
+      });
+      await expect.poll(() => writes).toBe(1);
+      await expect(
+        dialog.getByRole("button", { name: "Saving…", exact: true }),
+      ).toBeDisabled();
+      await expect(
+        dialog.getByRole("button", { name: "Cancel", exact: true }),
+      ).toBeDisabled();
+      await page.keyboard.press("Escape");
+      await expect(dialog).toBeVisible();
+      release();
+      await expect(dialog).toHaveCount(0);
+      expect(writes).toBe(1);
+    } finally {
+      release();
+    }
+  });
+}

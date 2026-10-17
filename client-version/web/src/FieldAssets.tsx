@@ -209,6 +209,7 @@ export default function FieldAssets() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState<Row | null>(null);
+  const saving = useRef(false);
   const [adjustment, setAdjustment] = useState<Row | null>(null);
   const { branch, setBranch } = useBranchScope();
   const [localFilter, setLocalFilter] = useState({
@@ -232,10 +233,11 @@ export default function FieldAssets() {
   const [advanced, setAdvanced] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null),
     [importPreview, setImportPreview] = useState<Row | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
   const importRevision = useRef(0),
     importing = useRef(false);
   const importStock = async (apply: boolean) => {
-    if (!importFile || !branch || importing.current) return;
+    if (!importFile || !branch || importing.current || saving.current) return;
     importing.current = true;
     const revision = importRevision.current;
     setBusy(true);
@@ -260,6 +262,7 @@ export default function FieldAssets() {
       if (result.applied) {
         setImportPreview(null);
         setImportFile(null);
+        if (importInput.current) importInput.current.value = "";
         await client.invalidateQueries({ queryKey: ["field-assets"] });
         notify(
           result.already_imported
@@ -298,6 +301,7 @@ export default function FieldAssets() {
       setAdjustment(null);
       setImportPreview(null);
       setImportFile(null);
+      if (importInput.current) importInput.current.value = "";
       importRevision.current++;
       const next = new URLSearchParams(searchParams);
       next.delete("agent");
@@ -412,6 +416,8 @@ export default function FieldAssets() {
     done: () => void,
   ) {
     event.preventDefault();
+    if (saving.current || importing.current) return;
+    saving.current = true;
     setError("");
     setBusy(true);
     const body = Object.fromEntries(new FormData(event.currentTarget));
@@ -425,6 +431,7 @@ export default function FieldAssets() {
     } catch (e: any) {
       setError(e.message);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -642,6 +649,7 @@ export default function FieldAssets() {
                 <label>
                   Branch stock Excel / CSV
                   <input
+                    ref={importInput}
                     aria-label="Branch stock file"
                     type="file"
                     accept=".csv,.xlsx"
@@ -702,7 +710,9 @@ export default function FieldAssets() {
             {canManage && (
               <button
                 className="primary"
+                disabled={busy}
                 onClick={() => {
+                  setError("");
                   setAssetCategory("GRABBA_DEVICE");
                   setAdd(true);
                 }}
@@ -813,7 +823,7 @@ export default function FieldAssets() {
                   Cancel
                 </button>
                 <button className="primary" disabled={busy}>
-                  Save asset
+                  {busy ? "Saving…" : "Save asset"}
                 </button>
               </form>
             </Drawer>
@@ -918,14 +928,18 @@ export default function FieldAssets() {
                   <input name="reason" minLength={5} required />
                 </label>
                 <button className="primary" disabled={busy}>
-                  Save movement
+                  {busy ? "Saving…" : "Save movement"}
                 </button>
                 {error && (
                   <p role="alert" className="sales-error wide">
                     {error}
                   </p>
                 )}
-                <button type="button" onClick={() => setMove(null)}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setMove(null)}
+                >
                   Cancel
                 </button>
               </form>
@@ -983,14 +997,18 @@ export default function FieldAssets() {
                   <input name="reason" minLength={5} required />
                 </label>
                 <button className="primary" disabled={busy}>
-                  Issue stock
+                  {busy ? "Saving…" : "Issue stock"}
                 </button>
                 {error && (
                   <p role="alert" className="sales-error wide">
                     {error}
                   </p>
                 )}
-                <button type="button" onClick={() => setIssue(null)}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setIssue(null)}
+                >
                   Cancel
                 </button>
               </form>
@@ -1043,6 +1061,7 @@ export default function FieldAssets() {
                         {canManage && (
                           <span className="asset-actions">
                             <button
+                              disabled={busy}
                               onClick={() => {
                                 setMove(a);
                                 setMoveBranch(a.branch_id || "");
@@ -1064,7 +1083,13 @@ export default function FieldAssets() {
                                     Adjust qty
                                   </button>
                                   {a.quantity > 0 && (
-                                    <button onClick={() => setIssue(a)}>
+                                    <button
+                                      disabled={busy}
+                                      onClick={() => {
+                                        setError("");
+                                        setIssue(a);
+                                      }}
+                                    >
                                       Issue stock
                                     </button>
                                   )}

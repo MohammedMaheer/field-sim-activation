@@ -749,16 +749,21 @@ def call_state(row, task, tele):
     return task.status
 
 
-def call_task_view(db, row, task, tele):
+def call_task_progress(row, task, tele):
     state = call_state(row, task, tele)
     timing = call_timing(row, task.stage)
     tele_timing = call_timing(row, "TELE_VERIFICATION")
-    return {**sale_view(db, row), "id": task.id, "sale_id": row.id, "stage": task.stage,
-            "status": state, "last_outcome": task.last_outcome or "Not started",
+    return {"status": state,
             **timing, "overdue": timing["overdue"] and state not in {"COMPLETED", "SKIPPED", "CANCELLED"},
             "activation_blocked": task.stage == "WELCOME_CALL" and row.status != "CLOSED",
             "sequence_warning": "Activation recorded before tele-verification" if row.status == "CLOSED" and not (tele and tele.status == "COMPLETED") and (not tele_timing["deferred"] or tele_timing["overdue"]) else "",
-            "updated_at": task.updated_at}
+            }
+
+
+def call_task_view(db, row, task, tele):
+    return {**sale_view(db, row), "id": task.id, "sale_id": row.id, "stage": task.stage,
+            **call_task_progress(row, task, tele),
+            "last_outcome": task.last_outcome or "Not started", "updated_at": task.updated_at}
 
 
 @router.get("/call-tasks")
@@ -779,7 +784,16 @@ def call_tasks(user=Depends(principal), db=Depends(get_db), branch_id: str = "")
 
 @router.get("/call-tasks/summary")
 def call_task_summary(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
-    tasks = call_tasks(user, db, branch_id)
+    # Header badges need progress counts, not customer/evidence/SR serialization
+    # for every queued call. Keep the same scope and shared progress rules.
+    rows = visible_call_rows(db, user, branch_id)
+    sales = {row.id: row for row in rows}
+    pending = db.scalars(select(SalesCallTask).where(SalesCallTask.sale_id.in_(sales))).all() if sales else []
+    tele_by_sale = {task.sale_id: task for task in pending if task.stage == "TELE_VERIFICATION"}
+    stage = task_stage_filter(db, user)
+    tasks = [{"sale_id": task.sale_id, "stage": task.stage,
+              **call_task_progress(sales[task.sale_id], task, tele_by_sale.get(task.sale_id))}
+             for task in pending if not stage or task.stage == stage]
     return {"actionable": sum(task["status"] in {"PENDING", "FAILED"} for task in tasks),
             "pending_tele": sum(task["stage"] == "TELE_VERIFICATION" and task["status"] == "PENDING" for task in tasks),
             "pending_welcome": sum(task["stage"] == "WELCOME_CALL" and task["status"] == "PENDING" for task in tasks),
