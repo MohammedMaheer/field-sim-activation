@@ -176,7 +176,11 @@ export default function CustomerIntake({
       setError(ocrWarning(details));
       return true;
     } catch (failure: any) {
-      if (failure instanceof OcrTemporaryFailure && alive.current)
+      if (
+        failure instanceof OcrTemporaryFailure &&
+        alive.current &&
+        generation === captureRevision.current
+      )
         setError(failure.message);
       return false;
     }
@@ -222,9 +226,14 @@ export default function CustomerIntake({
       await readStoredPhoto(retryKey, generation);
       setRetryKey("");
     } catch (failure: any) {
-      if (!(failure instanceof OcrReadCancelled)) setError(failure.message);
+      if (
+        !(failure instanceof OcrReadCancelled) &&
+        alive.current &&
+        generation === captureRevision.current
+      )
+        setError(failure.message);
     } finally {
-      if (alive.current) {
+      if (alive.current && generation === captureRevision.current) {
         setBusy(false);
         setReading(false);
       }
@@ -232,15 +241,16 @@ export default function CustomerIntake({
   }
   async function photo(file: File | undefined, key: string) {
     if (!file) return;
+    const generation = ++captureRevision.current;
     setBusy(true);
     setReading(key === "document_image" || key === "order_image");
     setError("");
     try {
       const image = await preparedImage(file);
+      if (!alive.current || generation !== captureRevision.current) return;
       if (key === "document_image" || key === "order_image")
         setScanImage(image);
       if (key === "document_image" || key === "order_image") {
-        const generation = ++captureRevision.current;
         replaceValue({
           ...withoutStageCapture(
             currentValue.current,
@@ -254,16 +264,23 @@ export default function CustomerIntake({
         replaceValue({ ...currentValue.current, [key]: image });
       }
     } catch (e: any) {
-      if (!(e instanceof OcrReadCancelled) && alive.current) {
+      if (
+        !(e instanceof OcrReadCancelled) &&
+        alive.current &&
+        generation === captureRevision.current
+      ) {
         if (e instanceof OcrTemporaryFailure) setRetryKey(key);
         setError(e.message);
       }
     } finally {
-      setBusy(false);
-      setReading(false);
+      if (alive.current && generation === captureRevision.current) {
+        setBusy(false);
+        setReading(false);
+      }
     }
   }
   async function save(next: boolean) {
+    const isCurrent = () => alive.current;
     setBusy(true);
     setError("");
     try {
@@ -347,6 +364,7 @@ export default function CustomerIntake({
               agent_id: value.agent_id,
             })
           : {};
+      if (!isCurrent()) return;
       const data = {
         ...value,
         capture_mode: "SCREENSHOT_SALE",
@@ -357,11 +375,13 @@ export default function CustomerIntake({
         method: "PUT",
         body: JSON.stringify({ version, data }),
       });
+      if (!isCurrent()) return;
       setVersion(r.version);
       onVersionChange(r.version);
       onChange(data);
       if (!next) {
         await post("/kyc-captures/saved-drafts", { data });
+        if (!isCurrent()) return;
         onSaved();
       }
       if (next) {
@@ -369,9 +389,9 @@ export default function CustomerIntake({
         else setStep(1);
       }
     } catch (e: any) {
-      setError(e.message);
+      if (isCurrent()) setError(e.message);
     } finally {
-      setBusy(false);
+      if (isCurrent()) setBusy(false);
     }
   }
   function input(key: string, label: string, type = "text", max = 120) {

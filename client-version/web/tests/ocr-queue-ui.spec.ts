@@ -54,6 +54,161 @@ const customer = {
   document_check: "synthetic-proof",
 };
 
+test("a photo still decoding cannot repopulate a newly started transaction", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const decode = window.createImageBitmap.bind(window);
+    (window as any).photoDecoding = false;
+    window.createImageBitmap = async (...args: any[]) => {
+      (window as any).photoDecoding = true;
+      await new Promise<void>((resolve) => {
+        (window as any).finishPhotoDecode = resolve;
+      });
+      const bitmap = await (decode as any)(...args);
+      (window as any).photoDecoded = true;
+      return bitmap;
+    };
+  });
+  await setup(page);
+  let submitted = 0;
+  await page.route("**/api/kyc-captures/ocr-jobs", (route) => {
+    submitted++;
+    return route.fulfill({
+      status: 500,
+      json: { detail: "Unexpected old photo" },
+    });
+  });
+  await page.getByLabel("Full name", { exact: true }).fill("Previous customer");
+  await page
+    .getByLabel("Customer details screen", { exact: true })
+    .setInputFiles(path.resolve("../mobile/assets/demo/identity.png"));
+  await expect
+    .poll(() => page.evaluate(() => (window as any).photoDecoding))
+    .toBe(true);
+  await page
+    .getByRole("button", { name: "New transaction capture", exact: true })
+    .click();
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveValue("");
+  await page.evaluate(() => (window as any).finishPhotoDecode());
+  await expect
+    .poll(() => page.evaluate(() => (window as any).photoDecoded))
+    .toBe(true);
+  await expect(page.getByAltText("Captured customer details")).toHaveCount(0);
+  await expect(page.getByLabel("Full name", { exact: true })).toHaveValue("");
+  expect(submitted).toBe(0);
+});
+
+for (const delayed of ["progress", "saved copy"]) {
+  test(`a late ${delayed} response cannot replace the next transaction`, async ({
+    page,
+  }) => {
+    await setup(page);
+    let finish!: () => void;
+    let waiting = false;
+    const endpoint = delayed === "progress" ? "draft" : "saved-drafts";
+    await page.route(`**/api/kyc-captures/${endpoint}`, async (route) => {
+      if (
+        !waiting &&
+        route.request().method() === (delayed === "progress" ? "PUT" : "POST")
+      ) {
+        waiting = true;
+        await new Promise<void>((resolve) => {
+          finish = resolve;
+        });
+      }
+      await route.fulfill({ json: { version: 2, id: "saved-one", data: {} } });
+    });
+    await page
+      .getByLabel("Full name", { exact: true })
+      .fill("Earlier customer");
+    await page.getByRole("button", { name: "Save draft", exact: true }).click();
+    await expect.poll(() => waiting).toBe(true);
+    await page
+      .getByRole("button", { name: "New transaction capture", exact: true })
+      .click();
+    await expect(page.getByLabel("Full name", { exact: true })).toHaveValue("");
+    await page.getByLabel("Full name", { exact: true }).fill("New customer");
+    const response = page.waitForResponse(
+      (r) =>
+        new URL(r.url()).pathname === `/api/kyc-captures/${endpoint}` &&
+        r.request().method() === (delayed === "progress" ? "PUT" : "POST"),
+    );
+    finish();
+    await response;
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+        ),
+    );
+    await expect(
+      page.getByRole("dialog", { name: "Drafts", exact: true }),
+    ).toHaveCount(0);
+    await expect(page.getByLabel("Full name", { exact: true })).toHaveValue(
+      "New customer",
+    );
+  });
+}
+
+test("an unreadable automatic camera frame does not cancel saving a partial draft", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+      value: async () => new MediaStream(),
+    });
+    HTMLMediaElement.prototype.play = async () => {};
+    Object.defineProperty(HTMLVideoElement.prototype, "videoWidth", {
+      get: () => 640,
+    });
+    Object.defineProperty(HTMLVideoElement.prototype, "videoHeight", {
+      get: () => 480,
+    });
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    CanvasRenderingContext2D.prototype.drawImage = function (...args: any[]) {
+      if (args[0] instanceof HTMLVideoElement) {
+        this.fillStyle = "white";
+        this.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      } else (draw as any).apply(this, args);
+    } as typeof draw;
+  });
+  await setup(page);
+  let finish!: () => void;
+  let saving = false;
+  let frames = 0;
+  await page.route("**/api/kyc-captures/ocr-jobs", (route) => {
+    frames++;
+    const body = route.request().postDataJSON();
+    return route.fulfill({
+      status: 202,
+      json: {
+        id: body.operation_id,
+        stage: "DOCUMENT",
+        status: "COMPLETED",
+        result: {},
+      },
+    });
+  });
+  await page.route("**/api/kyc-captures/draft", async (route) => {
+    if (route.request().method() === "PUT") {
+      saving = true;
+      await new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    }
+    await route.fulfill({ json: { version: 2, data: {} } });
+  });
+  await page.getByLabel("Full name", { exact: true }).fill("Partial customer");
+  await page.getByRole("button", { name: "Save draft", exact: true }).click();
+  await expect.poll(() => saving).toBe(true);
+  await expect.poll(() => frames, { timeout: 10000 }).toBeGreaterThan(0);
+  finish();
+  await expect(
+    page.getByRole("dialog", { name: "Drafts", exact: true }),
+  ).toBeVisible();
+});
+
 test("starting a new transaction blocks the old upload until draft reset completes", async ({
   page,
 }) => {

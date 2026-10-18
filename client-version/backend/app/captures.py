@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, Query
 from fastapi.responses import JSONResponse
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, and_, or_
 from sqlalchemy.exc import IntegrityError
 from openpyxl import Workbook
 from .db import (
@@ -476,15 +476,22 @@ def save_named_draft(body: SavedDraftBody, user=Depends(principal), db=Depends(g
     if row and row.creator_id != user.id:
         raise HTTPException(404, "Draft not found")
     if row is None:
-        count = db.scalar(
-            select(func.count())
-            .select_from(SavedCaptureDraft)
+        # A response may be lost before the client receives its saved ID. Mobile
+        # offline recovery may also supply a local ID. The creator lock serializes
+        # both paths; match this user's bounded, encrypted draft list by transaction.
+        existing = db.scalars(
+            select(SavedCaptureDraft)
             .where(SavedCaptureDraft.creator_id == user.id)
-        )
-        if count >= 20:
+            .order_by(SavedCaptureDraft.created_at.desc())
+        ).all()
+        if body.data.transaction_id:
+            row = next((item for item in existing
+                        if payload(item).get("transaction_id") == body.data.transaction_id), None)
+        if row is None and len(existing) >= 20:
             raise HTTPException(
                 409, "Keep up to 20 drafts. Complete or discard an existing draft first."
             )
+    if row is None:
         row = SavedCaptureDraft(id=str(uuid.uuid4()), creator_id=user.id)
         db.add(row)
     content = body.data.model_dump(mode="json")
