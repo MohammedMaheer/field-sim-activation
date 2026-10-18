@@ -704,7 +704,7 @@ def call_stage_access(db, user, stage):
         raise HTTPException(403, "Your role cannot record this call stage")
 
 
-def visible_call_rows(db, user, branch_id=""):
+def visible_call_rows(db, user, branch_id="", sale_id=""):
     role = db.get(Role, user.role_id).name
     if role in {"Tele Verification Officer", "Welcome Call Officer"}:
         required = "call.tele.read" if role == "Tele Verification Officer" else "call.welcome.read"
@@ -717,6 +717,8 @@ def visible_call_rows(db, user, branch_id=""):
         query = scoped(db, user, SalesRecord)
     if branch_id:
         query = query.where(SalesRecord.branch_id == branch_id)
+    if sale_id:
+        query = query.where(SalesRecord.id == sale_id)
     return db.scalars(query.where(SalesRecord.order_type.in_(CALL_ORDER_TYPES)).order_by(SalesRecord.created_at.desc()).limit(1000)).all()
 
 
@@ -803,10 +805,12 @@ def call_task_summary(user=Depends(principal), db=Depends(get_db), branch_id: st
 
 
 @router.get("/calls")
-def call_queue(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
-    rows = visible_call_rows(db, user, branch_id)
+def call_queue(user=Depends(principal), db=Depends(get_db), branch_id: str = "", sale_id: str = ""):
+    rows = visible_call_rows(db, user, branch_id, sale_id)
     retain_sale_references(db, rows)
     attempts = db.scalars(select(CallAttempt).where(CallAttempt.sale_id.in_([r.id for r in rows])).order_by(CallAttempt.created_at)).all()
+    from .services import retain_references
+    retain_references(db, User, {attempt.actor_id for attempt in attempts})
     restricted = task_stage_filter(db, user)
     by_sale = {}
     for attempt in attempts:
@@ -823,7 +827,7 @@ def call_queue(user=Depends(principal), db=Depends(get_db), branch_id: str = "")
 @router.post("/sales/{sale_id}/calls", status_code=201)
 def record_call(sale_id: str, body: CallWrite, request: Request, user=Depends(principal), db=Depends(get_db)):
     call_stage_access(db, user, body.stage)
-    row = db.get(SalesRecord, sale_id)
+    row = sale_for_update(db, sale_id)
     if not row or not permitted(db, user, row):
         raise HTTPException(404, "Sale not found")
     if row.status == "CANCELLED":
@@ -877,7 +881,7 @@ def skip_tele(sale_id: str, body: CallSkip, request: Request, user=Depends(princ
 @router.post("/sales/{sale_id}/calls/defer-tele")
 def defer_tele(sale_id: str, body: CallSkip, request: Request, user=Depends(principal), db=Depends(get_db)):
     call_stage_access(db, user, "TELE_VERIFICATION")
-    row = db.scalar(select(SalesRecord).where(SalesRecord.id == sale_id).with_for_update())
+    row = sale_for_update(db, sale_id)
     if not row or not permitted(db, user, row):
         raise HTTPException(404, "Sale not found")
     if row.status == "CANCELLED" or row.order_type not in CALL_ORDER_TYPES:

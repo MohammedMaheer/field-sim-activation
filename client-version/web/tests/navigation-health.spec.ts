@@ -86,8 +86,8 @@ async function expectHealthyView(
     ),
     `${label}: no whole-page horizontal overflow`,
   ).toBe(true);
-  // Opening dozens of full documents in a tight loop otherwise exhausts the
-  // evaluation API's shared per-IP limit. This is pacing, not a readiness wait.
+  // Pace full-document navigation as a visual audit. Dedicated capacity tests
+  // exercise throttling separately; this pause is not a readiness wait.
   await page.waitForTimeout(
     Number(process.env.RELAY_NAVIGATION_PAUSE_MS || 1500),
   );

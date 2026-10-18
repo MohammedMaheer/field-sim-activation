@@ -54,7 +54,12 @@ def permissions(db, user):
 
 
 def require(db, user, permission):
-    if permission not in permissions(db, user):
+    # General workspace roles need both grants. Calling roles intentionally use
+    # dedicated stage grants instead of broad workspace read access.
+    granted = permissions(db, user)
+    role = db.get(Role, user.role_id)
+    needs_read = role and "read" in ROLE_PERMISSIONS.get(role.name, [])
+    if permission not in granted or needs_read and "read" not in granted:
         raise HTTPException(403, "Your role cannot perform this action")
 
 

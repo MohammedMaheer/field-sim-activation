@@ -21,7 +21,13 @@ test("mobile keeps a rejected stock request, retries it and receives the admin d
     .getByRole("button", { name: "Request stock", exact: true })
     .click();
   const reason = `Shared usability request ${Date.now()}`;
-  await page.getByRole("textbox", { name: "Reason", exact: true }).fill(reason);
+  await page.getByRole("textbox", { name: "Reason", exact: true }).click();
+  await page.keyboard.type(reason, { delay: 20 });
+  await expect(
+    page.getByText(`${300 - reason.length} characters remaining`, {
+      exact: true,
+    }),
+  ).toBeVisible();
   let reject = true;
   await page.route("**/api/field-assets/requests", async (route) => {
     if (reject && route.request().method() === "POST") {

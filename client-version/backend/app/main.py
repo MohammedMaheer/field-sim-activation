@@ -202,14 +202,21 @@ async def safeguards(request: Request, call_next):
         if request.url.path.startswith("/api/auth")
         else "api",
     )
-    # Authenticated point collectors share office IPs. Give each signed member
-    # its own bounded bucket; unauthenticated traffic retains the IP limit.
-    if request.url.path == "/api/location-tracking/points":
+    # Members share office/carrier IPs. One busy authenticated member must not
+    # exhaust a colleague's API bucket. Login/refresh and unverified traffic
+    # retain their existing IP limits; location keeps its tighter member cap.
+    if key[1] == "api":
         try:
             value = request.headers.get("authorization", "")
-            token = jwt.decode(value.removeprefix("Bearer "), SECRET, algorithms=["HS256"], audience="relay")
-            key = (str(token["sub"]), "location")
-        except (jwt.PyJWTError, KeyError, TypeError):
+            scheme, _, encoded = value.partition(" ")
+            if scheme.casefold() != "bearer" or not encoded:
+                raise ValueError("A bearer token is required for a member bucket")
+            token = jwt.decode(encoded, SECRET, algorithms=["HS256"], audience="relay")
+            subject, session_id = token["sub"], token["sid"]
+            if not isinstance(subject, str) or not subject or not isinstance(session_id, str) or not session_id:
+                raise ValueError("Invalid member claims")
+            key = (subject, "location") if request.url.path == "/api/location-tracking/points" else ("member:" + subject, "api")
+        except (jwt.PyJWTError, KeyError, TypeError, ValueError):
             pass
     window = limits[key]
     stamp = time.monotonic()

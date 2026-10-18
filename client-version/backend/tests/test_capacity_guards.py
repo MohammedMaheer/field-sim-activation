@@ -2,6 +2,8 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from threading import Event, BoundedSemaphore, get_ident
+from collections import defaultdict, deque
+import time
 from uuid import uuid4
 import pytest
 from test_client_scope import client, database, login, valid_ocr_photo  # noqa: F401
@@ -9,6 +11,28 @@ from app import capture_ocr
 from app import main
 from app.db import DB, User, Session, Permission, Event as WorkspaceEvent, now
 from sqlalchemy import select
+
+
+def test_api_rate_limits_isolate_signed_members_sharing_an_office_ip(client, monkeypatch):
+    first, second = login(client, 'agent1'), login(client, 'agent2')
+    monkeypatch.setattr(main, 'limits', defaultdict(deque))
+    main.limits[('member:' + first['user']['id'], 'api')].extend([time.monotonic()] * 600)
+    for scheme in ['Bearer', 'bearer', 'BEARER']:
+        response = client.get('/api/resources/inventory', headers={'Authorization':scheme+' '+first['access_token']})
+        assert response.status_code == 429 and response.headers['retry-after'] == '60'
+    assert client.get('/api/resources/inventory', headers={'Authorization':'Bearer '+second['access_token']}).status_code == 200
+
+
+def test_an_exhausted_ip_does_not_block_valid_members_or_accept_forged_tokens(client, monkeypatch):
+    auth = login(client, 'agent1')
+    monkeypatch.setattr(main, 'limits', defaultdict(deque))
+    main.limits[('testclient', 'api')].extend([time.monotonic()] * 600)
+    assert client.get('/api/resources/inventory', headers={'Authorization':'Bearer '+auth['access_token']}).status_code == 200
+    assert client.get('/api/resources/inventory', headers={'Authorization':'Bearer not-a-valid-token'}).status_code == 429
+    claims = main.jwt.decode(auth['access_token'], main.SECRET, algorithms=['HS256'], audience='relay')
+    claims['exp'] = main.now() - timedelta(seconds=1)
+    expired = main.jwt.encode(claims, main.SECRET, algorithm='HS256')
+    assert client.get('/api/resources/inventory', headers={'Authorization':'Bearer '+expired}).status_code == 429
 
 
 def test_ocr_rejects_overlap_and_releases_capacity_after_failure(monkeypatch):

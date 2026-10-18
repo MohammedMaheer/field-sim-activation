@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr t
 ENV OMP_THREAD_LIMIT=1
 WORKDIR /app
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --create-home relay
+RUN pip install --no-cache-dir --upgrade pip==26.2.1 && pip install --no-cache-dir -r requirements.txt && useradd --uid 10001 --create-home relay
 COPY backend/app ./app
 COPY backend/migrations ./migrations
 COPY backend/alembic.ini ./alembic.ini

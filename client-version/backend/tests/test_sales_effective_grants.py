@@ -40,6 +40,26 @@ def encoded_file(text):
     return {"filename": "restricted.csv", "content_base64": base64.b64encode(text.encode()).decode()}
 
 
+@pytest.mark.parametrize("account,stage", [("tele", "TELE_VERIFICATION"), ("welcome", "WELCOME_CALL")])
+def test_call_officer_without_its_stage_read_cannot_read_or_record(client, restrict_grants, account, stage):
+    login(client, account)
+    restrict_grants(account, ["call.tele.write", "call.welcome.write"])
+    for path in ["call-tasks", "call-tasks/summary", "calls"]:
+        assert client.get("/api/sales-management/" + path).status_code == 403
+    response = client.post("/api/sales-management/sales/missing/calls", json={
+        "stage": stage, "outcome": "NO_ANSWER", "remark": "Customer did not answer"})
+    assert response.status_code == 403
+
+
+def test_specific_support_or_report_grant_cannot_bypass_removed_workspace_read(client, restrict_grants):
+    login(client)
+    restrict_grants('admin', ['support.write', 'report.read'])
+    response = client.patch('/api/support-tickets/missing', json={
+        'status':'RESOLVED', 'response':'The operational issue was addressed'})
+    assert response.status_code == 403
+    assert client.get('/api/field-assets/report/export?kind=stock').status_code == 403
+
+
 @pytest.mark.parametrize("account", ["admin", "ops"])
 def test_read_only_management_cannot_correct_a_sale(client, restrict_grants, account):
     first, _ = agents(client)

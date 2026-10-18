@@ -1,12 +1,12 @@
 """Branch stock, movement history and shortage alerts, including existing SIM stock."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import Field
 from .validation import BusinessInput
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, func
 from sqlalchemy.exc import IntegrityError
 
 from .db import Audit, Agent, Branch, FieldAsset, FieldAssetMovement, FieldAssetRequest, Movement, Outlet, Role, Session, Sim, SimProgress, StockThreshold, User, get_db, now
@@ -40,7 +40,8 @@ def asset_scope(db, user):
         query = query.where(or_(FieldAsset.agent_id.in_(agent_ids),
                                 FieldAsset.branch_id.in_(branch_ids) & FieldAsset.agent_id.is_(None)))
     elif name == "Team Leader":
-        query = query.where(FieldAsset.branch_id.in_(visible_branches(db, user)))
+        query = query.where(FieldAsset.branch_id.in_(visible_branches(db, user)),
+                           or_(FieldAsset.agent_id.in_(visible_agents(db, user)), FieldAsset.agent_id.is_(None)))
     elif name == "Branch Manager":
         query = query.where(FieldAsset.branch_id == user.branch_id)
     elif name in {"Tele Verification Officer", "Welcome Call Officer"}:
@@ -87,12 +88,41 @@ def view(db, row):
             "size": row.size, "condition": row.condition, "created_at": row.created_at}
 
 
+def stock_dates(start, end):
+    def utc(value):
+        return value.astimezone(timezone.utc).replace(tzinfo=None) if value and value.tzinfo else value
+    start, end = utc(start), utc(end)
+    if start and end and start > end:
+        raise HTTPException(422, "Start date must be on or before end date")
+    return start, end
+
+
+def filter_stock(query, model, branch_id, category, status, agent_id, start, end):
+    start, end = stock_dates(start, end)
+    for column, value in [(model.branch_id, branch_id), (model.category, category),
+                          (model.status, status), (model.agent_id, agent_id)]:
+        if value:
+            query = query.where(column == value)
+    if start:
+        query = query.where(model.created_at >= start)
+    if end:
+        query = query.where(model.created_at <= end)
+    return query
+
+
+def retain_stock_references(db, branch_ids, agent_ids=(), user_ids=()):
+    from .services import retain_references
+    agents = retain_references(db, Agent, set(agent_ids))
+    retain_references(db, User, set(user_ids) | {agent.user_id for agent in agents.values()})
+    retain_references(db, Branch, set(branch_ids))
+
+
 @router.get("")
-def assets(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
-    query = asset_scope(db, user)
-    if branch_id:
-        query = query.where(FieldAsset.branch_id == branch_id)
-    rows = db.scalars(query.order_by(FieldAsset.created_at.desc()).limit(1000)).all()
+def assets(user=Depends(principal), db=Depends(get_db), branch_id: str = "", category: str = "",
+           status: str = "", agent_id: str = "", start: datetime | None = None, end: datetime | None = None):
+    query = filter_stock(asset_scope(db, user), FieldAsset, branch_id, category, status, agent_id, start, end)
+    rows = db.scalars(query.order_by(FieldAsset.created_at.desc(), FieldAsset.id.desc()).limit(1000)).all()
+    retain_stock_references(db, {row.branch_id for row in rows}, {row.agent_id for row in rows})
     return [view(db, row) for row in rows]
 
 
@@ -258,10 +288,11 @@ def adjust_asset(asset_id: str, body: QuantityAdjustment, request: Request, user
 
 @router.get("/{asset_id}/history")
 def history(asset_id: str, user=Depends(principal), db=Depends(get_db)):
-    row = db.get(FieldAsset, asset_id)
-    if not row or row.id not in db.scalars(asset_scope(db, user).with_only_columns(FieldAsset.id)).all():
+    row = db.scalar(asset_scope(db, user).where(FieldAsset.id == asset_id))
+    if not row:
         raise HTTPException(404, "Asset not found")
     moves = db.scalars(select(FieldAssetMovement).where(FieldAssetMovement.asset_id == asset_id).order_by(FieldAssetMovement.created_at.desc())).all()
+    retain_stock_references(db, (), user_ids={move.actor_id for move in moves})
     return [{"at": move.created_at, "from_branch_id": move.from_branch_id,
              "to_branch_id": move.to_branch_id, "from_agent_id": move.from_agent_id,
              "to_agent_id": move.to_agent_id, "actor": db.get(User, move.actor_id).name,
@@ -450,52 +481,58 @@ def set_threshold(body: ThresholdWrite, request: Request, user=Depends(principal
 @router.get("/report/movements")
 def movement_report(category: str = "", branch_id: str = "", agent_id: str = "", start: datetime | None = None,
                     end: datetime | None = None, user=Depends(principal), db=Depends(get_db)):
+    start, end = stock_dates(start, end)
     branch_ids = visible_branches(db, user)
     if branch_id:
         branch_ids = [item for item in branch_ids if item == branch_id]
     if not branch_ids:
         return []
-    result = []
-    if agent_id and agent_id not in visible_agents(db, user):
+    owned = visible_agents(db, user)
+    if agent_id and agent_id not in owned:
         return []
-    query = select(FieldAssetMovement).where(or_(FieldAssetMovement.to_branch_id.in_(branch_ids),
-                                                FieldAssetMovement.from_branch_id.in_(branch_ids)))
-    if role(db, user) == "Field Agent":
-        owned = visible_agents(db, user)
+    restricted = role(db, user) in {"Field Agent", "Team Leader"}
+    query = select(FieldAssetMovement, FieldAsset).join(FieldAsset, FieldAsset.id == FieldAssetMovement.asset_id).where(
+        or_(FieldAssetMovement.to_branch_id.in_(branch_ids), FieldAssetMovement.from_branch_id.in_(branch_ids)))
+    if restricted:
         query = query.where(or_(FieldAssetMovement.to_agent_id.in_(owned), FieldAssetMovement.from_agent_id.in_(owned),
                                FieldAssetMovement.to_agent_id.is_(None) & FieldAssetMovement.from_agent_id.is_(None)))
     if agent_id:
         query = query.where(or_(FieldAssetMovement.to_agent_id == agent_id, FieldAssetMovement.from_agent_id == agent_id))
+    if category:
+        query = query.where(FieldAsset.category == category)
     if start:
         query = query.where(FieldAssetMovement.created_at >= start)
     if end:
         query = query.where(FieldAssetMovement.created_at <= end)
-    movements = db.scalars(query.order_by(FieldAssetMovement.created_at.desc()).limit(1000)).all()
-    for move in movements:
-        asset = db.get(FieldAsset, move.asset_id)
-        if not asset or category and asset.category != category:
-            continue
-        result.append({"at": move.created_at, "category": asset.category, "item": asset.label,
-                       "serial": asset.serial or "", "branch": db.get(Branch, move.to_branch_id).name,
-                       "agent": db.get(User, db.get(Agent, move.to_agent_id).user_id).name if move.to_agent_id else "Unassigned",
-                       "from_branch": db.get(Branch, move.from_branch_id).name,
-                       "warehouse": asset.warehouse, "batch": asset.batch,
-                       "quantity_delta": move.quantity_delta, "reason": move.reason,
-                       "actor": db.get(User, move.actor_id).name})
-    sim_moves = db.scalars(select(Movement).order_by(Movement.created_at.desc()).limit(1000)).all()
-    for move in sim_moves:
-        sim = db.get(Sim, move.sim_id)
-        if not sim:
-            continue
-        outlet = db.get(Outlet, sim.outlet_id)
-        sim_category = "SIM:" + sim.sim_type.upper() + ":" + sim.business_category
-        if outlet.branch_id not in branch_ids or category and category != sim_category:
-            continue
-        if role(db, user) == "Field Agent" and move.agent_id and move.agent_id not in visible_agents(db, user):
-            continue
-        if agent_id and move.agent_id != agent_id or start and move.created_at < start.replace(tzinfo=None) or end and move.created_at > end.replace(tzinfo=None):
-            continue
-        result.append({"at": move.created_at, "category": sim_category, "item": "SIM",
+    movements = db.execute(query.order_by(FieldAssetMovement.created_at.desc(), FieldAssetMovement.id.desc()).limit(1000)).all()
+    retain_stock_references(db, {value for move, _ in movements for value in (move.from_branch_id, move.to_branch_id)},
+                            {move.to_agent_id for move, _ in movements}, {move.actor_id for move, _ in movements})
+    result = [{"at": move.created_at, "category": asset.category, "item": asset.label,
+               "serial": asset.serial or "", "branch": db.get(Branch, move.to_branch_id).name,
+               "agent": db.get(User, db.get(Agent, move.to_agent_id).user_id).name if move.to_agent_id else "Unassigned",
+               "from_branch": db.get(Branch, move.from_branch_id).name,
+               "warehouse": asset.warehouse, "batch": asset.batch,
+               "quantity_delta": move.quantity_delta, "reason": move.reason,
+               "actor": db.get(User, move.actor_id).name} for move, asset in movements]
+    sim_query = select(Movement, Sim, Outlet).join(Sim, Sim.id == Movement.sim_id).join(Outlet, Outlet.id == Sim.outlet_id).where(Outlet.branch_id.in_(branch_ids))
+    if restricted:
+        sim_query = sim_query.where(or_(Movement.agent_id.in_(owned), Movement.agent_id.is_(None)))
+    if agent_id:
+        sim_query = sim_query.where(Movement.agent_id == agent_id)
+    if start:
+        sim_query = sim_query.where(Movement.created_at >= start)
+    if end:
+        sim_query = sim_query.where(Movement.created_at <= end)
+    if category:
+        parts = category.split(":", 2)
+        if len(parts) != 3 or parts[0] != "SIM":
+            return sorted(result, key=lambda row: row["at"], reverse=True)[:1000]
+        sim_query = sim_query.where(func.upper(Sim.sim_type) == parts[1], Sim.business_category == parts[2])
+    sim_moves = db.execute(sim_query.order_by(Movement.created_at.desc(), Movement.id.desc()).limit(1000)).all()
+    retain_stock_references(db, {outlet.branch_id for _, _, outlet in sim_moves},
+                            {move.agent_id for move, _, _ in sim_moves}, {move.user_id for move, _, _ in sim_moves})
+    for move, sim, outlet in sim_moves:
+        result.append({"at": move.created_at, "category": "SIM:" + sim.sim_type.upper() + ":" + sim.business_category, "item": "SIM",
                        "serial": sim.serial, "branch": db.get(Branch, outlet.branch_id).name,
                        "agent": db.get(User, db.get(Agent, move.agent_id).user_id).name if move.agent_id else "Unassigned",
                        "quantity_delta": -1 if move.new_status == "ACTIVATED" else 0,
@@ -517,23 +554,19 @@ def export_stock(kind: Literal["summary", "movements", "stock", "requests"] = "s
     from .exports import require_scoped_export
     require_scoped_export(db, user)
     if kind == "summary":
-        rows = summary_rows(db, user)
+        rows = summary_rows(db, user, branch_id)
         columns = ["branch", "category", "available", "assigned", "reserved", "damaged", "lost", "consumed", "returned", "retired", "minimum", "low_stock"]
     elif kind == "movements":
         rows = movement_report(category=category, branch_id=branch_id, agent_id=agent_id, start=start, end=end, user=user, db=db)
         columns = ["at", "from_branch", "branch", "category", "item", "serial", "agent", "warehouse", "batch", "quantity_delta", "reason", "actor"]
     elif kind == "stock":
-        rows = assets(user, db)
+        rows = assets(user, db, branch_id, category, status, agent_id, start, end)
         columns = ["created_at", "branch", "category", "label", "serial", "quantity", "agent", "status", "warehouse", "batch", "size", "condition", "note"]
     else:
-        rows = requests(user, db)
+        rows = requests(user, db, branch_id, category, status, agent_id, start, end)
         columns = ["created_at", "branch", "category", "agent", "quantity", "urgency", "reason", "status"]
-    if kind != "movements":
-        rows = [row for row in rows if (not branch_id or row["branch_id"] == branch_id)
-                and (not category or row["category"] == category) and (kind == "summary" or not status or row.get("status") == status)
-                and (kind == "summary" or not agent_id or row.get("agent_id") == agent_id)
-                and (not start or not row.get("created_at") or row["created_at"] >= start.replace(tzinfo=None))
-                and (not end or not row.get("created_at") or row["created_at"] <= end.replace(tzinfo=None))]
+    if kind == "summary" and category:
+        rows = [row for row in rows if row["category"] == category]
     from .exports import table_download
     branch = db.get(Branch, branch_id) if branch_id and rows else None
     return table_download(columns, rows, "stock " + kind, format,
@@ -551,11 +584,11 @@ class RequestCreate(BusinessInput):
 
 
 @router.get("/requests/list")
-def requests(user=Depends(principal), db=Depends(get_db), branch_id: str = ""):
-    query = request_scope(db, user)
-    if branch_id:
-        query = query.where(FieldAssetRequest.branch_id == branch_id)
-    rows = db.scalars(query.order_by(FieldAssetRequest.created_at.desc()).limit(1000)).all()
+def requests(user=Depends(principal), db=Depends(get_db), branch_id: str = "", category: str = "",
+             status: str = "", agent_id: str = "", start: datetime | None = None, end: datetime | None = None):
+    query = filter_stock(request_scope(db, user), FieldAssetRequest, branch_id, category, status, agent_id, start, end)
+    rows = db.scalars(query.order_by(FieldAssetRequest.created_at.desc(), FieldAssetRequest.id.desc()).limit(1000)).all()
+    retain_stock_references(db, {row.branch_id for row in rows}, {row.agent_id for row in rows})
     responses = {}
     for event in db.scalars(select(Audit).where(Audit.entity.in_([row.id for row in rows]), Audit.action == "Field Asset Request Updated").order_by(Audit.created_at.desc())):
         responses.setdefault(event.entity, {"response": event.reason, "responded_by": event.actor, "responded_at": event.created_at})

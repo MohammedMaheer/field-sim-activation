@@ -57,3 +57,14 @@ def test_lightweight_summary_matches_scoped_queue_without_evidence_reads(client,
     summary=client.get("/api/sales-management/call-tasks/summary",params=params)
     assert summary.status_code==200,summary.text
     assert summary.json()==expected
+
+
+def test_selected_call_history_preserves_agent_and_branch_scope(client, queued_calls):
+    login(client, 'agent1')
+    own = client.get('/api/sales-management/calls').json()
+    assert own
+    selected = own[0]
+    assert [row['id'] for row in client.get('/api/sales-management/calls', params={'sale_id':selected['id']}).json()] == [selected['id']]
+    assert client.get('/api/sales-management/calls', params={'sale_id':selected['id'], 'branch_id':str(uuid4())}).json() == []
+    login(client, 'agent2')
+    assert client.get('/api/sales-management/calls', params={'sale_id':selected['id']}).json() == []

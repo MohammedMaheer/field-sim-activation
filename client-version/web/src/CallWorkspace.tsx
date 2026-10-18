@@ -46,8 +46,11 @@ export default function CallWorkspace({
     refetchInterval: 15000,
   });
   const history = useQuery<Row[]>({
-    queryKey: ["sales-management", "calls", branch],
-    queryFn: () => api(`/sales-management/calls?${branchQuery}`),
+    queryKey: ["sales-management", "calls", branch, historySale?.sale_id],
+    queryFn: () =>
+      api(
+        `/sales-management/calls?${branchQuery}&sale_id=${encodeURIComponent(historySale!.sale_id)}`,
+      ),
     enabled: !!historySale,
   });
   const previousBranch = useRef(branch);

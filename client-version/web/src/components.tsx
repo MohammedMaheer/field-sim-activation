@@ -523,6 +523,7 @@ export function DetailList({ data }: { data: Row }) {
                   agent: "Sales agent",
                   agents: "Sales agents",
                   daily_target: "Total daily target",
+                  iccid: "ICCID",
                   sr_number: "SR number",
                   latest_request_id: "Latest request ID",
                 } as Record<string, string>

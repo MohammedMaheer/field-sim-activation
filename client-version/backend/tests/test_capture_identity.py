@@ -11,7 +11,7 @@ import importlib.util
 
 import pytest
 from PIL import Image
-from sqlalchemy import delete, select, tuple_
+from sqlalchemy import delete, select, tuple_, func
 from sqlalchemy.exc import IntegrityError
 
 import test_client_scope as shared
@@ -515,12 +515,12 @@ def test_schema018_backfills_duplicates_without_deleting_history_and_rolls_back(
         rows = connection.execute(select(CaptureIdentityClaim)).mappings().all()
         assert len(rows) == 3  # Exact image, normalized request and SR.
         assert next(row["capture_id"] for row in rows if row["fingerprint"] == reference_key("request 12345")) == captures_created[0]
-        assert connection.scalar(select(captures.func.count()).select_from(KycCapture)) == 2
-        assert connection.scalar(select(captures.func.count()).select_from(SalesRecord)) == 2
+        assert connection.scalar(select(func.count()).select_from(KycCapture)) == 2
+        assert connection.scalar(select(func.count()).select_from(SalesRecord)) == 2
         migration.downgrade()
         assert not inspect(connection).has_table("capture_identity_claims")
-        assert connection.scalar(select(captures.func.count()).select_from(KycCapture)) == 2
-        assert connection.scalar(select(captures.func.count()).select_from(SalesRecord)) == 2
+        assert connection.scalar(select(func.count()).select_from(KycCapture)) == 2
+        assert connection.scalar(select(func.count()).select_from(SalesRecord)) == 2
         migration.upgrade()
-        assert connection.scalar(select(captures.func.count()).select_from(CaptureIdentityClaim)) == 3
+        assert connection.scalar(select(func.count()).select_from(CaptureIdentityClaim)) == 3
     engine.dispose()

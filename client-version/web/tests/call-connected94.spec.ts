@@ -134,15 +134,21 @@ test("call recovery writes to the shared API and appears in the mobile queue", a
   await expect(
     host.getByText("Call work queue", { exact: true }),
   ).toBeVisible();
-  await host
-    .getByRole("textbox", { name: /Find a call/ })
-    .fill(task.request_id);
+  // Flutter's semantic input can acknowledge fill before the framework has
+  // applied the edit. Type as a user and wait for the filtered queue to settle.
+  await host.getByRole("textbox", { name: /Find a call/ }).click();
+  await mobile.keyboard.type(task.request_id, { delay: 20 });
   await expect(
     host.getByRole("textbox", {
       name: /Call recovery sample.*Last outcome: No answer/,
     }),
   ).toBeVisible();
-  await host.getByRole("button", { name: "Record call", exact: true }).click();
+  const recordCall = host.getByRole("button", {
+    name: "Record call",
+    exact: true,
+  });
+  await expect(recordCall).toHaveCount(1);
+  await recordCall.click();
   await expect(
     host.getByText("Record call outcome", { exact: true }),
   ).toBeVisible();

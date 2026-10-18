@@ -5,6 +5,7 @@ async function workspace(page: Page, write = true) {
     release: (() => void) | undefined;
   const calls: { path: string; body: any }[] = [],
     errors: string[] = [];
+  const historyQueries: URL[] = [];
   const tasks = Array.from({ length: 12 }, (_, index) => ({
     id: `call-${index}`,
     sale_id: `sale-${index}`,
@@ -22,6 +23,8 @@ async function workspace(page: Page, write = true) {
   await page.route("**/api/**", async (route) => {
     const request = route.request(),
       path = new URL(request.url()).pathname;
+    if (path === "/api/sales-management/calls")
+      historyQueries.push(new URL(request.url()));
     if (request.method() === "POST" && path.includes("/sales/")) {
       calls.push({ path, body: request.postDataJSON() });
       if (mode === "wait")
@@ -70,6 +73,7 @@ async function workspace(page: Page, write = true) {
   });
   return {
     calls,
+    historyQueries,
     errors,
     accept: () => {
       mode = "accept";
@@ -223,8 +227,16 @@ test("call search recovers and read-only callers only see history", async ({
   await expect(
     page.getByText("No calls recorded for this stage yet.", { exact: true }),
   ).toBeVisible();
+  expect(audit.historyQueries[0].searchParams.get("sale_id")).toBe("sale-11");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.getByLabel("Find a call", { exact: true }).fill("SR-94-0");
+  await page.getByRole("button", { name: "History", exact: true }).click();
+  await expect(
+    page.getByText("No calls recorded for this stage yet.", { exact: true }),
+  ).toBeVisible();
+  expect(audit.historyQueries).toHaveLength(2);
+  expect(audit.historyQueries[1].searchParams.get("sale_id")).toBe("sale-0");
   expect(audit.calls).toEqual([]);
   expect(audit.errors).toEqual([]);
 });

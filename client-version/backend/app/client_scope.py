@@ -53,28 +53,37 @@ PATHS = {
 
 
 def configure(app):
-    app.router.routes[:] = [
-        r
-        for r in app.router.routes
-        if not isinstance(r, APIRoute)
-        or r.path in PATHS
-        or r.path.startswith(
-            (
-                "/api/notifications",
-                "/api/location-tracking",
-                "/api/transactions",
-                "/api/organization",
-                "/api/administration",
-                "/api/kyc-captures",
-                "/api/incentives",
-                "/api/commissions",
-                "/api/support-tickets",
-                "/api/sales-management",
-                "/api/field-assets",
-                "/api/branch-lifecycle",
+    def scope(router):
+        # Newer FastAPI includes routers lazily. Apply the same client policy
+        # to each original router before the first request, not only the root.
+        for route in router.routes:
+            child = getattr(route, "original_router", None)
+            if child is not None:
+                scope(child)
+        router.routes[:] = [
+            r
+            for r in router.routes
+            if not isinstance(r, APIRoute)
+            or r.path in PATHS
+            or r.path.startswith(
+                (
+                    "/api/notifications",
+                    "/api/location-tracking",
+                    "/api/transactions",
+                    "/api/organization",
+                    "/api/administration",
+                    "/api/kyc-captures",
+                    "/api/incentives",
+                    "/api/commissions",
+                    "/api/support-tickets",
+                    "/api/sales-management",
+                    "/api/field-assets",
+                    "/api/branch-lifecycle",
+                )
             )
-        )
-    ]
+        ]
+
+    scope(app.router)
     app.title = "Qanawat — Field Operations"
 
     @app.middleware("http")

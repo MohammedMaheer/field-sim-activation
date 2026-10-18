@@ -553,6 +553,24 @@ def test_field_tasks_are_not_in_the_client_edition(client):
     assert client.get("/api/field-tasks").status_code == 404
     assert client.post("/api/field-tasks", json={}).status_code == 404
     assert client.get("/api/resources/compliance").status_code == 404
+    assert "/api/field-tasks" not in app.openapi()["paths"]
+
+
+def test_client_scope_filters_nested_included_routers():
+    from fastapi import APIRouter, FastAPI
+    from fastapi.testclient import TestClient
+    from app.client_scope import configure
+    nested, outer = APIRouter(), APIRouter()
+    nested.add_api_route("/api/field-tasks", lambda: {"excluded": True})
+    nested.add_api_route("/api/notifications/example", lambda: {"included": True})
+    outer.include_router(nested)
+    isolated = FastAPI()
+    isolated.include_router(outer)
+    configure(isolated)
+    with TestClient(isolated) as browser:
+        assert browser.get("/api/field-tasks").status_code == 404
+        assert browser.get("/api/notifications/example").json() == {"included": True}
+    assert "/api/field-tasks" not in isolated.openapi()["paths"]
 
 
 def test_support_ticket_is_scoped_and_review_is_audited(client):
@@ -2557,7 +2575,7 @@ def test_unrecognized_role_fails_closed_even_with_old_read_grant(client):
 
 
 def test_every_private_endpoint_has_authentication_dependency():
-    from fastapi.routing import APIRoute
+    from fastapi.routing import APIRoute, iter_route_contexts
     from app.security import principal, sign_out_principal
     public = {"/api/health", "/api/auth/login", "/api/auth/refresh", "/api/public/plans",
               "/api/auth/mobile-demo/accounts", "/api/auth/mobile-demo/login"}
@@ -2565,7 +2583,7 @@ def test_every_private_endpoint_has_authentication_dependency():
         return (dependency.call is principal or
                 (path == "/api/auth/logout" and dependency.call is sign_out_principal) or
                 any(authenticated(child, path) for child in dependency.dependencies))
-    routes = [route for route in app.routes if isinstance(route, APIRoute)]
+    routes = [route for route in iter_route_contexts(app.routes) if isinstance(route.original_route, APIRoute)]
     assert len(routes) > 100
     for route in routes:
         assert route.path in public or authenticated(route.dependant, route.path), route.path
