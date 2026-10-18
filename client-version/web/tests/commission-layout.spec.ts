@@ -103,6 +103,7 @@ for (const width of [1440, 390]) {
     await previewBuild(page);
     const writes = await commissionFixture(page);
     await page.goto("/incentives");
+    await page.getByRole("button", { name: "Estimates", exact: true }).click();
     await expect(
       page.getByRole("heading", {
         name: "Commission calculations",
@@ -161,7 +162,7 @@ for (const width of [1440, 390]) {
     });
     await expect(config.getByLabel("Policy", { exact: true })).toBeVisible();
     for (const section of await config.locator("details").all()) {
-        if ((await section.getAttribute("open")) === null)
+      if ((await section.getAttribute("open")) === null)
         await section.locator(":scope > summary").click();
     }
     await expect(config.getByLabel("Approval note")).toBeVisible();

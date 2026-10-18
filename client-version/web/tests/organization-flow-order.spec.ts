@@ -9,119 +9,286 @@ async function setup(page: Page) {
     { id: "branch-c", name: "New Branch", agents: 0 },
   ];
   const leaders = [
-    { id: "leader-a", name: "Marina Leader One", branch_id: "branch-a", email: "one@example.test" },
-    { id: "leader-a2", name: "Marina Leader Two", branch_id: "branch-a", email: "two@example.test" },
-    { id: "leader-b", name: "Downtown Leader", branch_id: "branch-b", email: "three@example.test" },
+    {
+      id: "leader-a",
+      name: "Marina Leader One",
+      branch_id: "branch-a",
+      email: "one@example.test",
+    },
+    {
+      id: "leader-a2",
+      name: "Marina Leader Two",
+      branch_id: "branch-a",
+      email: "two@example.test",
+    },
+    {
+      id: "leader-b",
+      name: "Downtown Leader",
+      branch_id: "branch-b",
+      email: "three@example.test",
+    },
   ];
-  const agents = [{ id: "agent-a", name: "Existing Sales Agent", leader_id: "leader-a", branch_id: "branch-a" }];
+  const agents = [
+    {
+      id: "agent-a",
+      name: "Existing Sales Agent",
+      leader_id: "leader-a",
+      branch_id: "branch-a",
+    },
+  ];
   const writes: { path: string; data: any }[] = [];
   await page.route("**/api/**", async (route) => {
-    const req = route.request(), path = new URL(req.url()).pathname;
+    const req = route.request(),
+      path = new URL(req.url()).pathname;
     let data: any = [];
-    if (path === "/api/auth/refresh") data = {
-      access_token: "synthetic-access", user: {
-        id: "admin", name: "Administrator", role: "Administrator",
-        permissions: ["read", "settings.write", "compliance.write", "report.read"],
-      },
-    };
+    if (path === "/api/auth/refresh")
+      data = {
+        access_token: "synthetic-access",
+        user: {
+          id: "admin",
+          name: "Administrator",
+          role: "Administrator",
+          permissions: [
+            "read",
+            "settings.write",
+            "compliance.write",
+            "report.read",
+          ],
+        },
+      };
     else if (path === "/api/events/stream") {
-      await route.fulfill({ contentType: "text/event-stream", body: "" }); return;
-    }
-    else if (path === "/api/notifications") data = { items: [], unread: 0, categories: [] };
+      await route.fulfill({ contentType: "text/event-stream", body: "" });
+      return;
+    } else if (path === "/api/notifications")
+      data = { items: [], unread: 0, categories: [] };
     else if (path === "/api/resources/branches") data = branches;
     else if (path === "/api/resources/agents") data = agents;
-    else if (path === "/api/organization") data = { branches, leaders, agents, outlets: [] };
+    else if (path === "/api/organization")
+      data = { branches, leaders, agents, outlets: [] };
     else if (path.startsWith("/api/organization/") && req.method() === "POST") {
       const values = req.postDataJSON();
       writes.push({ path, data: values });
       if (path.endsWith("/branches")) {
         const branch = { id: "created-branch", name: values.name, agents: 0 };
-        branches.push(branch); data = branch;
+        branches.push(branch);
+        data = branch;
       } else if (path.endsWith("/teams")) {
         const leader = { id: "created-leader", ...values };
-        leaders.push(leader); data = leader;
+        leaders.push(leader);
+        data = leader;
       } else {
-        expect(leaders.some((leader) => leader.id === values.leader_id && leader.branch_id === values.branch_id)).toBe(true);
+        expect(
+          leaders.some(
+            (leader) =>
+              leader.id === values.leader_id &&
+              leader.branch_id === values.branch_id,
+          ),
+        ).toBe(true);
         const agent = { id: "created-agent", ...values };
-        agents.push(agent); data = agent;
+        agents.push(agent);
+        data = agent;
       }
-    } else if (path.includes("/leaders")) data = { branch: branches[0], leaders, available_leaders: [] };
+    } else if (path.includes("/leaders"))
+      data = { branch: branches[0], leaders, available_leaders: [] };
     await route.fulfill({ json: data });
   });
   return { writes, agents };
 }
 
-test("new branch advances to its leader and then its sales agent", async ({ page }) => {
+test("dedicated branch, leader and sales-agent forms preserve the setup sequence", async ({
+  page,
+}) => {
   const { writes } = await setup(page);
   await page.goto("/branches");
   await page.getByRole("button", { name: "Add branch", exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByRole("group", { name: "Setup type" }).getByRole("button")).toHaveText(["Branch", "Team leader", "Sales agent"]);
+  await expect(dialog.locator(".setup-sequence")).toContainText(
+    "1. Create branch",
+  );
+  await expect(dialog.locator(".setup-sequence")).toContainText(
+    "2. Add or assign team leader",
+  );
+  await expect(dialog.locator(".setup-sequence")).toContainText(
+    "3. Add sales agent",
+  );
+  await expect(dialog.getByLabel("Sign-in email")).toHaveCount(0);
   for (const width of [1440, 390]) {
     await page.setViewportSize({ width, height: 900 });
-    const tabs = dialog.getByRole("group", { name: "Setup type" });
-    const boxes = await tabs.getByRole("button").evaluateAll((buttons) => buttons.map((button) => {
-      const r = button.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width };
-    }));
-    expect(boxes[0].right).toBeLessThan(boxes[1].left);
-    expect(boxes[1].right).toBeLessThan(boxes[2].left);
-    expect(Math.abs(boxes[0].width - boxes[2].width)).toBeLessThan(2);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
-    await page.screenshot({ path: `../output/qa/branch-setup-order-${width}.png`, animations: "disabled" });
+    expect(
+      await dialog.evaluate((node) => node.scrollWidth <= node.clientWidth + 1),
+    ).toBe(true);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+    await page.screenshot({
+      path: `../output/qa/branch-setup-order-${width}.png`,
+      animations: "disabled",
+    });
   }
   await dialog.getByLabel("Branch name", { exact: true }).fill("Garden Branch");
-  await dialog.getByRole("button", { name: "Create branch", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Add team leader", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("combobox", { name: "Branch", exact: true })).toHaveValue("created-branch");
-  await dialog.getByLabel("Team leader name", { exact: true }).fill("Garden Leader");
+  await dialog
+    .getByRole("button", { name: "Create branch", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toContainText("Branch created");
+  await expect(
+    dialog.getByRole("heading", { name: "Add branch", exact: true }),
+  ).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Close details", exact: true })
+    .click();
+  await page.goto("/team-leaders");
+  await page
+    .getByRole("button", { name: "Add team leader", exact: true })
+    .click();
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption("created-branch");
+  await dialog
+    .getByLabel("Team leader name", { exact: true })
+    .fill("Garden Leader");
   await dialog.getByLabel("Sign-in email").fill("garden-leader@example.test");
-  await dialog.getByLabel("Password", { exact: true }).fill("test-client-password");
-  await dialog.getByRole("button", { name: "Create team leader", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Add sales agent", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("combobox", { name: "Branch", exact: true })).toHaveValue("created-branch");
-  await expect(dialog.getByRole("combobox", { name: "Reporting team leader", exact: true })).toHaveValue("created-leader");
-  await dialog.getByLabel("Sales agent name", { exact: true }).fill("Garden Sales Agent");
+  await dialog
+    .getByLabel("Password", { exact: true })
+    .fill("test-client-password");
+  await dialog
+    .getByRole("button", { name: "Create team leader", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toContainText(
+    "Team leader assigned",
+  );
+  await dialog
+    .getByRole("button", { name: "Close details", exact: true })
+    .click();
+  await page.goto("/agents");
+  await page
+    .getByRole("button", { name: "Add sales agent", exact: true })
+    .click();
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption("created-branch");
+  await expect(
+    dialog.getByRole("combobox", {
+      name: "Reporting team leader",
+      exact: true,
+    }),
+  ).toHaveValue("created-leader");
+  await dialog
+    .getByLabel("Sales agent name", { exact: true })
+    .fill("Garden Sales Agent");
   await dialog.getByLabel("Employee ID").fill("GARDEN-1");
   await dialog.getByLabel("Sign-in email").fill("garden-agent@example.test");
-  await dialog.getByLabel("Password", { exact: true }).fill("test-client-password");
-  await dialog.getByRole("button", { name: "Create sales agent", exact: true }).click();
+  await dialog
+    .getByLabel("Password", { exact: true })
+    .fill("test-client-password");
+  await dialog
+    .getByRole("button", { name: "Create sales agent", exact: true })
+    .click();
   await expect(dialog.getByRole("status")).toContainText("Sales agent created");
-  expect(writes.map((write) => write.path)).toEqual(["/api/organization/branches", "/api/organization/teams", "/api/organization/agents"]);
-  expect(writes[2].data).toMatchObject({ branch_id: "created-branch", leader_id: "created-leader" });
+  expect(writes.map((write) => write.path)).toEqual([
+    "/api/organization/branches",
+    "/api/organization/teams",
+    "/api/organization/agents",
+  ]);
+  expect(writes[2].data).toMatchObject({
+    branch_id: "created-branch",
+    leader_id: "created-leader",
+  });
 });
 
-test("agent leader selection follows branch and guides missing setup", async ({ page }) => {
+test("agent leader choices follow the branch and missing-leader handoff keeps that branch", async ({
+  page,
+}) => {
   await setup(page);
   await page.goto("/agents");
-  await page.getByRole("button", { name: "Add sales agent", exact: true }).click();
-  const dialog = page.getByRole("dialog"), branch = dialog.getByRole("combobox", { name: "Branch", exact: true });
-  const leader = dialog.getByRole("combobox", { name: "Reporting team leader", exact: true });
+  await page
+    .getByRole("button", { name: "Add sales agent", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog"),
+    branch = dialog.getByRole("combobox", { name: "Branch", exact: true });
+  const leader = dialog.getByRole("combobox", {
+    name: "Reporting team leader",
+    exact: true,
+  });
   await branch.selectOption("branch-a");
-  await expect(leader.locator("option")).toHaveText(["Select team leader", "Marina Leader One", "Marina Leader Two"]);
+  await expect(leader.locator("option")).toHaveText([
+    "Select team leader",
+    "Marina Leader One",
+    "Marina Leader Two",
+  ]);
   await leader.selectOption("leader-a2");
   await branch.selectOption("branch-b");
   await expect(leader).toHaveValue("leader-b");
-  await expect(leader.locator("option")).toHaveText(["Select team leader", "Downtown Leader"]);
+  await expect(leader.locator("option")).toHaveText([
+    "Select team leader",
+    "Downtown Leader",
+  ]);
   await branch.selectOption("branch-c");
   await expect(leader).toBeDisabled();
-  await expect(dialog.getByRole("button", { name: "Create sales agent", exact: true })).toBeDisabled();
-  await dialog.getByRole("button", { name: "Add team leader to this branch", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "Add team leader", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("combobox", { name: "Branch", exact: true })).toHaveValue("branch-c");
+  await expect(
+    dialog.getByRole("button", { name: "Create sales agent", exact: true }),
+  ).toBeDisabled();
+  await dialog
+    .getByRole("button", {
+      name: "Add team leader to this branch",
+      exact: true,
+    })
+    .click();
+  await expect(page).toHaveURL(/team-leaders$/);
+  await expect(dialog).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Add team leader", exact: true })
+    .click();
+  await expect(
+    dialog.getByRole("combobox", { name: "Branch", exact: true }),
+  ).toHaveValue("branch-c");
 });
 
-test("adding another leader selects the new leader without reassigning existing agents", async ({ page }) => {
+test("adding another leader keeps existing agent assignments and requires an explicit new choice", async ({
+  page,
+}) => {
   const { writes, agents } = await setup(page);
-  await page.goto("/branches");
-  await page.getByRole("button", { name: "Add branch", exact: true }).click();
+  await page.goto("/team-leaders");
+  await page
+    .getByRole("button", { name: "Add team leader", exact: true })
+    .click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: "Team leader", exact: true }).click();
-  await dialog.getByRole("combobox", { name: "Branch", exact: true }).selectOption("branch-a");
-  await dialog.getByLabel("Team leader name", { exact: true }).fill("Marina Leader Three");
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption("branch-a");
+  await dialog
+    .getByLabel("Team leader name", { exact: true })
+    .fill("Marina Leader Three");
   await dialog.getByLabel("Sign-in email").fill("four@example.test");
-  await dialog.getByLabel("Password", { exact: true }).fill("test-client-password");
-  await dialog.getByRole("button", { name: "Create team leader", exact: true }).click();
-  await expect(dialog.getByRole("combobox", { name: "Reporting team leader", exact: true })).toHaveValue("created-leader");
+  await dialog
+    .getByLabel("Password", { exact: true })
+    .fill("test-client-password");
+  await dialog
+    .getByRole("button", { name: "Create team leader", exact: true })
+    .click();
+  await expect(dialog.getByRole("status")).toContainText(
+    "Team leader assigned",
+  );
+  await dialog
+    .getByRole("button", { name: "Close details", exact: true })
+    .click();
+  await page.goto("/agents");
+  await page
+    .getByRole("button", { name: "Add sales agent", exact: true })
+    .click();
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption("branch-a");
+  const choice = dialog.getByRole("combobox", {
+    name: "Reporting team leader",
+    exact: true,
+  });
+  await expect(choice).toHaveValue("");
+  await expect(choice.locator("option[value='created-leader']")).toHaveCount(1);
+  await choice.selectOption("created-leader");
   expect(agents[0].leader_id).toBe("leader-a");
-  expect(writes.map((write) => write.path)).toEqual(["/api/organization/teams"]);
+  expect(writes.map((write) => write.path)).toEqual([
+    "/api/organization/teams",
+  ]);
 });

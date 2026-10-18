@@ -53,6 +53,7 @@ export default function KycCapture() {
   });
   const [intake, setIntake] = useState<Row>({});
   const [intakeSession, setIntakeSession] = useState(0);
+  const [resettingIntake, setResettingIntake] = useState(false);
   const [captureDraftVersion, setCaptureDraftVersion] = useState(0);
   const capturedOrderSR = useRef("");
   const originalManualSR = useRef("");
@@ -374,23 +375,31 @@ export default function KycCapture() {
                 run(async () => {
                   if (dirty && !window.confirm("Discard unsaved row changes?"))
                     return;
-                  const draft = await api("/kyc-captures/draft");
-                  await api("/kyc-captures/draft", {
-                    method: "PUT",
-                    body: JSON.stringify({ version: draft.version, data: {} }),
-                  });
-                  setIntake({});
-                  setIntakeSession((n) => n + 1);
-                  capturedOrderSR.current = "";
-                  originalManualSR.current = "";
-                  setFile(null);
-                  setSource("");
-                  setOperation(crypto.randomUUID());
-                  setIntakeReady(false);
-                  setSelected("");
-                  setDirty(false);
-                  setShowUpload(true);
-                  setError("");
+                  setResettingIntake(true);
+                  try {
+                    const draft = await api("/kyc-captures/draft");
+                    await api("/kyc-captures/draft", {
+                      method: "PUT",
+                      body: JSON.stringify({
+                        version: draft.version,
+                        data: {},
+                      }),
+                    });
+                    setIntake({});
+                    setIntakeSession((n) => n + 1);
+                    capturedOrderSR.current = "";
+                    originalManualSR.current = "";
+                    setFile(null);
+                    setSource("");
+                    setOperation(crypto.randomUUID());
+                    setIntakeReady(false);
+                    setSelected("");
+                    setDirty(false);
+                    setShowUpload(true);
+                    setError("");
+                  } finally {
+                    setResettingIntake(false);
+                  }
                 })
               }
             >
@@ -585,7 +594,12 @@ export default function KycCapture() {
           className={`capture-layout capture-focused ${selected ? "has-selection" : "capture-start"} ${!canWrite ? "capture-readonly" : ""}`}
         >
           <div>
-            {canWrite && showUpload && !intakeReady && (
+            {canWrite && resettingIntake && (
+              <section className="customer-intake" aria-busy="true">
+                <p role="status">Preparing your transaction…</p>
+              </section>
+            )}
+            {canWrite && showUpload && !intakeReady && !resettingIntake && (
               <CustomerIntake
                 key={intakeSession}
                 value={intake}
@@ -621,7 +635,7 @@ export default function KycCapture() {
                 }}
               />
             )}
-            {canWrite && intakeReady && (
+            {canWrite && intakeReady && !resettingIntake && (
               <div hidden={!showUpload}>
                 <Panel title="Review & submit sale">
                   <div className="intake-withdrawal">

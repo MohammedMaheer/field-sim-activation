@@ -770,6 +770,7 @@ export default function OrganizationSetup({
                       type="button"
                       disabled={busy}
                       onClick={() => {
+                        scope.setBranch(branch);
                         onClose();
                         navigate("/team-leaders");
                         setError("");

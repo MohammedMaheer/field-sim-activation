@@ -120,12 +120,24 @@ test("every current portal report downloads real CSV, Excel and PDF content with
   await expect(page.getByLabel("To date", { exact: true })).toHaveValue(
     businessDate(),
   );
-  const reports = page.locator(".report-grid .report-card");
-  const reportCount = await reports.count();
+  const report = page.getByLabel("Detailed report download", { exact: true });
+  const reportChoice = report.getByRole("combobox", {
+    name: "Report type",
+    exact: true,
+  });
+  const reports = await reportChoice
+    .locator("option")
+    .evaluateAll((options) =>
+      options.map((option) => ({
+        id: (option as HTMLOptionElement).value,
+        title: option.textContent!,
+      })),
+    );
+  const reportCount = reports.length;
   expect(reportCount).toBe(8);
   let checked = 0;
-  for (const report of await reports.all()) {
-    const title = await report.locator("h2").innerText();
+  for (const { id, title } of reports) {
+    await reportChoice.selectOption(id);
     for (const format of ["csv", "xlsx", "pdf"]) {
       const requested = page.waitForRequest(
         (request) =>
@@ -134,7 +146,10 @@ test("every current portal report downloads real CSV, Excel and PDF content with
       );
       const downloaded = page.waitForEvent("download");
       await report
-        .getByRole("button", { name: format.toUpperCase(), exact: true })
+        .getByRole("combobox", { name: "Download report format", exact: true })
+        .selectOption(format);
+      await report
+        .getByRole("button", { name: "Download report", exact: true })
         .click();
       const file = await downloaded;
       const bytes = await readFile((await file.path())!);
@@ -164,19 +179,17 @@ test("every current portal report downloads real CSV, Excel and PDF content with
       await file.saveAs(info.outputPath(file.suggestedFilename()));
       checked++;
       await expect(
-        report.getByRole("button", { name: format.toUpperCase(), exact: true }),
+        report.getByRole("button", { name: "Download report", exact: true }),
       ).toBeEnabled();
     }
   }
   expect(checked).toBe(reportCount * 3);
-  const finalReport = page
-    .locator(".report-card")
-    .filter({
-      has: page.getByRole("heading", {
-        name: "Incentive tracking",
-        exact: true,
-      }),
-    });
+  const finalReport = page.locator(".report-card").filter({
+    has: page.getByRole("heading", {
+      name: "Incentive tracking",
+      exact: true,
+    }),
+  });
   for (const format of ["csv", "xlsx", "pdf"]) {
     await finalReport
       .getByRole("combobox", {

@@ -37,7 +37,9 @@ def select_agent_leader(db, branch_id, leader_id, *, required=False):
     """An explicit reporting line remains independent of the branch's leader list."""
     if not leader_id and required:
         raise HTTPException(422, "Select a designated team leader assigned to this branch")
-    leader = lifecycle_row_for_update(db, User, leader_id) if leader_id else None
+    # Multiple agents may capture against the same designated leader. Protect
+    # the reporting line from management edits without locking out each other.
+    leader = lifecycle_row_for_update(db, User, leader_id, shared=True) if leader_id else None
     role = db.get(Role, leader.role_id) if leader else None
     if leader_id and (not leader or not role or role.name != "Team Leader"
                       or leader.branch_id != branch_id):

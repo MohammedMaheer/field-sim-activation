@@ -138,12 +138,12 @@ def assert_agent(db, user, agent_id):
         raise HTTPException(404, "Record not found")
 
 
-def lifecycle_row_for_update(db, model, record_id):
+def lifecycle_row_for_update(db, model, record_id, *, shared=False):
     # Refresh cached assignments and fail promptly rather than wait in an inverted
     # stock/agent/branch lock cycle. Rollback releases any stock locks held already.
     try:
         return db.scalar(select(model).where(model.id == record_id)
-                         .with_for_update(nowait=True).execution_options(populate_existing=True))
+                         .with_for_update(nowait=True, read=shared).execution_options(populate_existing=True))
     except OperationalError as error:
         if getattr(error.orig, "sqlstate", None) != "55P03" and getattr(error.orig, "pgcode", None) != "55P03":
             raise

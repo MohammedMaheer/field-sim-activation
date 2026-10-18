@@ -14,14 +14,14 @@ from sqlalchemy import select, delete
 
 from test_client_scope import client, database, login  # noqa: F401
 from app import captures
-from app.db import DB, Agent, User, SalesRecord, KycCapture, CaptureIdentityClaim, Audit, Customer, SalesCallTask, CallAttempt, Movement, Sim, Permission, now
+from app.db import DB, Agent, User, SalesRecord, KycCapture, CaptureIdentityClaim, CaptureTransactionOutcome, Audit, Customer, SalesCallTask, CallAttempt, Movement, Sim, Permission, now
 from app.sr_verification import SrBatch, SrCheck, SrNotice
 from app.email_delivery import EmailOutbox, deliver_pending
 
 
 @pytest.fixture(autouse=True)
 def cleanup(database):
-    models = (CaptureIdentityClaim, EmailOutbox, SrNotice, SrCheck, SrBatch, CallAttempt, SalesCallTask, Movement, SalesRecord, KycCapture, Customer, Audit, Sim)
+    models = (CaptureTransactionOutcome, CaptureIdentityClaim, EmailOutbox, SrNotice, SrCheck, SrBatch, CallAttempt, SalesCallTask, Movement, SalesRecord, KycCapture, Customer, Audit, Sim)
     with DB() as db:
         baseline = {model: set(db.scalars(select(model.id))) for model in models}
     yield

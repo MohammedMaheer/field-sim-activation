@@ -13,7 +13,9 @@ router = APIRouter(prefix="/api/branch-lifecycle", tags=["Branch lifecycle"])
 
 
 def active_branch(db, branch_id):
-    branch = lifecycle_row_for_update(db, Branch, branch_id)
+    # Intake validates membership without changing the branch. Shared locks
+    # allow independent agents while still conflicting with closure/relocation.
+    branch = lifecycle_row_for_update(db, Branch, branch_id, shared=True)
     if not branch:
         raise HTTPException(422, "Select a valid branch")
     if branch.lifecycle_status != "ACTIVE":

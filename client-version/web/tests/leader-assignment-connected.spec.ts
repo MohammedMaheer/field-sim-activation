@@ -69,9 +69,15 @@ test("actual browser branch setup and reassignment preserve original sales and a
     .getByLabel("Branch name", { exact: true })
     .fill(`Garden Branch ${suffix}`);
   const firstBranch = await saveCreation(page, "branches", "Create branch");
-  await expect(
-    dialog.getByRole("combobox", { name: "Branch", exact: true }),
-  ).toHaveValue(firstBranch.id);
+  await page.keyboard.press("Escape");
+  await page.goto("/team-leaders");
+  await page
+    .getByRole("button", { name: "Add team leader", exact: true })
+    .click();
+  dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption(firstBranch.id);
   await dialog
     .getByLabel("Team leader name", { exact: true })
     .fill(`Garden Leader ${suffix}`);
@@ -80,6 +86,15 @@ test("actual browser branch setup and reassignment preserve original sales and a
     .fill(`qa.leader.first.${suffix}@example.test`);
   await dialog.getByLabel("Password", { exact: true }).fill(password);
   const firstLeader = await saveCreation(page, "teams", "Create team leader");
+  await page.keyboard.press("Escape");
+  await page.goto("/agents");
+  await page
+    .getByRole("button", { name: "Add sales agent", exact: true })
+    .click();
+  dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption(firstBranch.id);
   await expect(
     dialog.getByRole("combobox", {
       name: "Reporting team leader",
@@ -129,8 +144,19 @@ test("actual browser branch setup and reassignment preserve original sales and a
     `qa.agent.${suffix}@example.test`,
     password,
   );
-  const oldResponse = await request.post("/api/sales-management/sales", {
+  const manualBypass = await request.post("/api/sales-management/sales", {
     headers: agentHeaders,
+    data: {
+      agent_id: salesAgent.id,
+      order_type: "WASEL",
+      customer_name: "Synthetic attempt",
+      plan_name: "Prepaid",
+    },
+  });
+  expect(manualBypass.status()).toBe(403);
+  const operationHeaders = await access(request, "ops@relay.demo");
+  const oldResponse = await request.post("/api/sales-management/sales", {
+    headers: operationHeaders,
     data: {
       agent_id: salesAgent.id,
       order_type: "WASEL",
@@ -204,6 +230,15 @@ test("actual browser branch setup and reassignment preserve original sales and a
     .getByLabel("Branch name", { exact: true })
     .fill(`Harbour Branch ${suffix}`);
   const nextBranch = await saveCreation(page, "branches", "Create branch");
+  await page.keyboard.press("Escape");
+  await page.goto("/team-leaders");
+  await page
+    .getByRole("button", { name: "Add team leader", exact: true })
+    .click();
+  dialog = page.getByRole("dialog");
+  await dialog
+    .getByRole("combobox", { name: "Branch", exact: true })
+    .selectOption(nextBranch.id);
   await dialog
     .getByLabel("Team leader name", { exact: true })
     .fill(`Harbour Leader ${suffix}`);
@@ -252,7 +287,7 @@ test("actual browser branch setup and reassignment preserve original sales and a
     password,
   );
   const newResponse = await request.post("/api/sales-management/sales", {
-    headers: newAgentHeaders,
+    headers: operationHeaders,
     data: {
       agent_id: salesAgent.id,
       order_type: "WASEL",
