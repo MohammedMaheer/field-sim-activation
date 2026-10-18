@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Context } from "./App";
 import { api, post, Row } from "./api";
-import { ErrorState, Loading } from "./components";
+import { Drawer, ErrorState, Loading } from "./components";
 import "./sales-management.css";
 
 type Filter = "ready" | "blocked" | "done" | "all";
@@ -30,6 +30,10 @@ export default function CallWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [historySale, setHistorySale] = useState<Row | null>(null);
+  const [postponing, setPostponing] = useState<Row | null>(null);
+  const [reason, setReason] = useState("");
+  const [search, setSearch] = useState("");
+  const saving = useRef(false);
   const tasks = useQuery<Row[]>({
     queryKey: ["sales-management", "call-tasks", branch],
     queryFn: () => api(`/sales-management/call-tasks?${branchQuery}`),
@@ -52,6 +56,8 @@ export default function CallWorkspace({
       previousBranch.current = branch;
       setSelected(null);
       setHistorySale(null);
+      setPostponing(null);
+      setReason("");
       setError("");
       if (params.has("selected")) {
         const next = new URLSearchParams(params);
@@ -98,12 +104,26 @@ export default function CallWorkspace({
   }
   const visible = (tasks.data || []).filter(
     (task) =>
-      filter === "all" ||
-      (filter === "ready"
-        ? ["PENDING", "FAILED"].includes(task.status)
-        : filter === "blocked"
-          ? task.status === "BLOCKED"
-          : ["COMPLETED", "SKIPPED", "CANCELLED"].includes(task.status)),
+      (!search.trim() ||
+        [
+          task.customer_name,
+          task.request_id,
+          task.msisdn,
+          task.alternate_number,
+          task.agent,
+          task.branch,
+          task.plan_name,
+        ].some((value) =>
+          String(value || "")
+            .toLowerCase()
+            .includes(search.trim().toLowerCase()),
+        )) &&
+      (filter === "all" ||
+        (filter === "ready"
+          ? ["PENDING", "FAILED"].includes(task.status)
+          : filter === "blocked"
+            ? task.status === "BLOCKED"
+            : ["COMPLETED", "SKIPPED", "CANCELLED"].includes(task.status))),
   );
   const requestedId = params.get("selected");
   const orderedTasks = requestedId
@@ -117,8 +137,9 @@ export default function CallWorkspace({
   }
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selected || !canRecord(selected)) return;
+    if (!selected || !canRecord(selected) || saving.current) return;
     const values = Object.fromEntries(new FormData(event.currentTarget));
+    saving.current = true;
     setBusy(true);
     setError("");
     try {
@@ -132,25 +153,35 @@ export default function CallWorkspace({
     } catch (e: any) {
       setError(e.message);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
-  async function defer(task: Row) {
-    const reason = window.prompt(
-      "Technical reason for postponing tele-verification until the next day",
-    );
-    if (!reason || reason.trim().length < 5) return;
+  async function defer(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (
+      !postponing ||
+      !canRecord(postponing) ||
+      saving.current ||
+      reason.trim().length < 5
+    )
+      return;
+    const task = postponing;
+    saving.current = true;
     setBusy(true);
     setError("");
     try {
       await post(`/sales-management/sales/${task.sale_id}/calls/defer-tele`, {
-        reason,
+        reason: reason.trim(),
       });
+      setPostponing(null);
+      setReason("");
       await refresh();
       notify("Tele-verification postponed until the next day");
     } catch (e: any) {
       setError(e.message);
     } finally {
+      saving.current = false;
       setBusy(false);
     }
   }
@@ -195,6 +226,7 @@ export default function CallWorkspace({
           <button
             key={value}
             className={filter === value ? "active" : ""}
+            aria-pressed={filter === value}
             onClick={() => setFilter(value)}
           >
             {
@@ -210,17 +242,37 @@ export default function CallWorkspace({
           </button>
         ))}
       </nav>
-      {error && (
+      <div className="call-queue-search">
+        <label>
+          Find a call
+          <input
+            type="search"
+            placeholder="Customer, SR / request ID or phone"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+        {search && <button onClick={() => setSearch("")}>Clear search</button>}
+        <span className="muted" role="status">
+          {visible.length} calls in this view
+        </span>
+      </div>
+      {error && !selected && !postponing && (
         <div className="sales-error" role="alert">
           {error}
         </div>
       )}
       {historySale && (
-        <section className="panel sales-section">
-          <div className="sales-section-head">
-            <h2>Call history · {historySale.customer_name}</h2>
-            <button onClick={() => setHistorySale(null)}>Close history</button>
-          </div>
+        <Drawer
+          title={`Call history · ${historySale.customer_name}`}
+          onClose={() => setHistorySale(null)}
+        >
+          <p>
+            {historySale.request_id} ·{" "}
+            {historySale.stage === "TELE_VERIFICATION"
+              ? "Tele-verification"
+              : "Welcome call"}
+          </p>
           {history.isPending ? (
             <Loading />
           ) : history.error ? (
@@ -235,54 +287,130 @@ export default function CallWorkspace({
                 ] || []
               ).map((attempt: Row) => (
                 <article key={attempt.id}>
-                  <b>{attempt.outcome.replaceAll("_", " ")}</b>
+                  <b>{callOutcomeLabel(attempt.outcome)}</b>
                   <p>{attempt.remark}</p>
                   <small>
                     {attempt.actor} · {new Date(attempt.at).toLocaleString()}
                   </small>
                 </article>
               ))}
+              {!(
+                history.data?.find((row) => row.id === historySale.sale_id)?.[
+                  historySale.stage === "TELE_VERIFICATION"
+                    ? "tele_verification"
+                    : "welcome_call"
+                ] || []
+              ).length && (
+                <p className="sales-empty">
+                  No calls recorded for this stage yet.
+                </p>
+              )}
             </div>
           )}
-        </section>
+        </Drawer>
       )}
       {selected && canRecord(selected) && (
-        <form
-          className="sales-form compact"
-          onSubmit={save}
-          aria-label="Record call outcome"
+        <Drawer
+          title="Record call outcome"
+          onClose={() => !saving.current && closeSelection()}
         >
-          <h2 className="wide">
-            {selected.customer_name} ·{" "}
-            {selected.stage === "TELE_VERIFICATION"
-              ? "Tele-verification"
-              : "Welcome call"}
-          </h2>
-          <label>
-            Outcome
-            <select name="outcome" required>
-              <option value="">Select outcome</option>
-              {(selected.stage === "TELE_VERIFICATION"
-                ? ["PASSED", "NO_ANSWER", "RETRY", "REACHED", "FAILED"]
-                : ["REACHED", "PASSED", "NO_ANSWER", "RETRY", "FAILED"]
-              ).map((value) => (
-                <option key={value} value={value}>
-                  {value.replaceAll("_", " ")}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="wide">
-            Call remark
-            <textarea name="remark" required minLength={3} maxLength={1000} />
-          </label>
-          <button className="primary" disabled={busy}>
-            Save outcome
-          </button>
-          <button type="button" onClick={closeSelection}>
-            Cancel
-          </button>
-        </form>
+          <CallContext task={selected} />
+          <form
+            key={selected.id}
+            className="call-action-form"
+            onSubmit={save}
+            aria-label="Record call outcome"
+          >
+            {error && (
+              <p className="sales-error" role="alert">
+                {error}
+              </p>
+            )}
+            <label>
+              Outcome
+              <select
+                name="outcome"
+                aria-label="Outcome"
+                required
+                disabled={busy}
+              >
+                <option value="">Select outcome</option>
+                {(selected.stage === "TELE_VERIFICATION"
+                  ? ["PASSED", "NO_ANSWER", "RETRY", "REACHED", "FAILED"]
+                  : ["REACHED", "PASSED", "NO_ANSWER", "RETRY", "FAILED"]
+                ).map((value) => (
+                  <option key={value} value={value}>
+                    {callOutcomeLabel(value)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="wide">
+              Call remark
+              <textarea
+                name="remark"
+                aria-label="Call remark"
+                required
+                minLength={3}
+                maxLength={1000}
+                rows={4}
+                disabled={busy}
+              />
+            </label>
+            <div className="call-form-actions">
+              <button type="button" disabled={busy} onClick={closeSelection}>
+                Cancel
+              </button>
+              <button className="primary" disabled={busy}>
+                {busy ? "Saving…" : "Save outcome"}
+              </button>
+            </div>
+          </form>
+        </Drawer>
+      )}
+      {postponing && (
+        <Drawer
+          title="Postpone tele-verification"
+          onClose={() => !saving.current && setPostponing(null)}
+        >
+          <CallContext task={postponing} />
+          <p>Technical issues only. The call will be due on the next day.</p>
+          <form className="call-action-form" onSubmit={defer}>
+            {error && (
+              <p className="sales-error" role="alert">
+                {error}
+              </p>
+            )}
+            <label>
+              Technical reason
+              <textarea
+                value={reason}
+                aria-label="Technical reason"
+                onChange={(event) => setReason(event.target.value)}
+                required
+                minLength={5}
+                maxLength={300}
+                rows={4}
+                disabled={busy}
+              />
+            </label>
+            <div className="call-form-actions">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setPostponing(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="primary"
+                disabled={busy || reason.trim().length < 5}
+              >
+                {busy ? "Saving…" : "Postpone to next day"}
+              </button>
+            </div>
+          </form>
+        </Drawer>
       )}
       <section className="panel sales-section">
         <h2>
@@ -323,7 +451,7 @@ export default function CallWorkspace({
                     {task.msisdn || task.alternate_number || "Not recorded"}
                   </small>
                   <small>
-                    Last outcome: {task.last_outcome.replaceAll("_", " ")}
+                    Last outcome: {callOutcomeLabel(task.last_outcome)}
                   </small>
                   <small className={task.overdue ? "stock-alert" : ""}>
                     Due {task.due_date || "Not recorded"}
@@ -337,11 +465,17 @@ export default function CallWorkspace({
                   )}
                 </div>
                 <div className="call-task-actions">
-                  <button onClick={() => setHistorySale(task)}>History</button>
+                  <button disabled={busy} onClick={() => setHistorySale(task)}>
+                    History
+                  </button>
                   {canRecord(task) && (
                     <button
                       className="primary"
-                      onClick={() => setSelected(task)}
+                      disabled={busy}
+                      onClick={() => {
+                        setError("");
+                        setSelected(task);
+                      }}
                     >
                       <PhoneCall size={15} /> Record call
                     </button>
@@ -350,7 +484,15 @@ export default function CallWorkspace({
                     ["PENDING", "FAILED"].includes(task.status) &&
                     canTele &&
                     !task.deferred && (
-                      <button disabled={busy} onClick={() => defer(task)}>
+                      <button
+                        disabled={busy}
+                        onClick={() => {
+                          closeSelection();
+                          setError("");
+                          setReason("");
+                          setPostponing(task);
+                        }}
+                      >
                         Postpone to next day
                       </button>
                     )}
@@ -360,6 +502,46 @@ export default function CallWorkspace({
           </div>
         )}
       </section>
+    </div>
+  );
+}
+
+function callOutcomeLabel(value: string | undefined) {
+  return (
+    (
+      {
+        PASSED: "Passed",
+        REACHED: "Reached",
+        NO_ANSWER: "No answer",
+        RETRY: "Retry needed",
+        FAILED: "Failed",
+      } as Record<string, string>
+    )[value || ""] ||
+    value?.replaceAll("_", " ") ||
+    "Not started"
+  );
+}
+
+function CallContext({ task }: { task: Row }) {
+  return (
+    <div className="call-action-context">
+      <h3>{task.customer_name}</h3>
+      <p>
+        {task.stage === "TELE_VERIFICATION"
+          ? "Tele-verification"
+          : "Welcome call"}{" "}
+        · {task.plan_name}
+      </p>
+      <dl>
+        <div>
+          <dt>SR / request ID</dt>
+          <dd>{task.request_id || "Not recorded"}</dd>
+        </div>
+        <div>
+          <dt>Phone</dt>
+          <dd>{task.msisdn || task.alternate_number || "Not recorded"}</dd>
+        </div>
+      </dl>
     </div>
   );
 }

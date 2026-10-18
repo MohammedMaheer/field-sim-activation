@@ -1,5 +1,6 @@
 import 'notifications.dart';
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
@@ -36,6 +37,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   bool loading = true;
   String error = '';
   String filter = 'Ready';
+  final search = TextEditingController();
   Timer? poll;
   bool fetching = false;
   bool reloadPending = false;
@@ -63,6 +65,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
   @override
   void dispose() {
     poll?.cancel();
+    search.dispose();
     super.dispose();
   }
 
@@ -132,193 +135,31 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
     }
   }
 
-  Future<void> record(Json task) async {
-    if (!canRecordCall(task, ref.read(serviceProvider).user)) return;
-    String outcome = '';
-    String remark = '';
-    final form = GlobalKey<FormState>();
-    final submitted = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          8,
-          20,
-          MediaQuery.viewInsetsOf(context).bottom + 20,
-        ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: form,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  '${task['customer_name']}',
-                  style: RelayTypography.section,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  task['stage'] == 'TELE_VERIFICATION'
-                      ? 'Tele-verification'
-                      : 'Welcome call',
-                  style: RelayTypography.body,
-                ),
-                const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  isExpanded: true,
-                  style: RelayTypography.body,
-                  decoration: const InputDecoration(labelText: 'Outcome'),
-                  items:
-                      const [
-                            'PASSED',
-                            'REACHED',
-                            'NO_ANSWER',
-                            'RETRY',
-                            'FAILED',
-                          ]
-                          .map(
-                            (value) => DropdownMenuItem(
-                              value: value,
-                              child: Text(value.replaceAll('_', ' ')),
-                            ),
-                          )
-                          .toList(),
-                  onChanged: (value) => outcome = value ?? '',
-                  validator: (value) =>
-                      value == null ? 'Choose an outcome' : null,
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  initialValue: remark,
-                  onChanged: (value) => remark = value,
-                  decoration: const InputDecoration(labelText: 'Call remark'),
-                  maxLines: 3,
-                  validator: (value) =>
-                      (value ?? '').trim().length < 3 ? 'Enter a remark' : null,
-                ),
-                const SizedBox(height: 18),
-                FilledButton(
-                  onPressed: () {
-                    if (form.currentState!.validate()) {
-                      Navigator.pop(context, true);
-                    }
-                  },
-                  child: const Text('Save outcome'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-    if (submitted != true || !mounted) return;
-    try {
-      await ref
-          .read(serviceProvider)
-          .dio
-          .post(
-            '/sales-management/sales/${task['sale_id']}/calls',
-            data: {
-              'stage': task['stage'],
-              'outcome': outcome,
-              'remark': remark.trim(),
-            },
-          );
-      await load();
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Outcome saved')));
-      }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not save outcome. Try again.')),
-        );
-      }
-    }
-  }
+  Future<void> record(Json task) => editCall(task);
 
-  Future<void> deferTele(Json task) async {
-    final reason = TextEditingController();
-    final form = GlobalKey<FormState>();
-    final proceed = await showModalBottomSheet<bool>(
+  Future<void> deferTele(Json task) => editCall(task, postpone: true);
+
+  Future<void> editCall(Json task, {bool postpone = false}) async {
+    if (!canRecordCall(task, ref.read(serviceProvider).user)) return;
+    final saved = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: EdgeInsets.fromLTRB(
-            18,
-            0,
-            18,
-            MediaQuery.viewInsetsOf(context).bottom + 18,
-          ),
-          child: SingleChildScrollView(
-            child: Form(
-              key: form,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text(
-                    'Postpone tele-verification',
-                    style: RelayTypography.section,
-                  ),
-                  const SizedBox(height: 14),
-                  TextFormField(
-                    controller: reason,
-                    decoration: const InputDecoration(
-                      labelText: 'Technical reason',
-                    ),
-                    minLines: 2,
-                    maxLines: 3,
-                    maxLength: 300,
-                    validator: (value) => (value ?? '').trim().length < 5
-                        ? 'Enter a technical reason'
-                        : null,
-                  ),
-                  const SizedBox(height: 12),
-                  FilledButton(
-                    onPressed: () {
-                      if (form.currentState!.validate()) {
-                        Navigator.pop(context, true);
-                      }
-                    },
-                    child: const Text('Postpone to next day'),
-                  ),
-                ],
-              ),
-            ),
+      isDismissible: false,
+      enableDrag: false,
+      builder: (_) => _CallActionSheet(task: task, postpone: postpone),
+    );
+    if (saved != true || !mounted) return;
+    await load();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            postpone
+                ? 'Tele-verification postponed until the next day'
+                : 'Outcome saved',
           ),
         ),
-      ),
-    );
-    final text = reason.text.trim();
-    reason.dispose();
-    if (proceed != true || !mounted) return;
-    try {
-      await ref
-          .read(serviceProvider)
-          .dio
-          .post(
-            '/sales-management/sales/${task['sale_id']}/calls/defer-tele',
-            data: {'reason': text},
-          );
-      await load();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(friendlyError(e))));
-      }
+      );
     }
   }
 
@@ -350,16 +191,30 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
     final visible = tasks
         .where(
           (task) =>
-              filter == 'All' ||
-              (filter == 'Ready' &&
-                  ['PENDING', 'FAILED'].contains(task['status'])) ||
-              (filter == 'Waiting' && task['status'] == 'BLOCKED') ||
-              (filter == 'Done' &&
+              (search.text.trim().isEmpty ||
                   [
-                    'COMPLETED',
-                    'SKIPPED',
-                    'CANCELLED',
-                  ].contains(task['status'])),
+                    task['customer_name'],
+                    task['request_id'],
+                    task['msisdn'],
+                    task['alternate_number'],
+                    task['agent'],
+                    task['branch'],
+                    task['plan_name'],
+                  ].any(
+                    (value) => (value ?? '').toString().toLowerCase().contains(
+                      search.text.trim().toLowerCase(),
+                    ),
+                  )) &&
+              (filter == 'All' ||
+                  (filter == 'Ready' &&
+                      ['PENDING', 'FAILED'].contains(task['status'])) ||
+                  (filter == 'Waiting' && task['status'] == 'BLOCKED') ||
+                  (filter == 'Done' &&
+                      [
+                        'COMPLETED',
+                        'SKIPPED',
+                        'CANCELLED',
+                      ].contains(task['status']))),
         )
         .toList();
     if (widget.selectedId != null) {
@@ -475,6 +330,23 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
                         )
                         .toList(),
                   ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: search,
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      labelText: 'Find a call',
+                      hintText: 'Customer, SR / request ID or phone',
+                      prefixIcon: const Icon(Icons.search),
+                      suffixIcon: search.text.isEmpty
+                          ? null
+                          : IconButton(
+                              tooltip: 'Clear search',
+                              onPressed: () => setState(search.clear),
+                              icon: const Icon(Icons.close),
+                            ),
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   if (visible.isEmpty)
                     const Padding(
@@ -522,7 +394,7 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
                             ),
                             const SizedBox(height: 6),
                             Text(
-                              'Last outcome: ${task['last_outcome'] ?? 'Not started'}',
+                              'Last outcome: ${callOutcomeLabel(task['last_outcome'])}',
                               style: RelayTypography.caption,
                             ),
                             const SizedBox(height: 6),
@@ -587,4 +459,237 @@ class _CallWorkScreenState extends ConsumerState<CallWorkScreen> {
             ),
     );
   }
+}
+
+String callOutcomeLabel(dynamic value) =>
+    const {
+      'PASSED': 'Passed',
+      'REACHED': 'Reached',
+      'NO_ANSWER': 'No answer',
+      'RETRY': 'Retry needed',
+      'FAILED': 'Failed',
+    }[value] ??
+    (value ?? 'Not started').toString().replaceAll('_', ' ');
+
+class _CallActionSheet extends ConsumerStatefulWidget {
+  const _CallActionSheet({required this.task, required this.postpone});
+  final Json task;
+  final bool postpone;
+  @override
+  ConsumerState<_CallActionSheet> createState() => _CallActionSheetState();
+}
+
+class _CallActionSheetState extends ConsumerState<_CallActionSheet> {
+  final form = GlobalKey<FormState>();
+  String? outcome;
+  String remark = '';
+  String? submitError;
+  bool sending = false;
+  late final String? branch;
+  late final String? member;
+
+  @override
+  void initState() {
+    super.initState();
+    branch = ref.read(serviceProvider).branchId;
+    member = ref.read(serviceProvider).user?['id'];
+  }
+
+  Future<void> save() async {
+    if (sending || !form.currentState!.validate()) return;
+    final service = ref.read(serviceProvider);
+    if (service.branchId != branch ||
+        service.user?['id'] != member ||
+        !canRecordCall(widget.task, service.user)) {
+      setState(
+        () => submitError =
+            'Branch or calling access changed. Close and reopen this call.',
+      );
+      return;
+    }
+    setState(() {
+      sending = true;
+      submitError = null;
+    });
+    try {
+      await service.dio.post(
+        '/sales-management/sales/${widget.task['sale_id']}/calls${widget.postpone ? '/defer-tele' : ''}',
+        data: widget.postpone
+            ? {'reason': remark.trim()}
+            : {
+                'stage': widget.task['stage'],
+                'outcome': outcome,
+                'remark': remark.trim(),
+              },
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (failure) {
+      if (mounted) {
+        setState(() {
+          sending = false;
+          submitError = failure is DioException && failure.response == null
+              ? 'Could not confirm the save. Your entries are kept here. Check your connection before trying again.'
+              : friendlyError(failure);
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => PopScope(
+    canPop: !sending,
+    child: SafeArea(
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          16,
+          20,
+          MediaQuery.viewInsetsOf(context).bottom + 20,
+        ),
+        child: SingleChildScrollView(
+          child: Form(
+            key: form,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        widget.postpone
+                            ? 'Postpone tele-verification'
+                            : 'Record call outcome',
+                        style: RelayTypography.section,
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Close call form',
+                      onPressed: sending
+                          ? null
+                          : () => Navigator.pop(context, false),
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F0FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE1D5EF)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '${widget.task['customer_name']}',
+                        style: RelayTypography.bodyStrong,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${widget.task['stage'] == 'TELE_VERIFICATION' ? 'Tele-verification' : 'Welcome call'} · ${widget.task['plan_name']}',
+                        style: RelayTypography.body,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'SR / request ID: ${widget.task['request_id'] ?? 'Not recorded'}',
+                        style: RelayTypography.caption,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Phone: ${widget.task['msisdn'] ?? widget.task['alternate_number'] ?? 'Not recorded'}',
+                        style: RelayTypography.bodyStrong,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (widget.postpone) ...[
+                  const Text(
+                    'Technical issues only. The call will be due on the next day.',
+                    style: RelayTypography.body,
+                  ),
+                  const SizedBox(height: 14),
+                ] else ...[
+                  DropdownButtonFormField<String>(
+                    isExpanded: true,
+                    decoration: const InputDecoration(labelText: 'Outcome'),
+                    items:
+                        const [
+                              'PASSED',
+                              'REACHED',
+                              'NO_ANSWER',
+                              'RETRY',
+                              'FAILED',
+                            ]
+                            .map(
+                              (value) => DropdownMenuItem(
+                                value: value,
+                                child: Text(callOutcomeLabel(value)),
+                              ),
+                            )
+                            .toList(),
+                    onChanged: sending ? null : (value) => outcome = value,
+                    validator: (value) =>
+                        value == null ? 'Choose an outcome' : null,
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                TextFormField(
+                  enabled: !sending,
+                  initialValue: remark,
+                  onChanged: (value) => remark = value,
+                  decoration: InputDecoration(
+                    labelText: widget.postpone
+                        ? 'Technical reason'
+                        : 'Call remark',
+                  ),
+                  minLines: 2,
+                  maxLines: 4,
+                  maxLength: widget.postpone ? 300 : 1000,
+                  validator: (value) =>
+                      (value ?? '').trim().length < (widget.postpone ? 5 : 3)
+                      ? (widget.postpone
+                            ? 'Enter a technical reason'
+                            : 'Enter a remark')
+                      : null,
+                ),
+                if (submitError != null) ...[
+                  Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      submitError!,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                ],
+                FilledButton(
+                  onPressed: sending ? null : save,
+                  child: Text(
+                    sending
+                        ? 'Saving…'
+                        : widget.postpone
+                        ? 'Postpone to next day'
+                        : 'Save outcome',
+                  ),
+                ),
+                const SizedBox(height: 6),
+                TextButton(
+                  onPressed: sending
+                      ? null
+                      : () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }

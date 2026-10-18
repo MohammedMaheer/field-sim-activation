@@ -287,6 +287,75 @@
   display: grid;
   gap: 10px;
 }
+.call-queue-search {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.call-queue-search label {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  flex: 1 1 280px;
+  max-width: 480px;
+}
+.call-queue-search > span {
+  padding: 12px 0;
+}
+.call-action-context {
+  padding: 16px;
+  border: 1px solid var(--line, #e1d5ef);
+  border-radius: 12px;
+  background: #f8f5fc;
+  overflow-wrap: anywhere;
+}
+.call-action-context h3 {
+  margin: 0 0 6px;
+}
+.call-action-context p {
+  margin: 0 0 14px;
+}
+.call-action-context dl {
+  margin: 0;
+  display: grid;
+  gap: 10px;
+}
+.call-action-context dl > div {
+  display: grid;
+  gap: 4px;
+}
+.call-action-context dt {
+  color: #596675;
+  font-size: 13px;
+}
+.call-action-context dd {
+  margin: 0;
+  font-weight: 650;
+}
+.call-action-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 20px;
+}
+.call-action-form label {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.call-action-form textarea {
+  resize: vertical;
+}
+.call-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.call-task > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .call-task {
   display: flex;
   align-items: center;
