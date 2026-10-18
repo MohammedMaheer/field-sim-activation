@@ -3,11 +3,17 @@ import ExportActions from "./ExportActions";
 import { useContext, useState, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Plus, RefreshCw } from "lucide-react";
+import { Plus, RefreshCw, SlidersHorizontal } from "lucide-react";
 import { Context } from "./App";
 import { api, post, download, Row, canManageOrganization } from "./api";
 import { Drawer, ErrorState, Loading } from "./components";
 import "./sales-management.css";
+
+const readable = (value: string) =>
+  value
+    ?.toLowerCase()
+    .replaceAll("_", " ")
+    .replace(/(^|\s)\S/g, (letter) => letter.toUpperCase()) || "Not recorded";
 
 const categories: Record<string, string> = {
   GRABBA_DEVICE: "Grabba device",
@@ -209,6 +215,7 @@ export default function FieldAssets() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [issue, setIssue] = useState<Row | null>(null);
+  const [requestAction, setRequestAction] = useState<Row | null>(null);
   const saving = useRef(false);
   const [adjustment, setAdjustment] = useState<Row | null>(null);
   const { branch, setBranch } = useBranchScope();
@@ -299,6 +306,7 @@ export default function FieldAssets() {
       setMove(null);
       setIssue(null);
       setAdjustment(null);
+      setRequestAction(null);
       setImportPreview(null);
       setImportFile(null);
       if (importInput.current) importInput.current.value = "";
@@ -310,7 +318,11 @@ export default function FieldAssets() {
     }
   }, [branch, searchParams, setSearchParams]);
   const params = new URLSearchParams(
-    Object.entries(filter)
+    Object.entries({
+      ...filter,
+      status: tab === "stock" ? filter.status : "",
+      ...(tab === "report" ? { agent_id: "", start: "", end: "" } : {}),
+    })
       .filter(([, v]) => !!v)
       .map(([k, v]) => [k, k === "end" ? `${v}T23:59:59` : v]),
   ).toString();
@@ -397,6 +409,29 @@ export default function FieldAssets() {
       (!filter.start || row.created_at >= filter.start) &&
       (!filter.end || row.created_at <= `${filter.end}T23:59:59`),
   );
+  const filteredRequests = (requests.data || []).filter(
+    (row) =>
+      (!branch || row.branch_id === branch) &&
+      (!filter.category || row.category === filter.category) &&
+      (!filter.agent_id || row.agent_id === filter.agent_id) &&
+      (!filter.start || !row.created_at || row.created_at >= filter.start) &&
+      (!filter.end ||
+        !row.created_at ||
+        row.created_at <= `${filter.end}T23:59:59`),
+  );
+  const activeFilters = [
+    filter.category,
+    ...(tab === "report" ? [] : [filter.agent_id, filter.start, filter.end]),
+    ...(tab === "stock" ? [filter.status] : []),
+  ].filter(Boolean).length;
+  const clearItemFilters = () =>
+    setLocalFilter({
+      category: "",
+      agent_id: "",
+      status: "",
+      start: "",
+      end: "",
+    });
   const exportReport = (kind: string) =>
     user.permissions.includes("report.read") && (
       <ExportActions
@@ -437,6 +472,72 @@ export default function FieldAssets() {
   }
   return (
     <div className="sales-page">
+      {requestAction && canManage && (
+        <Drawer
+          title={`${requestAction.action} stock request`}
+          onClose={() => !busy && setRequestAction(null)}
+        >
+          <form
+            className="sales-form"
+            onSubmit={(event) =>
+              save(
+                event,
+                `/field-assets/requests/${requestAction.request.id}`,
+                "PATCH",
+                () => setRequestAction(null),
+              )
+            }
+          >
+            <input type="hidden" name="status" value={requestAction.status} />
+            <input
+              type="hidden"
+              name="asset_id"
+              value={requestAction.assetId || ""}
+            />
+            <section
+              className="assignment-current wide"
+              aria-label="Stock request summary"
+            >
+              <h3>
+                {categories[requestAction.request.category] ||
+                  readable(requestAction.request.category)}
+              </h3>
+              <p>
+                {requestAction.request.agent} · {requestAction.request.quantity}{" "}
+                item{requestAction.request.quantity === 1 ? "" : "s"}
+              </p>
+              <p>{requestAction.request.reason}</p>
+            </section>
+            <label className="wide">
+              Reason
+              <textarea
+                name="reason"
+                required
+                minLength={5}
+                maxLength={300}
+                placeholder="Explain this decision in at least 5 characters"
+              />
+            </label>
+            {error && (
+              <p className="sales-error wide" role="alert">
+                {error}
+              </p>
+            )}
+            <div className="assignment-actions wide">
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => setRequestAction(null)}
+              >
+                Cancel
+              </button>
+              <button className="primary" disabled={busy}>
+                {busy ? "Saving…" : `${requestAction.action} request`}
+              </button>
+            </div>
+          </form>
+        </Drawer>
+      )}
       {adjustment && canManage && (
         <StockAdjustment
           asset={adjustment}
@@ -509,115 +610,137 @@ export default function FieldAssets() {
         </div>
       )}
       {tab !== "checklist" && (
-        <div
-          className="sales-form compact stock-filters"
-          aria-label="Stock filters"
-        >
-          <label>
-            Branch
-            <select
-              value={filter.branch_id}
-              onChange={(e) =>
-                setFilter({ ...filter, branch_id: e.target.value })
-              }
-            >
-              <option value="">All permitted branches</option>
-              {branches.data?.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Category
-            <select
-              value={filter.category}
-              onChange={(e) =>
-                setFilter({ ...filter, category: e.target.value })
-              }
-            >
-              <option value="">All categories</option>
-              {Object.entries(categoryOptions).map(([key, label]) => (
-                <option key={key} value={key}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {tab !== "report" && (
+        <div className="stock-filters" aria-label="Stock filters">
+          <div className="stock-filter-bar">
             <label>
-              Sales agent
+              Branch
               <select
-                value={filter.agent_id}
-                onChange={(e) =>
-                  setFilter({ ...filter, agent_id: e.target.value })
-                }
+                value={branch}
+                onChange={(e) => setBranch(e.target.value)}
               >
-                <option value="">All permitted sales agents</option>
-                {agents.data
-                  ?.filter((a) => !branch || a.branch_id === branch)
-                  .map((a) => (
-                    <option key={a.id} value={a.id}>
-                      {a.name}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          )}{" "}
-          {tab === "stock" && (
-            <label>
-              Status
-              <select
-                value={filter.status}
-                onChange={(e) =>
-                  setFilter({ ...filter, status: e.target.value })
-                }
-              >
-                <option value="">All statuses</option>
-                {[
-                  "AVAILABLE",
-                  "ASSIGNED",
-                  "RETURNED",
-                  "DAMAGED",
-                  "LOST",
-                  "CONSUMED",
-                  "RETIRED",
-                ].map((value) => (
-                  <option key={value}>{value}</option>
+                <option value="">All permitted branches</option>
+                {branches.data?.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
                 ))}
               </select>
             </label>
-          )}
-          {tab !== "report" && (
-            <button type="button" onClick={() => setAdvanced(!advanced)}>
-              {advanced ? "Fewer filters" : "Date filters"}
-            </button>
-          )}
-          {advanced && tab !== "report" && (
-            <>
+            <div className="stock-filter-actions">
+              <button
+                type="button"
+                aria-expanded={advanced}
+                aria-controls="asset-filters-more"
+                onClick={() => setAdvanced(!advanced)}
+              >
+                <SlidersHorizontal size={16} /> Filter items
+                {activeFilters ? ` (${activeFilters})` : ""}
+              </button>
+              {!!activeFilters && (
+                <button type="button" onClick={clearItemFilters}>
+                  Clear item filters
+                </button>
+              )}
+            </div>
+          </div>
+          {advanced && (
+            <div
+              id="asset-filters-more"
+              className="sales-form compact stock-extra-filters"
+            >
               <label>
-                From
-                <input
-                  type="date"
-                  value={filter.start}
+                Category
+                <select
+                  value={filter.category}
                   onChange={(e) =>
-                    setFilter({ ...filter, start: e.target.value })
+                    setFilter({ ...filter, category: e.target.value })
                   }
-                />
+                >
+                  <option value="">All categories</option>
+                  {Object.entries(categoryOptions).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <label>
-                To
-                <input
-                  type="date"
-                  value={filter.end}
-                  onChange={(e) =>
-                    setFilter({ ...filter, end: e.target.value })
-                  }
-                />
-              </label>
-            </>
+              {tab !== "report" && (
+                <label>
+                  Sales agent
+                  <select
+                    value={filter.agent_id}
+                    onChange={(e) =>
+                      setFilter({ ...filter, agent_id: e.target.value })
+                    }
+                  >
+                    <option value="">All permitted sales agents</option>
+                    {agents.data
+                      ?.filter((a) => !branch || a.branch_id === branch)
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              )}
+              {tab === "stock" && (
+                <label>
+                  Status
+                  <select
+                    value={filter.status}
+                    onChange={(e) =>
+                      setFilter({ ...filter, status: e.target.value })
+                    }
+                  >
+                    <option value="">All statuses</option>
+                    {[
+                      "AVAILABLE",
+                      "ASSIGNED",
+                      "RETURNED",
+                      "DAMAGED",
+                      "LOST",
+                      "CONSUMED",
+                      "RETIRED",
+                    ].map((value) => (
+                      <option key={value} value={value}>
+                        {readable(value)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+              {tab !== "report" && (
+                <>
+                  <label>
+                    From
+                    <input
+                      type="date"
+                      value={filter.start}
+                      onChange={(e) =>
+                        setFilter({ ...filter, start: e.target.value })
+                      }
+                    />
+                  </label>
+                  <label>
+                    To
+                    <input
+                      type="date"
+                      value={filter.end}
+                      onChange={(e) =>
+                        setFilter({ ...filter, end: e.target.value })
+                      }
+                    />
+                  </label>
+                </>
+              )}
+            </div>
           )}
+        </div>
+      )}
+      {error && (
+        <div className="sales-error" role="alert">
+          {error}
         </div>
       )}
       {tab === "stock" && (
@@ -625,11 +748,28 @@ export default function FieldAssets() {
           className="panel sales-section"
           aria-label="Receive branch stock"
         >
-          <h2>Branch stock · receive, assign, return</h2>
-          <p>
-            Choose a branch, receive its stock, then assign items to its sales
-            agents. Return or transfer items from the item actions; movement
-            history stays recorded.
+          <div className="sales-section-head">
+            <h2>Asset register</h2>
+            <div className="stock-register-actions">
+              {exportReport("stock")}
+              {canManage && (
+                <button
+                  className="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    setError("");
+                    setAssetCategory("GRABBA_DEVICE");
+                    setAdd(true);
+                  }}
+                >
+                  <Plus size={15} /> Add asset
+                </button>
+              )}
+            </div>
+          </div>
+          <p className="stock-register-help">
+            Receive stock, assign it to a sales agent, or return it using the
+            item actions.
           </p>
           {canManage && (
             <details className="usability-details asset-import-tools">
@@ -695,32 +835,6 @@ export default function FieldAssets() {
               )}
             </details>
           )}
-        </section>
-      )}
-      {error && (
-        <div className="sales-error" role="alert">
-          {error}
-        </div>
-      )}
-      {tab === "stock" && (
-        <section className="panel sales-section">
-          <div className="sales-section-head">
-            <h2>Asset register</h2>
-            {exportReport("stock")}
-            {canManage && (
-              <button
-                className="primary"
-                disabled={busy}
-                onClick={() => {
-                  setError("");
-                  setAssetCategory("GRABBA_DEVICE");
-                  setAdd(true);
-                }}
-              >
-                <Plus size={15} /> Add asset
-              </button>
-            )}
-          </div>
           {add && canManage && (
             <Drawer
               title="Add asset"
@@ -1018,10 +1132,11 @@ export default function FieldAssets() {
             <Loading />
           ) : stock.error ? (
             <ErrorState error={stock.error} retry={stock.refetch} />
-          ) : !stock.data?.length ? (
-            <p className="sales-empty">
-              No field assets recorded yet. SIM stock is managed separately in
-              SIM inventory.
+          ) : !filteredStock.length ? (
+            <p className="sales-empty" role="status">
+              {stock.data?.length
+                ? "No assets match these filters. Clear item filters or choose another branch."
+                : "No assets recorded for this branch. SIM stock is in SIM inventory."}
             </p>
           ) : (
             <div className="sales-table-wrap">
@@ -1056,7 +1171,7 @@ export default function FieldAssets() {
                       <td>{a.branch}</td>
                       <td>{a.agent}</td>
                       <td>{a.quantity}</td>
-                      <td>{a.status}</td>
+                      <td>{readable(a.status)}</td>
                       <td>
                         {canManage && (
                           <span className="asset-actions">
@@ -1160,8 +1275,12 @@ export default function FieldAssets() {
             <Loading />
           ) : requests.error ? (
             <ErrorState error={requests.error} retry={requests.refetch} />
-          ) : !requests.data?.length ? (
-            <p className="sales-empty">No asset requests yet</p>
+          ) : !filteredRequests.length ? (
+            <p className="sales-empty" role="status">
+              {requests.data?.length
+                ? "No requests match these filters. Clear item filters or choose another branch."
+                : "No asset requests yet"}
+            </p>
           ) : (
             <div className="sales-table-wrap">
               <table className="sales-table">
@@ -1177,88 +1296,75 @@ export default function FieldAssets() {
                   </tr>
                 </thead>
                 <tbody>
-                  {requests.data
-                    .filter(
-                      (r) =>
-                        (!filter.branch_id ||
-                          r.branch_id === filter.branch_id) &&
-                        (!filter.category || r.category === filter.category) &&
-                        (!filter.agent_id || r.agent_id === filter.agent_id),
-                    )
-                    .map((r) => (
-                      <tr key={r.id}>
-                        <td>{r.agent}</td>
-                        <td>{categories[r.category]}</td>
-                        <td>{r.quantity}</td>
-                        <td>{r.urgency}</td>
-                        <td>
-                          {r.reason}
-                          {r.response && (
-                            <small>
-                              {r.responded_by}: {r.response}
-                            </small>
+                  {filteredRequests.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.agent}</td>
+                      <td>{categories[r.category]}</td>
+                      <td>{r.quantity}</td>
+                      <td>{readable(r.urgency)}</td>
+                      <td>
+                        {r.reason}
+                        {r.response && (
+                          <small>
+                            {r.responded_by}: {r.response}
+                          </small>
+                        )}
+                      </td>
+                      <td>{readable(r.status)}</td>
+                      <td>
+                        {canManage &&
+                          r.status !== "FULFILLED" &&
+                          r.status !== "REJECTED" && (
+                            <span className="asset-actions">
+                              {(r.status === "REQUESTED"
+                                ? ["APPROVED", "REJECTED"]
+                                : ["FULFILLED"]
+                              ).map((s) => {
+                                const assigned = (stock.data || []).find(
+                                  (a) =>
+                                    a.category === r.category &&
+                                    a.agent_id === r.agent_id &&
+                                    a.branch_id === r.branch_id &&
+                                    a.status === "ASSIGNED" &&
+                                    a.quantity === r.quantity,
+                                );
+                                return (
+                                  <button
+                                    key={s}
+                                    disabled={s === "FULFILLED" && !assigned}
+                                    title={
+                                      s === "FULFILLED" && !assigned
+                                        ? "Assign matching stock to the sales agent first"
+                                        : ""
+                                    }
+                                    onClick={() => {
+                                      setError("");
+                                      setRequestAction({
+                                        request: r,
+                                        status: s,
+                                        assetId: assigned?.id || "",
+                                        action:
+                                          s === "APPROVED"
+                                            ? "Approve"
+                                            : s === "REJECTED"
+                                              ? "Reject"
+                                              : "Mark fulfilled",
+                                      });
+                                    }}
+                                  >
+                                    {s === "APPROVED"
+                                      ? "Approve"
+                                      : s === "REJECTED"
+                                        ? "Reject"
+                                        : "Mark fulfilled"}
+                                  </button>
+                                );
+                              })}
+                            </span>
                           )}
-                        </td>
-                        <td>{r.status}</td>
-                        <td>
-                          {canManage &&
-                            r.status !== "FULFILLED" &&
-                            r.status !== "REJECTED" && (
-                              <span className="asset-actions">
-                                {(r.status === "REQUESTED"
-                                  ? ["APPROVED", "REJECTED"]
-                                  : ["FULFILLED"]
-                                ).map((s) => {
-                                  const assigned = (stock.data || []).find(
-                                    (a) =>
-                                      a.category === r.category &&
-                                      a.agent_id === r.agent_id &&
-                                      a.branch_id === r.branch_id &&
-                                      a.status === "ASSIGNED" &&
-                                      a.quantity === r.quantity,
-                                  );
-                                  return (
-                                    <button
-                                      key={s}
-                                      disabled={s === "FULFILLED" && !assigned}
-                                      title={
-                                        s === "FULFILLED" && !assigned
-                                          ? "Assign matching stock to the sales agent first"
-                                          : ""
-                                      }
-                                      onClick={async () => {
-                                        const reason = window.prompt(
-                                          `${s} reason`,
-                                        );
-                                        if (!reason || reason.trim().length < 5)
-                                          return;
-                                        try {
-                                          await api(
-                                            `/field-assets/requests/${r.id}`,
-                                            {
-                                              method: "PATCH",
-                                              body: JSON.stringify({
-                                                status: s,
-                                                reason,
-                                                asset_id: assigned?.id || "",
-                                              }),
-                                            },
-                                          );
-                                          await refresh();
-                                        } catch (e: any) {
-                                          setError(e.message);
-                                        }
-                                      }}
-                                    >
-                                      {s}
-                                    </button>
-                                  );
-                                })}
-                              </span>
-                            )}
-                        </td>
-                      </tr>
-                    ))}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>

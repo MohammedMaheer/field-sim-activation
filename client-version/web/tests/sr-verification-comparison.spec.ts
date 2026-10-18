@@ -1,5 +1,6 @@
 import { expect, Page, test } from "@playwright/test";
 import { previewBuild } from "./preview";
+import { businessDate } from "../src/businessTime";
 
 const rows = [
   {
@@ -362,3 +363,58 @@ for (const width of [1440, 1280, 1024, 390])
       fullPage: true,
     });
   });
+
+test("empty SR search can be cleared and month/today are direct choices", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/sr-verification");
+  await page
+    .getByRole("textbox", { name: "Search verification results", exact: true })
+    .fill("not a customer in these results");
+  await expect(
+    page.getByText("No sales match these result filters.", { exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear result filters", exact: true })
+    .click();
+  await expect(
+    page.getByRole("link", { name: "Matched customer", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "This month", exact: true }).click();
+  await expect(page.getByLabel("Sales month", { exact: true })).toHaveValue(
+    businessDate().slice(0, 7),
+  );
+  await expect(
+    page.getByRole("button", { name: "This month", exact: true }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "Today", exact: true }).click();
+  await expect(page.getByLabel("Sales date", { exact: true })).toHaveValue(
+    businessDate(),
+  );
+});
+
+test("an empty period explains the next step without four zero-count filters", async ({
+  page,
+}) => {
+  await setup(page);
+  await page.goto("/sr-verification");
+  await page.route("**/api/sales-management/sr/results?**", (route) =>
+    route.fulfill({ json: { items: [] } }),
+  );
+  await page.getByRole("button", { name: "This month", exact: true }).click();
+  await expect(
+    page.getByText("No sales recorded for this period.", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("group", {
+      name: "Verification result filters",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Choose another day or month above.", {
+      exact: true,
+    }),
+  ).toBeVisible();
+});

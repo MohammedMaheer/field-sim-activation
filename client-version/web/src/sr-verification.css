@@ -1,6 +1,23 @@
 .sr-comparison {
   min-width: 0;
 }
+.sr-period-shortcuts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+.sr-period-shortcuts button {
+  min-height: 42px;
+}
+.sr-period-shortcuts button[aria-pressed="true"] {
+  color: #74234c;
+  background: #f4e4ed;
+  border-color: #c99ab4;
+}
+.sr-comparison .sales-empty p {
+  margin: 4px 0 10px;
+}
 .sr-comparison-filters {
   display: flex;
   flex-wrap: wrap;

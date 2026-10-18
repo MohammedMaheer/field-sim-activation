@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Download, FileSpreadsheet, Upload } from "lucide-react";
 import { api, download, post, Row } from "./api";
 import { ErrorState, Loading } from "./components";
+import { businessDate } from "./businessTime";
 import "./sr-verification.css";
 
 const shown = (value: unknown, empty = "Not recorded") =>
@@ -35,49 +36,72 @@ function SRComparison({ data, branch }: { data: Row; branch: string }) {
   );
   return (
     <div className="sr-comparison" aria-label="SR comparison results">
-      <div
-        className="sr-comparison-filters"
-        role="group"
-        aria-label="Verification result filters"
-      >
-        {(
-          [
-            ["ALL", "All sales"],
-            ["MISMATCH", "Mismatches"],
-            ["PENDING_SR_VERIFICATION", "Pending"],
-            ["MATCHED", "Matched"],
-          ] as const
-        ).map(([key, label]) => (
-          <button
-            type="button"
-            key={key}
-            aria-pressed={filter === key}
-            onClick={() => setFilter(key)}
-          >
-            {label} <b>{counts[key]}</b>
-          </button>
-        ))}
-        <label>
-          <span className="sr-only">Search verification results</span>
-          <input
-            value={search}
-            placeholder="Customer, SR, request ID or sales agent"
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-      </div>
-      <p className="sr-comparison-help">
-        Compare the recorded sale with its uploaded report row. A related row
-        found by request ID is a hint, not an SR match. Blank report fields
-        remain unverified.
-      </p>
+      {source.length > 0 && (
+        <div
+          className="sr-comparison-filters"
+          role="group"
+          aria-label="Verification result filters"
+        >
+          {(
+            [
+              ["ALL", "All sales"],
+              ["MISMATCH", "Mismatches"],
+              ["PENDING_SR_VERIFICATION", "Pending"],
+              ["MATCHED", "Matched"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              type="button"
+              key={key}
+              aria-pressed={filter === key}
+              onClick={() => setFilter(key)}
+            >
+              {label} <b>{counts[key]}</b>
+            </button>
+          ))}
+          <label>
+            <span className="sr-only">Search verification results</span>
+            <input
+              value={search}
+              placeholder="Customer, SR, request ID or sales agent"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+        </div>
+      )}
+      {source.length > 0 && (
+        <p className="sr-comparison-help">
+          Compare the recorded sale with its uploaded report row. A related row
+          found by request ID is a hint, not an SR match. Blank report fields
+          remain unverified.
+        </p>
+      )}
       {data.truncated && (
         <p role="status" className="sales-error">
           Showing the first 5,000 sales. Select a branch to narrow the results.
         </p>
       )}
       {!rows.length ? (
-        <p className="sales-empty">No sales in this result filter.</p>
+        <div className="sales-empty" role="status">
+          <p>
+            {source.length
+              ? "No sales match these result filters."
+              : "No sales recorded for this period."}
+          </p>
+          {source.length ? (
+            <button
+              type="button"
+              onClick={() => {
+                setFilter("ALL");
+                setSearch("");
+              }}
+            >
+              Clear result filters
+            </button>
+          ) : (
+            <p>Choose another day or month above.</p>
+          )}
+        </div>
       ) : (
         <div className="sales-table-wrap">
           <table className="sales-table sr-comparison-table">
@@ -366,6 +390,36 @@ export default function SRVerification() {
         >
           <Download size={16} />
           Excel template
+        </button>
+      </div>
+      <div className="sr-period-shortcuts" aria-label="SR date shortcuts">
+        <button
+          type="button"
+          disabled={busy}
+          aria-pressed={reportMode === "daily" && date === businessDate()}
+          onClick={() => {
+            setReportMode("daily");
+            setDate(businessDate());
+            setPreview(null);
+            setSelectedBatch("");
+          }}
+        >
+          Today
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          aria-pressed={
+            reportMode === "monthly" && month === businessDate().slice(0, 7)
+          }
+          onClick={() => {
+            setReportMode("monthly");
+            setMonth(businessDate().slice(0, 7));
+            setPreview(null);
+            setSelectedBatch("");
+          }}
+        >
+          This month
         </button>
       </div>
       <div className="sales-form compact">

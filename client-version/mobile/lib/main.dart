@@ -2110,9 +2110,26 @@ class _StockState extends ConsumerState<StockScreen> {
           children: [
             const BranchFilter(),
             const SizedBox(height: 16),
-            const Text(
-              'Branch SIM stock',
-              style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Branch SIM stock',
+                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (canVisitMobilePage(
+                      '/assets',
+                      ref.watch(serviceProvider).user,
+                    ) &&
+                    ref.watch(serviceProvider).user?['role'] !=
+                        'Inventory Manager')
+                  IconButton(
+                    tooltip: 'Assets & supplies',
+                    icon: const Icon(Icons.inventory_2_outlined),
+                    onPressed: () => context.push('/assets'),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             const Text(

@@ -1,9 +1,33 @@
 import 'dart:async';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'services.dart';
 import 'branch_filter.dart';
 import 'exports.dart';
+
+const assetCategories = {
+  'GRABBA_DEVICE': 'Grabba device',
+  'ROUTER': 'Router',
+  'STAMP': 'Stamp',
+  'ID_CARD': 'Staff ID card',
+  'UNIFORM': 'Uniform',
+  'OTHER': 'Other',
+};
+String assetLabel(Object? value) {
+  final code = value?.toString() ?? '';
+  if (code.isEmpty) return 'Not recorded';
+  return assetCategories[code] ??
+      code
+          .toLowerCase()
+          .split('_')
+          .map(
+            (word) => word.isEmpty
+                ? ''
+                : '${word[0].toUpperCase()}${word.substring(1)}',
+          )
+          .join(' ');
+}
 
 class FieldAssetsScreen extends ConsumerStatefulWidget {
   const FieldAssetsScreen({super.key});
@@ -21,6 +45,7 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
   bool fetching = false;
   bool reloadPending = false;
   String section = 'stock';
+  bool requestOpen = false;
   @override
   void initState() {
     super.initState();
@@ -94,109 +119,203 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
   }
 
   Future<void> requestAsset() async {
-    final agentId = ref.read(serviceProvider).user?['agent_id'];
-    if (agentId == null) return;
-    String category = 'GRABBA_DEVICE';
-    String urgency = 'NORMAL';
-    String quantity = '1';
-    String reason = '';
+    final service = ref.read(serviceProvider);
+    final agentId = service.user?['agent_id'];
+    if (agentId == null || requestOpen) return;
+    setState(() => requestOpen = true);
+    String category = 'GRABBA_DEVICE',
+        urgency = 'NORMAL',
+        quantity = '1',
+        reason = '';
+    bool sending = false;
+    String? submitError;
     final form = GlobalKey<FormState>();
-    final confirmed = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          8,
-          20,
-          MediaQuery.viewInsetsOf(context).bottom + 20,
-        ),
-        child: SingleChildScrollView(
-          child: Form(
-            key: form,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Text(
-                  'Request stock',
-                  style: Theme.of(context).textTheme.titleLarge,
+    try {
+      final created = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        isDismissible: false,
+        enableDrag: false,
+        builder: (sheetContext) => StatefulBuilder(
+          builder: (sheetContext, update) => PopScope(
+            canPop: !sending,
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                20,
+                12,
+                20,
+                MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
+              ),
+              child: SingleChildScrollView(
+                child: Form(
+                  key: form,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Request stock',
+                              style: Theme.of(
+                                sheetContext,
+                              ).textTheme.titleLarge,
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Close request',
+                            onPressed: sending
+                                ? null
+                                : () => Navigator.pop(sheetContext, false),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: category,
+                        decoration: const InputDecoration(
+                          labelText: 'Asset type',
+                        ),
+                        items: assetCategories.entries
+                            .map(
+                              (entry) => DropdownMenuItem(
+                                value: entry.key,
+                                child: Text(entry.value),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: sending
+                            ? null
+                            : (value) => category = value ?? category,
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: quantity,
+                        enabled: !sending,
+                        onChanged: (value) => quantity = value,
+                        keyboardType: TextInputType.number,
+                        decoration: const InputDecoration(
+                          labelText: 'Quantity',
+                        ),
+                        validator: (v) {
+                          final number = int.tryParse(v ?? '');
+                          return number == null || number < 1 || number > 10000
+                              ? 'Enter a whole number from 1 to 10,000'
+                              : null;
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: urgency,
+                        decoration: const InputDecoration(labelText: 'Urgency'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'NORMAL',
+                            child: Text('Normal'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'URGENT',
+                            child: Text('Urgent'),
+                          ),
+                        ],
+                        onChanged: sending
+                            ? null
+                            : (value) => urgency = value ?? 'NORMAL',
+                      ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: reason,
+                        enabled: !sending,
+                        maxLength: 300,
+                        minLines: 1,
+                        maxLines: 3,
+                        onChanged: (value) => reason = value,
+                        decoration: const InputDecoration(labelText: 'Reason'),
+                        validator: (v) => (v ?? '').trim().length < 5
+                            ? 'Add a reason of at least 5 characters'
+                            : null,
+                      ),
+                      if (submitError != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              submitError!,
+                              style: TextStyle(
+                                color: Theme.of(sheetContext).colorScheme.error,
+                              ),
+                            ),
+                          ),
+                        ),
+                      const SizedBox(height: 16),
+                      Row(
+                        children: [
+                          TextButton(
+                            onPressed: sending
+                                ? null
+                                : () => Navigator.pop(sheetContext, false),
+                            child: const Text('Cancel'),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: FilledButton(
+                              onPressed: sending
+                                  ? null
+                                  : () async {
+                                      if (sending ||
+                                          !form.currentState!.validate()) {
+                                        return;
+                                      }
+                                      update(() {
+                                        sending = true;
+                                        submitError = null;
+                                      });
+                                      try {
+                                        await service.dio.post(
+                                          '/field-assets/requests',
+                                          data: {
+                                            'agent_id': agentId,
+                                            'category': category,
+                                            'quantity': int.parse(quantity),
+                                            'urgency': urgency,
+                                            'reason': reason.trim(),
+                                          },
+                                        );
+                                        if (sheetContext.mounted) {
+                                          Navigator.pop(sheetContext, true);
+                                        }
+                                      } catch (failure) {
+                                        if (sheetContext.mounted) {
+                                          update(() {
+                                            sending = false;
+                                            submitError =
+                                                failure is DioException &&
+                                                    failure.response == null
+                                                ? 'Could not confirm the request. Your entries are kept here. Check your connection before trying again.'
+                                                : friendlyError(failure);
+                                          });
+                                        }
+                                      }
+                                    },
+                              child: Text(
+                                sending ? 'Sending…' : 'Submit request',
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                DropdownButtonFormField<String>(
-                  initialValue: category,
-                  decoration: const InputDecoration(labelText: 'Asset type'),
-                  items: const [
-                    DropdownMenuItem(
-                      value: 'GRABBA_DEVICE',
-                      child: Text('Grabba device'),
-                    ),
-                    DropdownMenuItem(value: 'ROUTER', child: Text('Router')),
-                    DropdownMenuItem(value: 'STAMP', child: Text('Stamp')),
-                    DropdownMenuItem(
-                      value: 'ID_CARD',
-                      child: Text('Staff ID card'),
-                    ),
-                    DropdownMenuItem(value: 'UNIFORM', child: Text('Uniform')),
-                    DropdownMenuItem(value: 'OTHER', child: Text('Other')),
-                  ],
-                  onChanged: (value) => category = value ?? category,
-                ),
-                TextFormField(
-                  initialValue: quantity,
-                  onChanged: (value) => quantity = value,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Quantity'),
-                  validator: (v) => (int.tryParse(v ?? '') ?? 0) < 1
-                      ? 'Enter a quantity'
-                      : null,
-                ),
-                DropdownButtonFormField<String>(
-                  initialValue: urgency,
-                  decoration: const InputDecoration(labelText: 'Urgency'),
-                  items: const [
-                    DropdownMenuItem(value: 'NORMAL', child: Text('Normal')),
-                    DropdownMenuItem(value: 'URGENT', child: Text('Urgent')),
-                  ],
-                  onChanged: (value) => urgency = value ?? 'NORMAL',
-                ),
-                TextFormField(
-                  initialValue: reason,
-                  onChanged: (value) => reason = value,
-                  decoration: const InputDecoration(labelText: 'Reason'),
-                  validator: (v) =>
-                      (v ?? '').trim().length < 5 ? 'Enter a reason' : null,
-                ),
-                const SizedBox(height: 16),
-                FilledButton(
-                  onPressed: () {
-                    if (form.currentState!.validate()) {
-                      Navigator.pop(context, true);
-                    }
-                  },
-                  child: const Text('Submit request'),
-                ),
-              ],
+              ),
             ),
           ),
         ),
-      ),
-    );
-    if (confirmed != true || !mounted) return;
-    try {
-      await ref
-          .read(serviceProvider)
-          .dio
-          .post(
-            '/field-assets/requests',
-            data: {
-              'agent_id': agentId,
-              'category': category,
-              'quantity': int.parse(quantity),
-              'urgency': urgency,
-              'reason': reason.trim(),
-            },
-          );
+      );
+      if (created != true || !mounted) return;
       await load();
       if (mounted) {
         setState(() => section = 'requests');
@@ -204,12 +323,8 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
           context,
         ).showSnackBar(const SnackBar(content: Text('Stock request sent')));
       }
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Could not send request')));
-      }
+    } finally {
+      if (mounted) setState(() => requestOpen = false);
     }
   }
 
@@ -233,7 +348,7 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
       ),
       floatingActionButton: canRequest
           ? FloatingActionButton.extended(
-              onPressed: requestAsset,
+              onPressed: requestOpen ? null : requestAsset,
               icon: const Icon(Icons.add),
               label: const Text('Request stock'),
             )
@@ -301,7 +416,7 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                     if (stock.isEmpty)
                       const Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('No assets assigned'),
+                        child: Text('No assets recorded for this branch.'),
                       ),
                     ...stock.map(
                       (a) => Card(
@@ -311,9 +426,33 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                             Icons.inventory_2_outlined,
                             color: Color(0xFF8136B3),
                           ),
-                          title: Text('${a['label']}'),
-                          subtitle: Text('${a['branch']} · ${a['serial']}'),
-                          trailing: Text('${a['status']}'),
+                          title: Text(
+                            '${a['label']}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  '${a['branch'] ?? 'Not recorded'} · ${a['serial'] ?? 'Not recorded'}',
+                                ),
+                                Text(
+                                  'Quantity: ${a['quantity'] ?? 'Not recorded'} · ${assetLabel(a['status'])}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Text(
+                                  a['agent'] == null ||
+                                          a['agent'] == 'Unassigned'
+                                      ? 'Branch stock'
+                                      : 'Assigned to ${a['agent']}',
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -340,11 +479,13 @@ class _FieldAssetsScreenState extends ConsumerState<FieldAssetsScreen> {
                       (r) => Card(
                         margin: const EdgeInsets.only(bottom: 8),
                         child: ListTile(
-                          title: Text('${r['category']} · ${r['quantity']}'),
-                          subtitle: Text(
-                            '${r['reason']} · ${r['urgency']}${r['response'] == null ? '' : '\n${r['response']} · ${r['responded_by']}'}',
+                          title: Text(
+                            '${assetLabel(r['category'])} · ${r['quantity']} ${r['quantity'] == 1 ? 'item' : 'items'}',
+                            style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
-                          trailing: Text('${r['status']}'),
+                          subtitle: Text(
+                            '${r['reason']}\n${assetLabel(r['urgency'])} · ${assetLabel(r['status'])}${r['response'] == null ? '' : '\n${r['response']} · ${r['responded_by']}'}',
+                          ),
                         ),
                       ),
                     ),

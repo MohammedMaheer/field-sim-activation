@@ -38,6 +38,20 @@ async function workspace(
       quantity += request.postDataJSON().delta;
       return route.fulfill({ json: { id: "stock-one", quantity } });
     }
+    if (
+      path.startsWith("/api/field-assets/requests/") &&
+      request.method() === "PATCH"
+    ) {
+      mutations.push(request.postDataJSON());
+      return route.fulfill(
+        rejectAdjustment
+          ? {
+              status: 409,
+              json: { detail: "Request changed. Refresh and try again." },
+            }
+          : { json: { id: "older-request", status: "APPROVED" } },
+      );
+    }
     let data: unknown = [];
     if (path === "/api/auth/refresh")
       data = {
@@ -73,6 +87,31 @@ async function workspace(
           status: "AVAILABLE",
         },
       ];
+    else if (path === "/api/field-assets/requests/list")
+      data = [
+        {
+          id: "older-request",
+          agent: "Sales One",
+          branch_id: "branch-one",
+          category: "UNIFORM",
+          quantity: 1,
+          urgency: "NORMAL",
+          status: "REQUESTED",
+          reason: "Earlier uniform request",
+          created_at: "2026-10-01T10:00:00",
+        },
+        {
+          id: "later-request",
+          agent: "Sales One",
+          branch_id: "branch-one",
+          category: "UNIFORM",
+          quantity: 1,
+          urgency: "URGENT",
+          status: "REQUESTED",
+          reason: "Later uniform request",
+          created_at: "2026-10-18T10:00:00",
+        },
+      ];
     return route.fulfill({ json: data });
   });
   return {
@@ -80,8 +119,167 @@ async function workspace(
     exports,
     failures,
     reject: () => (rejectAdjustment = true),
+    accept: () => (rejectAdjustment = false),
   };
 }
+
+test("a stock request decision uses a clear dialog and keeps its reason after a rejected save", async ({
+  page,
+}) => {
+  const audit = await workspace(page);
+  await page.goto("/equipment?tab=requests");
+  await page
+    .getByRole("button", { name: "Approve", exact: true })
+    .first()
+    .click();
+  const dialog = page.getByRole("dialog", {
+    name: "Approve stock request",
+    exact: true,
+  });
+  await expect(dialog.getByLabel("Stock request summary")).toContainText(
+    "Sales One",
+  );
+  await dialog
+    .getByLabel("Reason", { exact: true })
+    .fill("Stock confirmed in this branch");
+  audit.reject();
+  await dialog
+    .getByRole("button", { name: "Approve request", exact: true })
+    .click();
+  await expect(dialog.getByRole("alert")).toContainText("Request changed.");
+  await expect(dialog.getByLabel("Reason", { exact: true })).toHaveValue(
+    "Stock confirmed in this branch",
+  );
+  audit.accept();
+  await dialog
+    .getByRole("button", { name: "Approve request", exact: true })
+    .click();
+  await expect(dialog).toHaveCount(0);
+  expect(audit.mutations).toEqual([
+    {
+      status: "APPROVED",
+      asset_id: "",
+      reason: "Stock confirmed in this branch",
+    },
+    {
+      status: "APPROVED",
+      asset_id: "",
+      reason: "Stock confirmed in this branch",
+    },
+  ]);
+});
+
+for (const width of [390, 1440]) {
+  test(`stock controls are compact, reveal filters and clear them without losing the branch at ${width}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const audit = await workspace(page);
+    await page.goto("/equipment");
+    const filters = page.locator(".stock-filters");
+    await filters
+      .getByRole("combobox", { name: "Branch", exact: true })
+      .selectOption("branch-one");
+    const branchBounds = await filters
+      .getByRole("combobox", { name: "Branch", exact: true })
+      .boundingBox();
+    const filterBounds = await filters
+      .getByRole("button", { name: "Filter items", exact: true })
+      .boundingBox();
+    if (width > 700)
+      expect(
+        Math.abs(
+          branchBounds!.y +
+            branchBounds!.height -
+            filterBounds!.y -
+            filterBounds!.height,
+        ),
+      ).toBeLessThanOrEqual(2);
+    await expect(
+      page.getByRole("heading", { name: "Asset register", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Add asset", exact: true }),
+    ).toBeInViewport();
+    await expect(
+      filters.getByRole("combobox", { name: "Category", exact: true }),
+    ).toHaveCount(0);
+    await filters
+      .getByRole("button", { name: "Filter items", exact: true })
+      .click();
+    await filters
+      .getByRole("combobox", { name: "Category", exact: true })
+      .selectOption("ROUTER");
+    await expect(
+      page
+        .getByRole("status")
+        .filter({ hasText: "No assets match these filters." }),
+    ).toBeVisible();
+    await filters
+      .getByRole("button", { name: "Filter items (1)", exact: true })
+      .click();
+    await expect(
+      filters.getByRole("combobox", { name: "Category", exact: true }),
+    ).toHaveCount(0);
+    await filters
+      .getByRole("button", { name: "Clear item filters", exact: true })
+      .click();
+    await expect(
+      filters.getByRole("combobox", { name: "Branch", exact: true }),
+    ).toHaveValue("branch-one");
+    await expect(
+      page.getByRole("cell", { name: "Branch uniforms", exact: false }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: "Available", exact: true }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth + 1,
+      ),
+    ).toBe(true);
+    expect(audit.mutations).toHaveLength(0);
+    await page.evaluate(() => {
+      (document.activeElement as HTMLElement)?.blur();
+      window.scrollTo(0, 0);
+    });
+    await page.screenshot({
+      path: `../output/qa/usability93-stock-${width}.png`,
+      fullPage: true,
+    });
+  });
+}
+
+test("request dates affect the visible list and do not inherit a stock status in exports", async ({
+  page,
+}) => {
+  const audit = await workspace(page);
+  await page.goto("/equipment");
+  await page.getByRole("button", { name: "Filter items", exact: true }).click();
+  await page
+    .locator(".stock-filters")
+    .getByRole("combobox", { name: "Status", exact: true })
+    .selectOption("DAMAGED");
+  await page.getByRole("button", { name: /^Requests/ }).click();
+  const filters = page.locator(".stock-filters");
+  await filters.getByLabel("From", { exact: true }).fill("2026-10-10");
+  await expect(
+    page.getByRole("cell", { name: "Earlier uniform request", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("cell", { name: "Later uniform request", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Approve", exact: true }),
+  ).toBeVisible();
+  const controls = page.locator(".export-controls");
+  await controls.getByRole("combobox").selectOption("csv");
+  const download = page.waitForEvent("download");
+  await controls.getByRole("button", { name: "Export", exact: true }).click();
+  await download;
+  expect(audit.exports.at(-1)!.searchParams.get("status")).toBeNull();
+  expect(audit.exports.at(-1)!.searchParams.get("start")).toBe("2026-10-10");
+});
 
 test("stock adjustment shows the new balance before saving and rejects an excessive reduction", async ({
   page,

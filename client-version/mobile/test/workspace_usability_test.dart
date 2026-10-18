@@ -8,8 +8,20 @@ import 'package:relay_agent/reports.dart';
 import 'package:relay_agent/relay_theme.dart';
 import 'package:relay_agent/services.dart';
 import 'package:relay_agent/workspace_menu.dart';
+import 'package:relay_agent/main.dart' show StockScreen;
+
+class UsabilityMemoryStore extends OfflineStore {
+  final values = <String, Json>{};
+  @override
+  Future<Json?> get(String id) async => values[id];
+  @override
+  Future<void> put(String id, Json value) async => values[id] = value;
+}
 
 class UsabilityService extends RelayService {
+  final memory = UsabilityMemoryStore();
+  @override
+  OfflineStore get store => memory;
   final requests = <RequestOptions>[];
   UsabilityService({String role = 'Field Agent'}) {
     ready = true;
@@ -66,6 +78,45 @@ class UsabilityService extends RelayService {
 }
 
 void main() {
+  testWidgets(
+    'Stock opens Assets directly and the shortcut follows role access',
+    (tester) async {
+      final service = UsabilityService();
+      final router = GoRouter(
+        routes: [
+          GoRoute(
+            path: '/',
+            builder: (_, _) => const Scaffold(body: StockScreen()),
+          ),
+          GoRoute(
+            path: '/assets',
+            builder: (_, _) => const FieldAssetsScreen(),
+          ),
+        ],
+      );
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [serviceProvider.overrideWith((ref) => service)],
+          child: MaterialApp.router(theme: relayTheme(), routerConfig: router),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Assets & supplies'), findsOneWidget);
+      await tester.tap(find.byTooltip('Assets & supplies'));
+      await tester.pumpAndSettle();
+      expect(router.canPop(), isTrue);
+      expect(find.text('Branch tablet'), findsOneWidget);
+      router.pop();
+      await tester.pumpAndSettle();
+      service.user = {...service.user!, 'permissions': <String>[]};
+      service.notifyListeners();
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Assets & supplies'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      router.dispose();
+    },
+  );
   test(
     'every existing workspace destination remains available in the menu catalogue',
     () {
@@ -169,11 +220,17 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Branch tablet'), findsOneWidget);
-      expect(find.text('Replacement uniform · NORMAL'), findsNothing);
+      expect(
+        find.text('Replacement uniform\nNormal · Requested'),
+        findsNothing,
+      );
       await tester.tap(find.text('Requests').first);
       await tester.pumpAndSettle();
       expect(find.text('Branch tablet'), findsNothing);
-      expect(find.text('Replacement uniform · NORMAL'), findsOneWidget);
+      expect(
+        find.text('Replacement uniform\nNormal · Requested'),
+        findsOneWidget,
+      );
       expect(find.text('Export stock requests'), findsOneWidget);
       await tester.tap(find.text('Assets'));
       await tester.pumpAndSettle();
